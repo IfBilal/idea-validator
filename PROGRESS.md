@@ -7,7 +7,7 @@
 | Field | Value |
 |---|---|
 | Current phase | **Phase 0: Bootstrap & contracts** |
-| Current task | P0-T01 (not started) |
+| Current task | P0-T09, P0-T10 (Dev B, docs). Waiting on Dev A's P0-T03 before P0-T04 / P0-T05 |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
@@ -22,7 +22,7 @@
 | Dev B (Decision, Agents & Analysis) | Bilal | 24i-3166 | IfBilal | M11, M2, M1 gateway, M3, M9, M8, M7, M12, M13 (eval) |
 
 ## Current task plan
-_(agent writes a 3–10 line plan here before starting a task: files to touch, tests to add, done criteria)_
+P0-T09 + P0-T10 (Dev B, branch `docs/readme-and-ai-log`): README gets a prerequisites table and a corrected clone step and `docs/source` description; `docs/ai-usage-log.md` gets rows for today's AI-assisted changes; `docs/contribution.md` already has names, roll numbers and modules. Done when the PR is open and the README renders. Next: P0-T04 and P0-T05 once P0-T03 (Dev A) is merged.
 
 ## Phase checklist
 | Phase | Status | Testing gate | Security gate |
