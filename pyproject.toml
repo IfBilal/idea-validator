@@ -41,7 +41,7 @@ known-first-party = ["common"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["libs"]  # P1+: add services/<name> as each is created; services/verdict is strict
+files = ["libs", "services"]
 strict = true
 plugins = ["pydantic.mypy"]
 
