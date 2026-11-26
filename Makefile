@@ -8,13 +8,13 @@ SERVICES := gateway profile orchestrator scouts tools kb analyst ideation valida
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
-	uv sync --all-packages && pre-commit install && (cd services/ui && npm ci)
+	uv sync --all-packages && uv run pre-commit install && { [ ! -f services/ui/package.json ] || (cd services/ui && npm ci); }
 lint: ## ruff + eslint
-	uv run ruff check . && uv run ruff format --check . && (cd services/ui && npm run lint)
+	uv run ruff check . && uv run ruff format --check . && { [ ! -f services/ui/package.json ] || (cd services/ui && npm run lint); }
 typecheck: ## mypy + tsc
-	uv run mypy services libs jobs && (cd services/ui && npm run typecheck)
+	uv run mypy && { [ ! -f services/ui/package.json ] || (cd services/ui && npm run typecheck); }
 test: ## unit/component/behaviour tests
-	uv run pytest -q -m "not integration" && (cd services/ui && npm test -- --run)
+	uv run pytest -m "not integration" && { [ ! -f services/ui/package.json ] || (cd services/ui && npm test -- --run); }
 test-verdict: ## M11 unit + golden vectors (P2)
 	uv run pytest services/verdict -q
 test-retrieval: ## retrieval quality gate (P3)

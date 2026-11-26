@@ -1,0 +1,47 @@
+# Root of the uv workspace (virtual root: no project of its own).
+# Every service/job/lib is a workspace member with its own pyproject.toml; one uv.lock pins them all.
+[tool.uv.workspace]
+members = ["libs/*", "services/*", "jobs/*"]
+exclude = ["services/ui"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.120",
+    "respx>=0.22",
+    "pre-commit>=4.0",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["eval/verdict/reference_engine.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "S", "RUF"]
+ignore = ["S101"]  # asserts are fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S105", "S106"]
+# one-off helper scripts: gh CLI calls are their purpose; long data tables
+"scripts/*.py" = ["S603", "S607", "E501", "SIM115"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["libs"]  # P1+: add services/<name> as each is created; services/verdict is strict
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["libs", "services", "jobs", "eval"]
+markers = ["integration: needs Postgres/Redis/Qdrant (testcontainers)"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
