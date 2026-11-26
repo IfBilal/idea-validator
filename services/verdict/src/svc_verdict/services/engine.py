@@ -67,7 +67,7 @@ class CoreResult:
     adjusted_confidences: dict[str, float]
 
 
-def _adjust_for_challenges(
+def adjust_for_challenges(
     inp: EngineInput, cfg: EngineConfig
 ) -> tuple[dict[str, float | None], dict[str, float], list[str]]:
     """Step 1: each objection the critic accepted lowers score and confidence (capped)."""
@@ -100,7 +100,7 @@ def run_core(
         weights = cfg.weights_for(profile.goal)
     elif not math.isclose(sum(weights.values()), 100.0, abs_tol=1e-6):
         raise ValueError("weights must add to 100")
-    scores, confs, abstained = _adjust_for_challenges(inp, cfg)
+    scores, confs, abstained = adjust_for_challenges(inp, cfg)
     gates = {
         "evidence": "not_evaluated",
         "feasibility": "not_evaluated",

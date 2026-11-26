@@ -9,6 +9,7 @@ import hmac
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractAsyncContextManager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -46,6 +47,7 @@ def create_app(
     version: str = "0.1.0",
     settings: ServiceSettings | None = None,
     ready_checks: Mapping[str, ReadyCheck] | None = None,
+    lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
 ) -> FastAPI:
     """Build the app. ``ready_checks`` map a dependency name to an async "is it reachable?"."""
     settings = settings or ServiceSettings(service_name=name)
@@ -67,7 +69,7 @@ def create_app(
         registry=registry,
     )
 
-    app = FastAPI(title=f"{module} {name}", version=version)
+    app = FastAPI(title=f"{module} {name}", version=version, lifespan=lifespan)
     app.state.settings = settings
     app.state.metrics_registry = registry
 

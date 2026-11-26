@@ -1,27 +1,28 @@
-import httpx
+from conftest import CONFIG_FILE
+from fastapi.testclient import TestClient
 
-from svc_verdict.main import app
-
-
-def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+from svc_verdict.config import Settings
+from svc_verdict.main import build_app
 
 
-async def test_health_identifies_the_service() -> None:
-    async with _client() as client:
-        body = (await client.get("/health")).json()
-    assert body["status"] == "ok"
-    assert body["service"] == "verdict"
-    assert body["module"] == "M11"
+def _app() -> TestClient:
+    return TestClient(build_app(Settings(config_dir=CONFIG_FILE.parent, internal_token="tok")))
 
 
-async def test_ready_is_200_with_no_dependencies() -> None:
-    async with _client() as client:
-        assert (await client.get("/ready")).status_code == 200
+def test_health_identifies_the_service() -> None:
+    with _app() as client:
+        body = client.get("/health").json()
+    assert (body["service"], body["module"]) == ("verdict", "M11")
 
 
-async def test_metrics_are_exposed() -> None:
-    async with _client() as client:
-        response = await client.get("/metrics")
-    assert response.status_code == 200
-    assert "http_requests_total" in response.text
+def test_ready_only_after_the_rules_are_loaded() -> None:
+    app = build_app(Settings(config_dir=CONFIG_FILE.parent))
+    before = TestClient(app).get("/ready")  # no lifespan yet: rules not loaded
+    assert before.status_code == 503
+    with TestClient(app) as client:
+        assert client.get("/ready").status_code == 200
+
+
+def test_metrics_are_exposed() -> None:
+    with _app() as client:
+        assert "http_requests_total" in client.get("/metrics").text
