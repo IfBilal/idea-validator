@@ -18,7 +18,7 @@
 ## Team
 | Role | Name | Roll no. | GitHub | Owns |
 |---|---|---|---|---|
-| Dev A (Platform, Data, Ops & UI) | Taimur | 24i-3015 | T361 | M14, M5, M4, M6i, M6, M1 UI, M10t, M10 (serving), M13 (ops) |
+| Dev A (Platform, Data, Ops & UI) | Taimoor | 24i-3015 | T361 | M14, M5, M4, M6i, M6, M1 UI, M10t, M10 (serving), M13 (ops) |
 | Dev B (Decision, Agents & Analysis) | Bilal | 24i-3166 | IfBilal | M11, M2, M1 gateway, M3, M9, M8, M7, M12, M13 (eval) |
 
 ## Current task plan

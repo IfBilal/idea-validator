@@ -1,6 +1,6 @@
 # 20 — Task Backlog (GitHub-issue-ready)
 
-Format: `| ID | Task | Module | Owner | Depends on | Acceptance |`. Owner A = Platform, Data, Ops & UI (Taimur), B = Decision, Agents & Analysis (Bilal).
+Format: `| ID | Task | Module | Owner | Depends on | Acceptance |`. Owner A = Platform, Data, Ops & UI (Taimoor), B = Decision, Agents & Analysis (Bilal).
 Create issues with `python scripts/create_issues.py` (parses these tables, uses `gh issue create`, labels by phase + module).
 One issue = one branch = one PR. Status is tracked in GitHub + `PROGRESS.md`.
 

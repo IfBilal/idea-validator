@@ -32,7 +32,7 @@ this file) into everything a coding agent needs to build, test, secure, deploy a
 | 15 | `15_CICD.md` | Git workflow, branch protection, GitHub Actions, Jenkins, merge-conflict exercise |
 | 16 | `16_KUBERNETES.md` | All K8s objects, manifests, probes, HPA, NetworkPolicy test, rollout/rollback, measurement |
 | 17 | `17_IMPLEMENTATION_PLAN.md` | **Phases 0–12** with tasks, outputs, exit criteria |
-| 18 | `18_CRITICAL_PATH_AND_PARALLELIZATION.md` | Dependency graph, critical path, Dev A (Taimur) / Dev B (Bilal) split, day-by-day |
+| 18 | `18_CRITICAL_PATH_AND_PARALLELIZATION.md` | Dependency graph, critical path, Dev A (Taimoor) / Dev B (Bilal) split, day-by-day |
 | 19 | `19_QUALITY_GATES.md` | Testing gate + security gate for every phase (checklists + commands) |
 | 20 | `20_TASK_BACKLOG.md` | Every task as a GitHub-issue-ready item (ID, owner, deps, acceptance) |
 | 21 | `21_CODING_STANDARDS.md` | Layering, style, errors, logging, config, naming, commit rules |
