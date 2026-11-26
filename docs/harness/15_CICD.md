@@ -12,7 +12,7 @@ nightly evaluation.** Fail = pipeline stops, nothing is deployed. Rollback: `kub
 - **Small branches with one purpose**: `feat/verdict-duplicate-gate`, `fix/kb-dedupe-by-url`, `test/scouts-source-failure`.
 - **Conventional commits**: `feat(verdict): add duplicate gate`, `fix(kb): dedupe by url`, `test(scouts): add source failure case`,
   also `docs`, `chore`, `ci`, `refactor`, `perf`, `build`. Enforced by commitlint in CI (PR title + commits).
-- **Deliberate merge conflict** (required, screenshot): Phase 1 task P1-T12: Dev A (Taimur) on `chore/conflict-a` and Dev B (Bilal) on
+- **Deliberate merge conflict** (required, screenshot): Phase 1 task P1-T12: Dev A (Taimoor) on `chore/conflict-a` and Dev B (Bilal) on
   `chore/conflict-b` both edit the same lines of `config/verdict.yaml` comment header (or README section); merge A;
   B's PR shows conflict; resolve in the PR (GitHub UI or locally), reviewer approves; screenshot conflict + resolution.
 - Both members must author PRs and review the other's (contribution table must match git history).

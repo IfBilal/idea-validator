@@ -1,9 +1,9 @@
 # 18 — Critical Path, Dependencies and Parallel Work
 
 ## 1. Ownership (both members still review each other's PRs and must explain everything)
-Dev A = **Taimur**. Dev B = **Bilal**.
+Dev A = **Taimoor**. Dev B = **Bilal**.
 
-| Dev A: Platform, Data, Ops & UI (Taimur) | Dev B: Decision, Agents & Analysis (Bilal) |
+| Dev A: Platform, Data, Ops & UI (Taimoor) | Dev B: Decision, Agents & Analysis (Bilal) |
 |---|---|
 | M14 Platform (repo, CI, Jenkins, Docker, K8s, NetworkPolicy) | M11 Verdict Engine |
 | M5 Tool Layer (incl. LLM proxy) | M2 Profile, Session & Cache; M1 Gateway (API, auth, SSE; not the browser UI) |

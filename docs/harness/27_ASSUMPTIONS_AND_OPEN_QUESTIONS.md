@@ -26,7 +26,7 @@ answers differently, update this file, the affected spec and an ADR. Report thes
 | A-18 | Default budgets | not specified | `config/budgets.yaml` values (validate $0.05, discover $0.25) | 12 |
 | A-19 | "Ranked list" order | not specified | verdict rank, then score, then confidence | 07 §3 |
 | A-20 | Debate early stop | "repeat up to 3 rounds" | stop early when no new accepted non-fatal objections or enough survivors | 07 §3 |
-| A-21 | Team ownership split | Guide asks for a contribution table, no split given | Dev A (Taimur): platform, data, ops, UI, fine-tuning/serving. Dev B (Bilal): verdict, agents, orchestrator, gateway, M7, M12. Chosen so every Validate-path producer/consumer is one developer's and the UI is mock-driven in parallel | 18, 20 |
+| A-21 | Team ownership split | Guide asks for a contribution table, no split given | Dev A (Taimoor): platform, data, ops, UI, fine-tuning/serving. Dev B (Bilal): verdict, agents, orchestrator, gateway, M7, M12. Chosen so every Validate-path producer/consumer is one developer's and the UI is mock-driven in parallel | 18, 20 |
 
 ## B. Open questions (ask the instructor early; proceed with the assumption meanwhile)
 1. Is it acceptable that Learning & portfolio value is produced by the Feasibility-for-this-student scorer (A-01)?
@@ -37,7 +37,7 @@ answers differently, update this file, the affected spec and an ADR. Report thes
 6. Expected minimum size of the labelled verdict set?
 
 ## C. Team inputs needed (agents: write to PROGRESS.md "Blocked / Needs human" until provided)
-- Team (known): Dev A = Taimur (`T361`, 24i-3015), Dev B = Bilal (`IfBilal`, 24i-3166).
+- Team (known): Dev A = Taimoor (`T361`, 24i-3015), Dev B = Bilal (`IfBilal`, 24i-3166).
 - LLM provider + API key (put in local `.env` → K8s Secret).
 - GitHub token, Reddit app credentials, Product Hunt token.
 - Which laptop runs the cluster + Jenkins (RAM ≥ 16 GB recommended).
