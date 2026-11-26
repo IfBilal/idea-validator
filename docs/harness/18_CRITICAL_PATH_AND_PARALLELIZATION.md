@@ -1,16 +1,23 @@
 # 18 — Critical Path, Dependencies and Parallel Work
 
 ## 1. Ownership (both members still review each other's PRs and must explain everything)
-| Dev A: Platform, Data & Ops | Dev B: Decision, Agents & UI |
+Dev A = **Taimur**. Dev B = **Bilal**.
+
+| Dev A: Platform, Data, Ops & UI (Taimur) | Dev B: Decision, Agents & Analysis (Bilal) |
 |---|---|
 | M14 Platform (repo, CI, Jenkins, Docker, K8s, NetworkPolicy) | M11 Verdict Engine |
-| M5 Tool Layer (incl. LLM proxy) | M2 Profile, Session & Cache; M1 Gateway |
+| M5 Tool Layer (incl. LLM proxy) | M2 Profile, Session & Cache; M1 Gateway (API, auth, SSE; not the browser UI) |
 | M4 Scouts, M6i Ingestion, M6 KB, retrieval eval | M3 Orchestrator (LangGraph) |
-| M7 Niche & Trend Analyst | M9 Validation agents (+ M10 wrapper contract) |
-| M12 Critic & Guardrails; M8 Skeptic/Change Suggester | M8 Ideator + Gap Analyst; Discover |
-| M10t Fine-tuning + M10 serving | M1 UI (most screens) |
-| M13 traces, replay, drift, dashboard | M13 eval harness; verdict tuning |
+| **M1 UI (all screens, React app, component + E2E tests)** | M9 Validation agents (+ M10 wrapper contract) |
+| M10t Fine-tuning + M10 serving | M8 Ideator, Gap Analyst, Skeptic, Change Suggester, Idea Rewriter; Discover |
+| M13 traces, replay, drift, dashboard | **M7 Niche & Trend Analyst (niches, gaps, features)** |
+| | **M12 Critic & Guardrails** |
+| | M13 eval harness; verdict tuning |
 Shared: labelled sets (retrieval queries, fine-tune hand checks, verdict labels), merge-conflict exercise, screenshots, report.
+
+Why this split: B owns every producer and consumer on the Validate path (M7 features → M9 scorers → M12 critic → M3 → M11),
+so M3 never waits on a cross-developer handoff. A owns the UI, which only needs `05_API_CONTRACTS.md`, `schemas/examples/*.json`
+and MSW mocks, so it runs in parallel with B's backend. B owes A the gateway contract and the SSE event format (frozen D4).
 
 ## 2. Module dependency graph
 ```mermaid
@@ -57,10 +64,10 @@ let CronJobs run overnight), Colab GPU availability (have Kaggle as backup), lap
 |---|---|
 | M11 (B) ‖ M5 + scouts (A) | M11 depends only on schemas |
 | M2/gateway auth (B) ‖ ingestion (A) | Different tables/services; schemas fixed in P0 |
-| UI shell & components with MSW mocks (B) ‖ backend agents | Contracts in 05 + schemas; MSW mocks from examples |
+| UI shell & components with MSW mocks (A) ‖ backend agents (B) | Contracts in 05 + schemas; MSW mocks from examples |
 | Fine-tune data/training (A) ‖ M3 graphs (B) | M9 uses M10 wrapper contract in hosted mode until model is ready |
-| M12 + Skeptic (A) ‖ M9 scorers (B) | Both consume M6; produce independent schemas |
-| Drift/dashboard (A) ‖ Discover (B) | Trace schema fixed |
+| M7 + M12 + Skeptic ‖ M9 scorers (all B, sequenced by B) | All consume M6; produce independent schemas; no cross-developer wait |
+| Drift/dashboard + UI pages (A) ‖ Discover (B) | Trace schema fixed |
 
 | Must be sequential | Because |
 |---|---|
@@ -76,17 +83,17 @@ let CronJobs run overnight), Colab GPU availability (have Kaggle as backup), lap
 ## 5. Day-by-day (both developers)
 | Day | Dev A | Dev B | Sync / joint |
 |---|---|---|---|
-| D1 | P0 repo/protection/CI/compose; P1 kind+Calico+registry, Kustomize, NetPol, Jenkins | P0 schemas/libs; P1 service template, 13 stubs, UI shell, stub validate path | Merge-conflict exercise; request API keys; gate P0, P1 |
+| D1 | P0 repo/protection/CI/compose; P1 kind+Calico+registry, Kustomize, NetPol, Jenkins; UI shell (P1-T03) once the template exists | P0 schemas/libs; P1 service template, 13 stubs, stub validate path | Merge-conflict exercise; request API keys; gate P0, P1 |
 | D2 | M5 complete (allow-list, robots, sanitiser, LLM proxy); scouts HN + GitHub; start CronJobs | M11 complete + golden tests; M2 migrations, repos, auth, profile, cache | Gate P2; start overnight scouting |
-| D3 | Ingestion ≥1,500, snapshot, M6 hybrid search, retrieval labels+gate; M7 niches/gaps/features; fine-tune candidates | Rubrics v1, M10 wrapper (hosted), M9 scorers; UI auth/profile/live panel with MSW | Label retrieval queries together (1 h); gate P3, P4 |
-| D4 | M12 critic + rail; M8 Skeptic/Change Suggester; hand-check labels; start Colab training | M3 Validate graph, gateway run endpoints + SSE; behaviour tests | Hand-check fine-tune labels together; gate P5 |
-| D5 | M10 served + comparison; M13 trace store, replay, drift, dashboard; UI what-if/compare/trace | M8 Ideator/Gap; M3 Discover; UI verdict card + discover page; eval harness | Draft labelled verdict set together; gate P6–P9 |
-| D6 | Requests/limits measurement, HPA, rollout/rollback; screenshots | Before eval → tuning → after eval; ADR; UI polish | Gate P10; fresh-clone test |
+| D3 | Ingestion ≥1,500, snapshot, M6 hybrid search, retrieval labels+gate; fine-tune candidates; UI auth/profile/live panel with MSW | M7 niches/gaps/features; rubrics v1, M10 wrapper (hosted), M9 scorers | Label retrieval queries together (1 h); gate P3, P4 |
+| D4 | UI clarify/approval/verdict card against example JSON; hand-check labels; start Colab training | M12 critic + rail; M8 Skeptic/Change Suggester; M3 Validate graph, gateway run endpoints + SSE (events frozen); behaviour tests | Hand-check fine-tune labels together; gate P5 |
+| D5 | M10 served + comparison; M13 trace store, replay, drift, dashboard; UI discover page, what-if/compare/trace | M8 Ideator/Gap; M3 Discover; eval harness | Draft labelled verdict set together; gate P6–P9 |
+| D6 | Requests/limits measurement, HPA, rollout/rollback; UI polish + Playwright E2E; screenshots | Before eval → tuning → after eval; ADR | Gate P10; fresh-clone test |
 | D7 | Screenshots finish; report: platform, KB, fine-tuning, AgenticOps | Report: summary, verdict design, tuning, limits | Contribution table + sign; submit; gate P11–P12 |
 
 ## 6. Interfaces that unblock the other developer (deliver early)
 - P0: all Pydantic schemas + example JSON payloads (`schemas/examples/*.json`) → used by MSW mocks and stub services.
 - D2 AM: M5 `/llm` working → B's agents can call models.
-- D3 AM: M6 `/search` on snapshot → B's scorers get real evidence.
+- D3 AM: M6 `/search` on snapshot → B's M7, scorers and M12 get real evidence.
 - D2 PM: M11 `/verdict` deployed → A's eval/drift work can call it.
-- D4: M3 events format frozen → UI live panel.
+- D4: M3 events format + gateway run endpoints frozen (B) → A's UI live panel.

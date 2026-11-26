@@ -17,3 +17,4 @@
 | 13 | Contribution imbalance in git history | Medium | Medium | Both author PRs daily, owners table, pair on shared tasks with alternating commits | Adjust before submission (honestly) |
 | 14 | Last-day screenshot scramble | High | Medium | Capture screenshots at each gate (checklist) | Phase 11 buffer |
 | 15 | Ambiguous requirement interpreted wrongly | Medium | Medium | `27_ASSUMPTIONS…` + ask instructor early | Document in report "changes from architecture" |
+| 16 | Dev B's D3 is heavy (M7 + rubrics + M10 wrapper + M9 scorers) and sits on the critical path | Medium | High | M7 starts as soon as M6 `/search` runs on the snapshot; rubrics/wrapper skeletons done D2 after M11; Dev A (UI work is parallel and mock-driven) helps with M7 clustering if behind | Cut UMAP; M7 gaps via simple per-niche heuristics first |

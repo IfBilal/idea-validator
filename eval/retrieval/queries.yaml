@@ -2,7 +2,7 @@
 # (grade 2 = highly relevant, 1 = relevant). Unlabelled queries make the gate test fail on purpose.
 # Metrics: Recall@5, Recall@10, MRR@10, nDCG@10 for modes vector | keyword | hybrid | hybrid+rerank.
 version: 1
-labelled_by: []          # e.g. ["member1", "member2"]
+labelled_by: []          # e.g. ["bilal", "taimur"]
 queries:
   - { id: q01, query: "slow export of notes to markdown", filters: {}, relevant: {} }
   - { id: q02, query: "tool to track university assignment deadlines", filters: {}, relevant: {} }

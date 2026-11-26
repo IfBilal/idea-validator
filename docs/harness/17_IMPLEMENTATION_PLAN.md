@@ -3,7 +3,7 @@
 Strategy (Guide §12): **get a thin version of everything running end-to-end on Kubernetes early, then improve each part.**
 Never leave Docker, Jenkins or Kubernetes to the last days.
 
-- Timeline: ~7 days, 2 developers. **Dev A = Platform & Data & Ops**, **Dev B = Decision, Agents & UI** (see 18).
+- Timeline: ~7 days, 2 developers. **Dev A = Platform, Data, Ops & UI**, **Dev B = Decision, Agents & Analysis** (see 18).
 - Every phase ends with **TESTING GATE + SECURITY GATE** (`19_QUALITY_GATES.md`). The next phase does not start until both
   pass and results are recorded in `PROGRESS.md`. (Parallel tracks may continue on already-unblocked tasks.)
 - Task IDs (`P3-T04`) are defined in `20_TASK_BACKLOG.md` with owner, dependencies and acceptance criteria.
@@ -14,10 +14,10 @@ Never leave Docker, Jenkins or Kubernetes to the last days.
 | 1 | Walking skeleton on Kubernetes | D1 PM – D2 AM | A (+B) | All 14 services deployed as stubs on kind+Calico via Jenkins; NetworkPolicy test passes |
 | 2 | Foundations: Verdict Engine, Profile/Auth/Cache, Tool Layer | D2 | B: M11, M2 · A: M5 | Engine complete with golden tests; auth+profile; M5 complete |
 | 3 | Data: scouts, ingestion, KB search | D2 – D3 | A | ≥1,500 cards from ≥3 sources, snapshot, hybrid search, retrieval gate in CI |
-| 4 | Niches, trends, gaps, features | D3 | A | M7 named niches, monthly series, gaps, `/features` |
-| 5 | Validate workflow end-to-end | D3 – D4 | B (A: M12) | Validate runs: intake→clarify→evidence→features→4 scorers→verdict→challenge→stability→card |
+| 4 | Niches, trends, gaps, features | D3 | B | M7 named niches, monthly series, gaps, `/features` |
+| 5 | Validate workflow end-to-end | D3 – D4 | B | Validate runs: intake→clarify→evidence→features→4 scorers→verdict→challenge→stability→card |
 | 6 | Discover workflow | D4 – D5 | B | Ideator/Gap Analyst/Skeptic debate ≤3 rounds, survivors validated, ranked results |
-| 7 | UI complete (U1–U10) | D3 – D5 | B (A helps D5) | All screens, live run, approval, what-if v2, challenge, compare, history |
+| 7 | UI complete (U1–U10) | D3 – D5 | A | All screens, live run, approval, what-if v2, challenge, compare, history |
 | 8 | Fine-tuning & scoring model | D3 – D5 | A | ≥300 examples, ≥60 hand-checked, QLoRA model served in M10, comparison table |
 | 9 | AgenticOps complete | D5 | A (B: eval harness) | Traces+replay, budgets, registry, eval Job, drift, dashboard, behaviour tests |
 | 10 | Verdict tuning & evaluation | D6 | A + B | Labelled set, before/after confusion matrices, tuned ConfigMap, ADR |
@@ -65,7 +65,7 @@ quotes; `/stats` freshness/coverage; label 20+ retrieval queries; retrieval eval
 **Exit criteria:** card counts per source shown by `/stats`; re-running ingestion adds 0 duplicates; Recall@5/MRR for 4 modes
 recorded (ADR-002 numbers); retrieval gate job required in GHA.
 
-## Phase 4: Niches, trends, gaps, features (D3) (Dev A)
+## Phase 4: Niches, trends, gaps, features (D3) (Dev B)
 M7 clustering → named niches; monthly `niche_stats`; rising/flat/saturated; gaps with evidence ids; `/niches/match`;
 `/features` (all features in 09 §4) with unit tests.
 **Exit criteria:** ≥ 15 named niches with status; gaps list non-empty with valid evidence ids; features deterministic.
@@ -75,8 +75,8 @@ M7 clustering → named niches; monthly `niche_stats`; rising/flat/saturated; ga
 M5** first (M10 wrapper in "hosted mode" so the contract is final); M3 LangGraph Validate graph with all states (07),
 interrupts for questions/approval, parallel scorers, retries/timeouts, budgets, memoisation, decision traces; gateway
 `/validate`, `/runs/{id}`, `/runs/{id}/events` (SSE), `/answer`, `/approve`, `/ideas*`, `/compare`, `/challenge`, `/whatif`.
-**Dev A:** M12 critic `/check` (existence + NLI + quote), `/rail/input`, `/objections/filter`, `/approval/evaluate`;
-M8 Skeptic + Change Suggester (needed for Validate steps 6–7).
+M12 critic `/check` (existence + NLI + quote), `/rail/input`, `/objections/filter`, `/approval/evaluate`;
+M8 Skeptic + Change Suggester (needed for Validate steps 6–7) are also Dev B, so M3 never waits on another developer for them.
 **Exit criteria:** Validate on 3 sample ideas returns cards with all fields of U6; INSUFFICIENT_EVIDENCE case shows what's
 missing (U10); approval pause/resume works (U4); clarifying question only asked when it changes the verdict (U5);
 what-if creates v2 computed by M11 (U7); challenge defends/removes (U8); behaviour tests for invalid JSON, tool timeout,
@@ -88,7 +88,7 @@ survivors through Validate sub-graph (concurrency 3), ranking; gateway `/discove
 **Exit criteria:** Discover for a profile returns a ranked list (verdict + short reason + gap evidence) (U2); trace shows
 rounds ≤ 3 and drop decisions; changing the profile changes results (U1).
 
-## Phase 7: UI complete (D3 – D5) (Dev B, Dev A assists D5)
+## Phase 7: UI complete (D3 – D5) (Dev A; Dev B supplies the gateway API + SSE event contract)
 React app: auth pages, profile form, Discover page, Validate chat-style page with live run panel (agent, tool calls,
 spend), clarify question card, approval dialog, verdict card (verdict/stability badge, 4 gates, 6 scores w/ confidence +
 evidence links, weights, thresholds, confidence, sensitivity flips, what-if list + apply, challenge buttons,

@@ -18,8 +18,8 @@
 ## Team
 | Role | Name | Roll no. | GitHub | Owns |
 |---|---|---|---|---|
-| Dev A (Platform, Data & Ops) | _TBD_ | _TBD_ | _TBD_ | M14, M5, M4, M6i, M6, M7, M12, M10t, M10, M13 (ops) |
-| Dev B (Decision, Agents & UI) | _TBD_ | _TBD_ | _TBD_ | M11, M2, M1, M3, M9, M8, M13 (eval) |
+| Dev A (Platform, Data, Ops & UI) | Taimur | 24i-3015 | T361 | M14, M5, M4, M6i, M6, M1 UI, M10t, M10 (serving), M13 (ops) |
+| Dev B (Decision, Agents & Analysis) | Bilal | 24i-3166 | IfBilal | M11, M2, M1 gateway, M3, M9, M8, M7, M12, M13 (eval) |
 
 ## Current task plan
 _(agent writes a 3–10 line plan here before starting a task: files to touch, tests to add, done criteria)_
@@ -50,7 +50,6 @@ _(agent writes a 3–10 line plan here before starting a task: files to touch, t
 |---|---|---|---|
 
 ## Blocked / Needs human
-- [ ] Team names, roll numbers, GitHub usernames (CODEOWNERS, contribution table)
 - [ ] Create GitHub repo + branch protection (owner action) (P0-T01)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
@@ -60,6 +59,7 @@ _(agent writes a 3–10 line plan here before starting a task: files to touch, t
 
 ## Decisions made during build (link ADRs)
 - ADR-001..007 (initial) in `docs/decisions/`
+- Ownership rebalance (before Phase 0): UI moved Dev B → Dev A; M7, M12, M8 Skeptic/Change Suggester moved Dev A → Dev B (see 18 §1, 27 §A).
 
 ## Lessons / notes for future sessions
 _(append short notes: gotchas, commands that worked, things to avoid)_

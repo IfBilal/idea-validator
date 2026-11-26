@@ -1,6 +1,6 @@
 # 20 — Task Backlog (GitHub-issue-ready)
 
-Format: `| ID | Task | Module | Owner | Depends on | Acceptance |`. Owner A = Platform/Data/Ops, B = Decision/Agents/UI.
+Format: `| ID | Task | Module | Owner | Depends on | Acceptance |`. Owner A = Platform, Data, Ops & UI (Taimur), B = Decision, Agents & Analysis (Bilal).
 Create issues with `python scripts/create_issues.py` (parses these tables, uses `gh issue create`, labels by phase + module).
 One issue = one branch = one PR. Status is tracked in GitHub + `PROGRESS.md`.
 
@@ -23,7 +23,7 @@ One issue = one branch = one PR. Status is tracked in GitHub + `PROGRESS.md`.
 |---|---|---|---|---|---|
 | P1-T01 | Service template (FastAPI app factory, /health /ready /metrics, request-id + trace middleware, Dockerfile multi-stage non-root, .dockerignore, tests) + `/new-service` command | all | B | P0-T05 | template service passes tests, image runs as UID 10001 |
 | P1-T02 | Generate stub services: gateway, profile, orchestrator, scouts, tools, kb, analyst, ideation, validators, scorer, verdict, critic, agentops; each returns schema-valid stub data | all | B | P1-T01 | 13 images build |
-| P1-T03 | UI shell: Vite React TS, Tailwind, shadcn, TanStack Query, runtime `config.js` entrypoint, nginx-unprivileged image, 1 component test | M1 | B | P0-T03 | `API_BASE_URL` changes without rebuild |
+| P1-T03 | UI shell: Vite React TS, Tailwind, shadcn, TanStack Query, runtime `config.js` entrypoint, nginx-unprivileged image, 1 component test | M1 | A | P0-T03 | `API_BASE_URL` changes without rebuild |
 | P1-T04 | `scripts/k8s_up.sh`: local registry, kind config (no default CNI), Calico, ingress-nginx, metrics-server (all pinned) | M14 | A | — | `kubectl get nodes` Ready, calico pods Ready |
 | P1-T05 | Kustomize base: namespace (PSA restricted), Deployments+Services for all modules, StatefulSets (postgres, redis, qdrant), PVCs, Ingress, HPA gateway, ConfigMaps generated from `config/` and `rubrics/`, CronJob + Job stubs | M14 | A | P1-T02, P1-T04 | `kustomize build` + kubeconform + kube-linter pass |
 | P1-T06 | `scripts/create_secrets.sh` (from local .env; never committed) | M14 | A | P1-T05 | Secrets present in cluster |
@@ -72,10 +72,10 @@ One issue = one branch = one PR. Status is tracked in GitHub + `PROGRESS.md`.
 ## Phase 4: Niches, trends, gaps, features
 | ID | Task | Module | Owner | Depends on | Acceptance |
 |---|---|---|---|---|---|
-| P4-T01 | Clustering job (HDBSCAN + c-TF-IDF names, stable ids) → niches | M7 | A | P3-T08 | ≥ 15 named niches |
-| P4-T02 | Monthly niche_stats + slope + status rising/flat/saturated | M7 | A | P4-T01 | status edge tests |
-| P4-T03 | Gap detection → gaps table with evidence ids; `/gaps` | M7 | A | P4-T01 | non-empty gaps, ids valid |
-| P4-T04 | `/niches`, `/niches/match`, `/features` (all of 09 §4) | M7 | A | P4-T02 | deterministic tests |
+| P4-T01 | Clustering job (HDBSCAN + c-TF-IDF names, stable ids) → niches | M7 | B | P3-T08 | ≥ 15 named niches |
+| P4-T02 | Monthly niche_stats + slope + status rising/flat/saturated | M7 | B | P4-T01 | status edge tests |
+| P4-T03 | Gap detection → gaps table with evidence ids; `/gaps` | M7 | B | P4-T01 | non-empty gaps, ids valid |
+| P4-T04 | `/niches`, `/niches/match`, `/features` (all of 09 §4) | M7 | B | P4-T02 | deterministic tests |
 
 ## Phase 5: Validate workflow
 | ID | Task | Module | Owner | Depends on | Acceptance |
@@ -83,8 +83,8 @@ One issue = one branch = one PR. Status is tracked in GitHub + `PROGRESS.md`.
 | P5-T01 | Rubric loader + feature priors + rubric files v1 with real examples per level | M9 | B | P4-T04 | each rubric has 6 anchors + ≥ 6 examples |
 | P5-T02 | M10 wrapper in hosted mode (via M5) with schema validation, retry once, fallback logging, abstain | M10 | B | P2-T12 | behaviour test invalid JSON |
 | P5-T03 | M9 four PydanticAI scorers (+ learning in feasibility scorer), parallel `/score-all`, evidence subset check, blend α, gate inputs (effort, blocker, duplicate_of) | M9 | B | P5-T01, P5-T02 | schema + abstain tests |
-| P5-T04 | M12 `/check` (existence, competitor-in-KB, NLI, quote substring), `/objections/filter`, `/rail/input`, `/approval/evaluate` | M12 | A | P3-T10 | unit tests incl. unsupported claim |
-| P5-T05 | M8 Skeptic + Change Suggester + Idea Rewriter agents | M8 | A | P3-T10 | schema tests |
+| P5-T04 | M12 `/check` (existence, competitor-in-KB, NLI, quote substring), `/objections/filter`, `/rail/input`, `/approval/evaluate` | M12 | B | P3-T10 | unit tests incl. unsupported claim |
+| P5-T05 | M8 Skeptic + Change Suggester + Idea Rewriter agents | M8 | B | P3-T10 | schema tests |
 | P5-T06 | M3 Validate LangGraph: nodes, routing (pure, tested), Postgres checkpointer, interrupts (question, approval), parallel scorers, retries/timeouts, budgets, memo, decision traces, Redis events | M3 | B | P5-T03, P2-T04 | behaviour tests pass |
 | P5-T07 | Gateway run endpoints: `/validate`, `/runs/{id}`, SSE `/events` (Last-Event-ID), `/answer`, `/approve` | M1 | B | P5-T06 | SSE test |
 | P5-T08 | Gateway `/ideas`, `/versions`, `/compare`, `/challenge`, `/whatif` + M3 sub-flows | M1/M3 | B | P5-T06 | U7/U8/U9 API tests |
@@ -100,13 +100,13 @@ One issue = one branch = one PR. Status is tracked in GitHub + `PROGRESS.md`.
 ## Phase 7: UI
 | ID | Task | Module | Owner | Depends on | Acceptance |
 |---|---|---|---|---|---|
-| P7-T01 | Auth pages + protected routes + token handling | M1 | B | P2-T09 | component tests |
-| P7-T02 | Profile page (form, zod validation, version shown) | M1 | B | P7-T01 | U1 |
-| P7-T03 | Live run panel (SSE hook, current agent, tool calls list, spend meter vs budget) | M1 | B | P5-T07 | U3 |
-| P7-T04 | Clarify question card + Approval dialog (cost, budget, approve/decline) | M1 | B | P7-T03 | U4, U5 |
-| P7-T05 | Verdict card (verdict + stability, gates, 6 scores + confidence + evidence links, weights, thresholds, confidence, sensitivity flips, versions, cached badge, IE "what was missing") | M1 | B | P5-T08 | U6, U10 |
+| P7-T01 | Auth pages + protected routes + token handling | M1 | A | P2-T09 | component tests |
+| P7-T02 | Profile page (form, zod validation, version shown) | M1 | A | P7-T01 | U1 |
+| P7-T03 | Live run panel (SSE hook, current agent, tool calls list, spend meter vs budget) | M1 | A | P5-T07 | U3 |
+| P7-T04 | Clarify question card + Approval dialog (cost, budget, approve/decline) | M1 | A | P7-T03 | U4, U5 |
+| P7-T05 | Verdict card (verdict + stability, gates, 6 scores + confidence + evidence links, weights, thresholds, confidence, sensitivity flips, versions, cached badge, IE "what was missing") | M1 | A | P5-T08 | U6, U10 |
 | P7-T06 | What-if panel (candidates, apply → v2, side-by-side diff) + Challenge buttons (defended/removed) | M1 | A | P7-T05 | U7, U8 |
-| P7-T07 | Discover page (niche input, ranked list, dropped ideas, open card) | M1 | B | P6-T03 | U2 |
+| P7-T07 | Discover page (niche input, ranked list, dropped ideas, open card) | M1 | A | P6-T03 | U2 |
 | P7-T08 | History + versions + Compare (table + radar) | M1 | A | P5-T08 | U9 |
 | P7-T09 | Trace viewer (tree from `/runs/{id}/trace`) | M1 | A | P9-T01 | screenshot |
 | P7-T10 | Playwright E2E smoke (profile → validate → card → what-if) | M1 | A | P7-T06 | runs in Jenkins nightly |

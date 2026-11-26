@@ -4,7 +4,7 @@ File: `labelled_set.jsonl`, one object per line:
 {"id": "L001", "idea_text": "...", "profile": {...student_profile...},
  "human_verdict": "GO|PIVOT|NO-GO|INSUFFICIENT_EVIDENCE",
  "category": "clear_go|clear_nogo|borderline|thin_evidence",
- "labels": {"member1": "GO", "member2": "PIVOT"}, "resolved_by": "discussion", "notes": "why"}
+ "labels": {"bilal": "GO", "taimur": "PIVOT"}, "resolved_by": "discussion", "notes": "why"}
 ```
 Rules:
 - ≥ 40 items: ≥ 10 clear GOs, ≥ 10 clear NO-GOs, ≥ 10 borderline, ≥ 10 thin-evidence (A-16).

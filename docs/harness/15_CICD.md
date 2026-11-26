@@ -6,13 +6,13 @@ nightly evaluation.** Fail = pipeline stops, nothing is deployed. Rollback: `kub
 ## 1. Git workflow (Guide §4.2) (humans do the settings, agents follow the flow)
 - **Day 1**: create repo; add both members; **protect `main`**: no direct pushes, PRs only, required status checks (all
   jobs below), **1 approving review from the other member**, dismiss stale approvals, require branch up to date,
-  include administrators. Add `CODEOWNERS` (`* @member1 @member2`).
+  include administrators. Add `CODEOWNERS` (`* @IfBilal @T361`).
 - **One issue per task** (`20_TASK_BACKLOG.md` → GitHub issues via `scripts/create_issues.sh` using `gh issue create`),
   linked from the PR (`Closes #12`). Labels: module (`m1`…`m14`), type, phase.
 - **Small branches with one purpose**: `feat/verdict-duplicate-gate`, `fix/kb-dedupe-by-url`, `test/scouts-source-failure`.
 - **Conventional commits**: `feat(verdict): add duplicate gate`, `fix(kb): dedupe by url`, `test(scouts): add source failure case`,
   also `docs`, `chore`, `ci`, `refactor`, `perf`, `build`. Enforced by commitlint in CI (PR title + commits).
-- **Deliberate merge conflict** (required, screenshot): Phase 1 task P1-T12: Dev A on `chore/conflict-a` and Dev B on
+- **Deliberate merge conflict** (required, screenshot): Phase 1 task P1-T12: Dev A (Taimur) on `chore/conflict-a` and Dev B (Bilal) on
   `chore/conflict-b` both edit the same lines of `config/verdict.yaml` comment header (or README section); merge A;
   B's PR shows conflict; resolve in the PR (GitHub UI or locally), reviewer approves; screenshot conflict + resolution.
 - Both members must author PRs and review the other's (contribution table must match git history).

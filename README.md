@@ -25,7 +25,7 @@ Everything a coding agent (Claude Code, Codex) or a human needs to build the sys
 1. Create the GitHub repo, copy this folder in, push (owner does branch protection: see `docs/harness/15_CICD.md`).
 2. Fill team info + get API keys (see `PROGRESS.md` → Blocked / Needs human). Put keys in a local `.env` (never commit).
 3. Open the repo in Claude Code (or Codex) and say: **"Read CLAUDE.md and PROGRESS.md, then run /next-task."**
-   Each developer tells their agent which role they are (Dev A or Dev B, see `18_CRITICAL_PATH_AND_PARALLELIZATION.md`).
+   Each developer tells their agent which role they are (Dev A = Taimur or Dev B = Bilal, see `18_CRITICAL_PATH_AND_PARALLELIZATION.md`).
 4. After each phase: **`/phase-gate <N>`** (testing + security gate). Capture the phase's screenshots.
 5. Review every PR yourselves (the other member approves). Keep `docs/ai-usage-log.md` current.
 
@@ -44,5 +44,5 @@ open http://localhost/          # UI through the Ingress
 ## Team
 | Member | Roll no. | Role |
 |---|---|---|
-| _TBD_ | _TBD_ | Dev A: Platform, Data & Ops |
-| _TBD_ | _TBD_ | Dev B: Decision, Agents & UI |
+| Taimur (`T361`) | 24i-3015 | Dev A: Platform, Data, Ops & UI |
+| Bilal (`IfBilal`) | 24i-3166 | Dev B: Decision, Agents & Analysis |
