@@ -104,3 +104,27 @@ def test_value_of_information_on_a_gate_input(build: Build, cfg: EngineConfig) -
 def test_unknown_must_name_a_field_of_its_scope() -> None:
     with pytest.raises(ValueError, match="not a valid"):
         Unknown(scope="score", field="hours_per_week")
+
+
+def test_duplicate_gate_failure_suggests_raising_differentiation_to_three(
+    build: Build, cfg: EngineConfig
+) -> None:
+    inp = build(scores={**GOOD, "differentiation": 2.5}, dup="card_notion01 (Notion)")
+    result = evaluate_with_whatif(inp, cfg)
+    assert result.verdict == "NO-GO"
+    first = (result.what_would_make_go or [])[0]
+    assert (first.dimension, first.to, first.new_verdict) == ("differentiation", 3.0, "GO")
+
+
+def test_no_candidates_when_no_single_change_helps(build: Build, cfg: EngineConfig) -> None:
+    hopeless = build(scores={d: 0.5 for d in GOOD})
+    assert evaluate_with_whatif(hopeless, cfg).what_would_make_go == []
+
+
+def test_change_must_name_exactly_one_target() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        Change(to=3.0)
+    with pytest.raises(ValueError, match="exactly one"):
+        Change(dimension="risk", profile_field="team_size", to=3.0)
+    with pytest.raises(ValueError, match="between 0 and 5"):
+        Change(dimension="risk", to=6.0)

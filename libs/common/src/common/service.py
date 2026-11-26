@@ -151,7 +151,7 @@ def require_internal_token(settings: ServiceSettings) -> Callable[[Request], Non
     def dependency(request: Request) -> None:
         expected = settings.internal_token.get_secret_value() if settings.internal_token else None
         given = request.headers.get(INTERNAL_TOKEN_HEADER, "")
-        if expected is None or not hmac.compare_digest(given, expected):
+        if expected is None or not hmac.compare_digest(given.encode(), expected.encode()):
             raise Unauthorized("missing or invalid internal token")
 
     return dependency

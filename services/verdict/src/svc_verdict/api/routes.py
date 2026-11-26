@@ -5,7 +5,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from pydantic import ValidationError
 
+from common.config import ConfigError
 from common.errors import DomainError, ValidationFailed
+from common.logging import get_logger
 from common.schemas import Verdict
 from common.service import require_internal_token
 
@@ -14,6 +16,8 @@ from ..models.api import VerdictRequest, VoiRequest, VoiResponse, WhatIfRequest
 from ..services.engine_config import EngineConfig, load_engine_config
 from ..services.verdict_builder import build_verdict
 from ..services.whatif import apply_change, evaluate_with_whatif, value_of_information
+
+log = get_logger("verdict")
 
 
 def get_rules(request: Request) -> EngineConfig:
@@ -57,9 +61,15 @@ def make_router(settings: Settings) -> APIRouter:
         try:
             fresh = load_engine_config(settings.config_dir)
         except ValidationError as exc:
-            raise ValidationFailed(
-                "verdict rules are invalid", {"errors": exc.error_count()}
-            ) from exc
+            problems = [
+                {"loc": [str(p) for p in e["loc"]], "msg": e["msg"]}
+                for e in exc.errors(include_input=False, include_url=False)
+            ]
+            log.warning("reload_rejected", reason="invalid rules", problems=problems)
+            raise ValidationFailed("verdict rules are invalid", {"errors": problems}) from exc
+        except ConfigError as exc:
+            log.warning("reload_rejected", reason=str(exc))
+            raise DomainError("verdict rules file is missing or malformed") from exc
         request.app.state.engine_config = fresh
         return {"versions": fresh.versions}
 

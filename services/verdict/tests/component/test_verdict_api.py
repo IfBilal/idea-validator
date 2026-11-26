@@ -187,3 +187,105 @@ def test_invalid_rules_stop_the_service_from_starting(tmp_path: Path) -> None:
     app = build_app(Settings(config_dir=tmp_path))
     with pytest.raises(ValueError, match="must add to 100"), TestClient(app):
         pass
+
+
+def test_every_internal_endpoint_is_closed_without_a_token(client: TestClient) -> None:
+    body = {"input": payload(), "unknown": {"scope": "score", "field": "risk"}, "range": [1, 2]}
+    calls = [
+        client.post("/whatif", json={"input": payload()}),
+        client.post("/value-of-information", json=body),
+        client.post("/reload"),
+        client.get("/config"),
+    ]
+    assert [c.status_code for c in calls] == [401, 401, 401, 401]
+
+
+def test_endpoints_stay_closed_when_no_token_is_configured() -> None:
+    settings = Settings(config_dir=CONFIG_FILE.parent)
+    with TestClient(build_app(settings)) as unconfigured:
+        assert unconfigured.post("/verdict", json=payload(), headers=HEADERS).status_code == 401
+        assert unconfigured.get("/health").status_code == 200
+
+
+def test_a_non_ascii_token_is_a_401_not_a_500(client: TestClient) -> None:
+    headers = {"X-Internal-Token": "tök".encode()}  # raw bytes: not representable as ASCII
+    assert client.get("/config", headers=headers).status_code == 401
+
+
+def test_scores_must_cover_each_dimension_exactly_once(client: TestClient) -> None:
+    missing = payload()
+    missing["scores"] = missing["scores"][:5]
+    duplicate = payload()
+    duplicate["scores"] = [*duplicate["scores"][:5], duplicate["scores"][0]]
+    for bad in (missing, duplicate):
+        assert client.post("/verdict", json=bad, headers=HEADERS).status_code == 422
+
+
+def test_extra_fields_are_rejected_at_every_level(client: TestClient) -> None:
+    nested = payload()
+    nested["profile"]["surprise"] = 1
+    assert client.post("/verdict", json=nested, headers=HEADERS).status_code == 422
+    top = {"input": payload(), "verdict": "GO"}
+    assert client.post("/whatif", json=top, headers=HEADERS).status_code == 422
+
+
+def test_the_same_request_gives_byte_identical_responses(client: TestClient) -> None:
+    first = client.post("/verdict", json=payload(), headers=HEADERS).content
+    second = client.post("/verdict", json=payload(), headers=HEADERS).content
+    assert first == second
+
+
+def test_whatif_on_a_failed_feasibility_gate_returns_the_hours_needed(client: TestClient) -> None:
+    request = {"input": payload(goal="course_project", estimated_effort_hours=300)}
+    body = client.post("/whatif", json=request, headers=HEADERS).json()
+    assert body["verdict"] == "NO-GO"
+    gate = next(c for c in body["what_would_make_go"] if c["dimension"] == "feasibility_gate")
+    assert gate["field"] == "hours_per_week"
+
+
+def test_voi_over_http_for_gate_input_and_profile_unknowns(client: TestClient) -> None:
+    gate = {
+        "input": payload(),
+        "unknown": {"scope": "gate_input", "field": "n_sources"},
+        "range": [1, 5],
+    }
+    assert client.post("/value-of-information", json=gate, headers=HEADERS).json()[
+        "verdict_changes"
+    ]
+    profile = {
+        "input": payload(),
+        "unknown": {"scope": "profile", "field": "hours_per_week"},
+        "range": [20, 40],
+    }
+    body = client.post("/value-of-information", json=profile, headers=HEADERS).json()
+    assert body["verdict_changes"] is False
+
+
+def test_voi_rejects_an_inverted_range_and_out_of_range_values(client: TestClient) -> None:
+    base = {"input": payload(), "unknown": {"scope": "score", "field": "risk"}}
+    assert (
+        client.post("/value-of-information", json={**base, "range": [4, 1]}, headers=HEADERS)
+    ).status_code == 422
+    assert (
+        client.post("/value-of-information", json={**base, "range": [1, 9]}, headers=HEADERS)
+    ).status_code == 422
+
+
+def test_a_failed_reload_keeps_the_service_answering_with_the_old_rules(tmp_path: Path) -> None:
+    rules = yaml.safe_load(CONFIG_FILE.read_text())
+    target = tmp_path / "verdict.yaml"
+    target.write_text(yaml.safe_dump(rules))
+    with TestClient(build_app(Settings(config_dir=tmp_path, internal_token="tok"))) as client:
+        target.write_text("- not\n- a mapping\n")
+        missing_shape = client.post("/reload", headers=HEADERS)
+        target.unlink()
+        no_file = client.post("/reload", headers=HEADERS)
+        rules["weights"]["hobby"] = rules["weights"]["startup"]
+        target.write_text(yaml.safe_dump(rules))
+        unknown_goal = client.post("/reload", headers=HEADERS)
+        still_works = client.post("/verdict", json=payload(), headers=HEADERS)
+    assert missing_shape.status_code == 500
+    assert no_file.status_code == 500
+    assert unknown_goal.status_code == 422
+    assert unknown_goal.json()["error"]["details"]["errors"]
+    assert still_works.status_code == 200
