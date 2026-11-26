@@ -1,6 +1,7 @@
 import json
 
 import pytest
+
 from common.context import request_id_var, run_id_var
 from common.logging import configure_logging, get_logger
 

@@ -1,0 +1,26 @@
+# Build context is the repository root (docker build -f services/<name>/Dockerfile .)
+.git
+.github
+.claude
+.venv
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+!.env.example
+**/tests
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+**/node_modules
+docs
+eval
+k8s
+data
+templates
+scripts
+*.gguf
+*.safetensors
+*.md
+!README.md

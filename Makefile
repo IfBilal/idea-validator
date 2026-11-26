@@ -28,7 +28,7 @@ migrate: ## alembic upgrade (P2)
 seed: ## restore card snapshot (P3)
 	uv run --package ingestion python -m ingestion restore data/snapshots/latest.jsonl.gz
 images: ## build all module images tagged by commit SHA
-	for s in $(SERVICES); do docker build -t localhost:5001/$$s:$(TAG) services/$$s; done
+	for s in $(SERVICES); do docker build -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) .; done
 	docker build -t localhost:5001/ui:$(TAG) services/ui
 	docker build -t localhost:5001/ingestion:$(TAG) jobs/ingestion
 k8s-up: ## kind + calico + registry + ingress + metrics-server (P1)

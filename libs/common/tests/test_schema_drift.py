@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
+from pydantic import BaseModel
+from referencing import Registry, Resource
+from referencing.jsonschema import DRAFT202012
+
 from common.schemas import (
     DIMENSIONS,
     ClaimCheckRequest,
@@ -29,10 +34,6 @@ from common.schemas import (
     Verdict,
     Weights,
 )
-from jsonschema import Draft202012Validator
-from pydantic import BaseModel
-from referencing import Registry, Resource
-from referencing.jsonschema import DRAFT202012
 
 SCHEMAS = Path(__file__).resolve().parents[3] / "schemas"
 

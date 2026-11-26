@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from common.config import ConfigError, ServiceSettings, load_yaml_config
 
 

@@ -1,4 +1,5 @@
 import pytest
+
 from common.schemas import TraceRecord
 from common.tracing import MAX_PAYLOAD_CHARS, Tracer
 

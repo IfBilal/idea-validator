@@ -31,6 +31,9 @@ extend-exclude = ["eval/verdict/reference_engine.py"]
 select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "S", "RUF"]
 ignore = ["S101"]  # asserts are fine in tests
 
+[tool.ruff.lint.isort]
+known-first-party = ["common"]
+
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S105", "S106"]
 # one-off helper scripts: gh CLI calls are their purpose; long data tables
