@@ -1,0 +1,48 @@
+# M4/M5 source configuration. Allow-list is EXACT host match, https only. Read each site's terms + robots.txt first
+# (record in docs/data-sources.md). Official APIs only. No logins, no private data.
+version: "s1"
+user_agent: "IdeaValidatorBot/1.0 (+https://github.com/<org>/<repo>; CS4032 student project)"
+allow_list:
+  - hacker-news.firebaseio.com
+  - hn.algolia.com
+  - api.github.com
+  - oauth.reddit.com
+  - www.reddit.com            # robots.txt + OAuth token endpoint only
+  - api.producthunt.com
+  # LLM providers (used only by the M5 /llm proxy)
+  - api.openai.com
+  - api.anthropic.com
+  - generativelanguage.googleapis.com
+  - api.groq.com
+  # model weights download (model-import Job, via M5)
+  - github.com
+  - objects.githubusercontent.com
+  - huggingface.co
+sources:
+  hackernews:
+    enabled: true
+    rate_limit_per_min: 600
+    cache_ttl_s: 21600
+    schedule: "0 */6 * * *"
+    feeds: [showstories, askstories]
+    algolia_tags: [show_hn, ask_hn]
+  github:
+    enabled: true
+    rate_limit_per_min: 25          # search API: 30/min authenticated
+    cache_ttl_s: 43200
+    schedule: "30 */12 * * *"
+    topics: [saas, devtools, productivity, education, edtech, ai, llm, fintech, healthtech, developer-tools, nocode, automation, analytics, chrome-extension, self-hosted]
+    min_stars: 50
+  reddit:
+    enabled: true
+    rate_limit_per_min: 60
+    cache_ttl_s: 21600
+    schedule: "15 */6 * * *"
+    subreddits: [SideProject, startups, SaaS, EntrepreneurRideAlong, Entrepreneur, webdev]
+  producthunt:
+    enabled: false                  # enable when token is available
+    rate_limit_per_min: 30
+    cache_ttl_s: 86400
+    schedule: "0 3 * * *"
+  yc:
+    enabled: false                  # only if terms + robots allow; optional in Figure 1

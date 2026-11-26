@@ -1,0 +1,31 @@
+# Rubric file (Guide §10). One versioned file per dimension, anchor for every score 0..5,
+# at least one worked example per level. A change => new version file + new evaluation run (M13-04).
+dimension: feasibility
+version: 1
+id: "feasibility@v1"
+scale: 0-5      # higher is better for the student; half points allowed between anchors
+description: "Fits this student's hours, skills and compute with margin."
+anchors:
+  5: "Estimated effort <= 50% of available hours; all required skills present; compute fits."
+  4: "Effort <= 70% of available hours; at most one skill to learn; compute fits."
+  3: "Effort <= 90% of available hours; some skills to learn; compute fits."
+  2: "Effort ~ available hours (no margin) or two+ key skills missing."
+  1: "Effort above available hours or compute does not fit (would fail the gate if confirmed)."
+  0: "Clearly impossible for this student (needs paid compute/data/licences they lack, or 3x the hours)."
+features: [available_hours, estimated_effort_hours, skill_overlap, compute_fit]
+feature_prior:  # deterministic prior from computed features (0..5); blended with model judgment (alpha in config/verdict.yaml)
+  - { when: "estimated_effort_hours <= 0.5*available_hours and skill_overlap >= 0.8 and compute_fit", score: 5 }
+  - { when: "estimated_effort_hours <= 0.7*available_hours and skill_overlap >= 0.6 and compute_fit", score: 4 }
+  - { when: "estimated_effort_hours <= 0.9*available_hours and compute_fit", score: 3 }
+  - { when: "estimated_effort_hours <= available_hours", score: 2 }
+  - { when: "estimated_effort_hours <= 3*available_hours", score: 1 }
+  - { when: "true", score: 0 }
+evidence_rule: "Every score cites evidence ids from the provided EVIDENCE block. No valid evidence -> abstain (score null, confidence 0)."
+output_schema: score, confidence, evidence_ids, reason
+examples:
+  - { level: 5, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 5, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 4, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 4, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 3, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 3, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 2, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 2, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 1, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 1, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 0, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 0, evidence_ids: ["card_xxxxxxxx#c0"] } }

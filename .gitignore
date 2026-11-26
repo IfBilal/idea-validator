@@ -1,0 +1,36 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+**/secrets/*.yaml
+# model weights & large data (use release assets / registry)
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+models/
+jobs/finetune/outputs/
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# node
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+# runtime
+traces/
+eval/results/raw/
+*.log
+.DS_Store

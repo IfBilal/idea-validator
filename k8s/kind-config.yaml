@@ -1,0 +1,24 @@
+# kind cluster with NO default CNI -> install Calico (enforces NetworkPolicy). Guide §4.3, §9.3. Pin node image in P1-T04.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: idea-validator
+networking:
+  disableDefaultCNI: true
+  podSubnet: 192.168.0.0/16
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - { containerPort: 80, hostPort: 80, protocol: TCP }
+      - { containerPort: 443, hostPort: 443, protocol: TCP }
+  - role: worker
+  - role: worker

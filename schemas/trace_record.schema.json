@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/trace_record.schema.json",
+  "title": "Trace record (M13) - Guide \u00a72.3",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "step_id": {
+      "type": "integer"
+    },
+    "parent_step": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "agent": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "tool_call",
+        "llm_call",
+        "decision"
+      ]
+    },
+    "tool": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "input": {},
+    "output": {},
+    "tokens_in": {
+      "type": "integer"
+    },
+    "tokens_out": {
+      "type": "integer"
+    },
+    "cost_usd": {
+      "type": "number"
+    },
+    "latency_ms": {
+      "type": "integer"
+    },
+    "retries": {
+      "type": "integer"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cache_hit": {
+      "type": "boolean"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "service": {
+      "type": "string"
+    },
+    "prompt_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rubric_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fallback": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "run_id",
+    "step_id",
+    "parent_step",
+    "agent",
+    "kind",
+    "tool",
+    "input",
+    "output",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd",
+    "latency_ms",
+    "retries",
+    "model",
+    "cache_hit",
+    "error",
+    "ts"
+  ],
+  "additionalProperties": false
+}

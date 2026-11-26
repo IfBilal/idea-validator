@@ -1,0 +1,19 @@
+{
+  "id": "card_8f21ab00",
+  "name": "ExampleApp",
+  "summary": "One line on what it does",
+  "problem": "...",
+  "customer": "...",
+  "niche_tags": [
+    "devtools"
+  ],
+  "stage": "launched",
+  "funding_usd": 1500000,
+  "source": "hackernews",
+  "url": "https://news.ycombinator.com/item?id=1",
+  "published_at": "2026-03-02",
+  "fetched_at": "2026-11-10",
+  "text": "Cleaned text used for embeddings",
+  "kind": "product",
+  "content_hash": "sha256:..."
+}

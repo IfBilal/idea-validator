@@ -1,0 +1,31 @@
+# Rubric file (Guide §10). One versioned file per dimension, anchor for every score 0..5,
+# at least one worked example per level. A change => new version file + new evaluation run (M13-04).
+dimension: demand_pain
+version: 1
+id: "demand_pain@v1"
+scale: 0-5      # higher is better for the student; half points allowed between anchors
+description: "How strongly and how widely real people show the problem this idea solves."
+anchors:
+  5: "Five or more independent sources on 2+ platforms show the same recurring problem, with growth in the last 6 months."
+  4: "Four or more independent sources on 2+ platforms show the problem clearly; stable or growing."
+  3: "Two or three sources show the problem, no clear growth."
+  2: "Two weak or old mentions, or one strong recent mention."
+  1: "A single weak or old mention."
+  0: "No evidence of the problem."
+features: [n_sources, n_platforms, complaint_count, trend_growth, recency_share]
+feature_prior:  # deterministic prior from computed features (0..5); blended with model judgment (alpha in config/verdict.yaml)
+  - { when: "n_sources >= 5 and n_platforms >= 2 and trend_growth > 0.1", score: 5 }
+  - { when: "n_sources >= 4 and n_platforms >= 2", score: 4 }
+  - { when: "n_sources >= 2", score: 3 }
+  - { when: "n_sources == 1 and recency_share >= 0.5", score: 2 }
+  - { when: "n_sources == 1", score: 1 }
+  - { when: "true", score: 0 }
+evidence_rule: "Every score cites evidence ids from the provided EVIDENCE block. No valid evidence -> abstain (score null, confidence 0)."
+output_schema: score, confidence, evidence_ids, reason
+examples:
+  - { level: 5, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 5, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 4, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 4, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 3, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 3, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 2, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 2, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 1, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 1, evidence_ids: ["card_xxxxxxxx#c0"] } }
+  - { level: 0, input: "TODO(Phase 5): real idea + evidence ids from the KB at this level", expected: { score: 0, evidence_ids: ["card_xxxxxxxx#c0"] } }

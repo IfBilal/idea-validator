@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/student_profile.schema.json",
+  "title": "Student profile (M2) - Guide \u00a72.1",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "maxItems": 30
+    },
+    "hours_per_week": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 80
+    },
+    "weeks_available": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 52
+    },
+    "team_size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "compute": {
+      "enum": [
+        "laptop",
+        "free_gpu",
+        "paid"
+      ]
+    },
+    "goal": {
+      "enum": [
+        "startup",
+        "portfolio",
+        "course_project"
+      ]
+    },
+    "interests": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 50
+      },
+      "maxItems": 30
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": [
+    "user_id",
+    "skills",
+    "hours_per_week",
+    "weeks_available",
+    "team_size",
+    "compute",
+    "goal",
+    "interests"
+  ],
+  "additionalProperties": false
+}

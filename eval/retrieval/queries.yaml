@@ -1,0 +1,30 @@
+# >= 20 hand-written retrieval queries (M6-06). After ingestion, BOTH members label relevant_card_ids by searching the KB
+# (grade 2 = highly relevant, 1 = relevant). Unlabelled queries make the gate test fail on purpose.
+# Metrics: Recall@5, Recall@10, MRR@10, nDCG@10 for modes vector | keyword | hybrid | hybrid+rerank.
+version: 1
+labelled_by: []          # e.g. ["member1", "member2"]
+queries:
+  - { id: q01, query: "slow export of notes to markdown", filters: {}, relevant: {} }
+  - { id: q02, query: "tool to track university assignment deadlines", filters: {}, relevant: {} }
+  - { id: q03, query: "open source alternative to Notion for teams", filters: {}, relevant: {} }
+  - { id: q04, query: "AI code review bot for GitHub pull requests", filters: {sources: [github]}, relevant: {} }
+  - { id: q05, query: "complaints about expensive SaaS analytics for small startups", filters: {kinds: [complaint]}, relevant: {} }
+  - { id: q06, query: "self-hosted uptime monitoring", filters: {}, relevant: {} }
+  - { id: q07, query: "language learning app with spaced repetition", filters: {}, relevant: {} }
+  - { id: q08, query: "is there a tool to summarise long meeting recordings", filters: {kinds: [request]}, relevant: {} }
+  - { id: q09, query: "personal finance budgeting app for students", filters: {}, relevant: {} }
+  - { id: q10, query: "Chrome extension to block distracting websites", filters: {}, relevant: {} }
+  - { id: q11, query: "LLM evaluation and prompt testing framework", filters: {date_from: "2024-01-01"}, relevant: {} }
+  - { id: q12, query: "freelancer invoicing and time tracking", filters: {}, relevant: {} }
+  - { id: q13, query: "no-code internal tools builder", filters: {}, relevant: {} }
+  - { id: q14, query: "resume builder ATS optimisation", filters: {}, relevant: {} }
+  - { id: q15, query: "developer documentation search with AI", filters: {}, relevant: {} }
+  - { id: q16, query: "hard to find affordable mental wellness journaling app", filters: {kinds: [complaint, request]}, relevant: {} }
+  - { id: q17, query: "Show HN: open source vector database", filters: {sources: [hackernews]}, relevant: {} }
+  - { id: q18, query: "API mocking tool for frontend developers", filters: {}, relevant: {} }
+  - { id: q19, query: "community event management for student societies", filters: {}, relevant: {} }
+  - { id: q20, query: "home inventory and warranty tracker", filters: {}, relevant: {} }
+  - { id: q21, query: "web scraping without code", filters: {}, relevant: {} }
+  - { id: q22, query: "markdown based static site generator", filters: {sources: [github]}, relevant: {} }
+  - { id: q23, query: "flashcards generated from lecture slides", filters: {}, relevant: {} }
+  - { id: q24, query: "customer feedback board for indie SaaS", filters: {}, relevant: {} }

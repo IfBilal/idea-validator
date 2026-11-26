@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/fetch.schema.json",
+  "title": "Tool layer fetch (M5 POST /fetch)",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "source": {
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "scout",
+            "evidence",
+            "model_import"
+          ]
+        },
+        "max_bytes": {
+          "type": "integer",
+          "maximum": 5000000
+        }
+      },
+      "required": [
+        "url",
+        "source",
+        "purpose"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "final_url": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "json": {},
+        "cache_hit": {
+          "type": "boolean"
+        },
+        "sanitiser": {
+          "type": "object",
+          "properties": {
+            "removed_patterns": {
+              "type": "integer"
+            },
+            "flagged": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "removed_patterns",
+            "flagged"
+          ],
+          "additionalProperties": false
+        },
+        "fetched_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "url",
+        "status",
+        "cache_hit",
+        "sanitiser",
+        "fetched_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

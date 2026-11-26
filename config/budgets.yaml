@@ -1,0 +1,27 @@
+# Per-run budgets (M13). Enforced in M3 (orchestrator) AND M5 (tool layer). Over budget => ask user (approval) or stop.
+version: "b1"
+defaults: &defaults
+  max_retries: 2
+  timeouts_s: { tool_fetch: 10, kb_search: 5, scorer: 60, llm: 60, verdict: 2 }
+validate:
+  <<: *defaults
+  max_tokens: 60000
+  max_pages: 30
+  max_steps: 80
+  max_cost_usd: 0.05
+  approval_threshold_usd: 0.05      # a step that would push spend above this needs approval (U4)
+  deep_search: { max_pages: 20, est_cost_per_page_usd: 0.0008 }
+discover:
+  <<: *defaults
+  max_tokens: 250000
+  max_pages: 60
+  max_steps: 400
+  max_cost_usd: 0.25
+  approval_threshold_usd: 0.25
+  debate: { max_rounds: 3 }          # hard cap, cannot be raised above 3
+  validate_children_concurrency: 3
+whatif:    { <<: *defaults, max_tokens: 40000, max_pages: 10, max_steps: 60, max_cost_usd: 0.03, approval_threshold_usd: 0.03 }
+challenge: { <<: *defaults, max_tokens: 10000, max_pages: 0, max_steps: 20, max_cost_usd: 0.01, approval_threshold_usd: 0.01 }
+eval:      { <<: *defaults, max_tokens: 80000, max_pages: 0, max_steps: 100, max_cost_usd: 0.05, approval_threshold_usd: 1.0 }
+concurrency: { scorers: 4 }
+approval_timeout_s: 600             # no answer => treated as declined

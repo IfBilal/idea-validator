@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/verdict.schema.json",
+  "title": "Verdict (M11) - Guide \u00a72.3 (+extensions)",
+  "type": "object",
+  "properties": {
+    "idea_id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "GO",
+        "PIVOT",
+        "NO-GO",
+        "INSUFFICIENT_EVIDENCE"
+      ]
+    },
+    "stability": {
+      "enum": [
+        "STABLE",
+        "BORDERLINE"
+      ]
+    },
+    "score": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "evidence": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_evaluated"
+          ]
+        },
+        "feasibility": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_evaluated"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_evaluated"
+          ]
+        },
+        "duplicate": {
+          "enum": [
+            "pass",
+            "fail",
+            "not_evaluated"
+          ]
+        }
+      },
+      "required": [
+        "evidence",
+        "feasibility",
+        "risk",
+        "duplicate"
+      ],
+      "additionalProperties": false
+    },
+    "weights": {
+      "type": "object",
+      "properties": {
+        "demand_pain": {
+          "type": "number"
+        },
+        "competition": {
+          "type": "number"
+        },
+        "differentiation": {
+          "type": "number"
+        },
+        "feasibility": {
+          "type": "number"
+        },
+        "risk": {
+          "type": "number"
+        },
+        "learning": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "demand_pain",
+        "competition",
+        "differentiation",
+        "feasibility",
+        "risk",
+        "learning"
+      ],
+      "additionalProperties": false
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "T_go": {
+          "type": "number"
+        },
+        "T_no": {
+          "type": "number"
+        },
+        "floor": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "T_go",
+        "T_no",
+        "floor"
+      ],
+      "additionalProperties": false
+    },
+    "scores": {
+      "type": "array",
+      "items": {
+        "$ref": "dimension_score.schema.json"
+      },
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "weakest_dimension": {
+      "anyOf": [
+        {
+          "enum": [
+            "demand_pain",
+            "competition",
+            "differentiation",
+            "feasibility",
+            "risk",
+            "learning"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "what_would_make_go": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "dimension": {
+            "type": "string"
+          },
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          },
+          "new_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "new_verdict": {
+            "type": "string"
+          },
+          "stable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "new_verdict"
+        ]
+      }
+    },
+    "sensitivity": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "integer"
+        },
+        "flipped": {
+          "type": "integer"
+        },
+        "flips": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runs",
+        "flipped"
+      ],
+      "additionalProperties": false
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "missing": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "versions": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "rubrics": {
+          "type": "string"
+        },
+        "profile_weights": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "rubrics",
+        "profile_weights"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "idea_id",
+    "version",
+    "run_id",
+    "verdict",
+    "stability",
+    "score",
+    "confidence",
+    "gates",
+    "weights",
+    "thresholds",
+    "scores",
+    "weakest_dimension",
+    "what_would_make_go",
+    "sensitivity",
+    "versions"
+  ],
+  "additionalProperties": false
+}

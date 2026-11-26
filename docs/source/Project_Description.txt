@@ -1,0 +1,383 @@
+                                         National University of Computer and Emerging
+                                         Sciences
+                                         Department of Software Engineering
+                                         CS4032 Software Construction and Development
+
+S E M E S T E R P R O J E C T: D E S C R I P T I O N
+
+Idea Generator with Go / No-Go
+An interactive multi-agent system, built and deployed end to end
+
+Contents
+1. Overview                                             01       4. Modules                                             03
+  1.1 What you are building                              01      5. How the verdict is decided                          04
+  1.2 Project at a glance                                01        5.1 Six dimensions                                   04
+  1.3 Rules                                              01        5.2 Hard gates                                       05
+2. What the user can do                                 02         5.3 Score, thresholds and stability                  05
+                                                                   5.4 Worked example                                   06
+3. Architecture                                         02
+  3.1 Discover workflow                                  03      6. Submission                                          06
+  3.2 Validate workflow                                  03
+
+
+1. Overview
+
+1.1 What you are building
+An interactive system that helps a student choose a project. It collects startup ideas, products and niches
+from public sources (YC directory, Hacker News, GitHub, Product Hunt or Reddit), organises them into a map
+of niches and trends, and works in two ways:
+      Discover. The student gives a profile (skills, hours, team size, compute, goal: startup, portfolio or
+      course project). The system proposes ideas and niches that fit, including new ideas built from gaps it
+      found in the data.
+      Validate. The student brings an idea (or picks one the system proposed). The system returns a verdict,
+      GO, PIVOT, NO-GO or INSUFFICIENT EVIDENCE, with the evidence behind it, what would change it,
+      and how stable it is.
+It is a complete product: web interface, multi-agent backend, knowledge base (RAG), a fine-tuned scoring
+model, monitoring and evaluation of the agents (AgenticOps), and a delivery pipeline that builds, tests and
+deploys everything on Kubernetes.
+
+1.2 Project at a glance
+ Item                                   Value
+ Group size                             2 students
+ Required technology                    GitHub, GitHub Actions, Jenkins, Docker, Kubernetes, RAG, fine-tuning,
+                                        AgenticOps
+ Deployment                             The whole system runs on Kubernetes, one container per module
+ Companion document                     Semester_Project_Guide.pdf has the setup instructions and extra information.
+                                        This document says what to build. The guide says how.
+
+1.3 Rules
+      Work in a group of 2. Both members commit code, review each other's pull requests and must be able
+      to explain the whole system.
+      AI coding tools and any library or framework are allowed. You are responsible for every line. Keep an AI-
+      usage log of what AI wrote, what you changed and why.
+      Collect data only through official APIs or pages that allow it, respect robots.txt and rate limits, and
+      keep no private data. Never commit keys or passwords.
+
+
+
+
+CS4032 Semester Project: Description                                                                             Page 1 of 6
+2. What the user can do
+ #          The user can                                 Done when
+ U1         Sign up, log in and save a profile.          The profile is stored, editable, and changes later
+                                                         recommendations.
+ U2         Ask for ideas in a niche or in general       A ranked list of ideas is returned, each with a verdict and a
+            (Discover).                                  short reason.
+ U3         Watch the agents work live.                  The screen shows the running agent, its tool calls and its
+                                                         spend as they happen.
+ U4         Approve or decline an expensive deep         The system states the cost and waits before going over
+            search.                                      budget.
+ U5         Submit their own idea (Validate) and answer Only questions that change the result are asked, then a
+            clarifying questions.                       verdict card is shown.
+ U6         Read a verdict card.                         It shows the verdict, gates, six scores with evidence links,
+                                                         weights, confidence and stability.
+ U7         Ask "what would make this GO?"               Concrete changes are proposed and one can be applied,
+                                                         giving version 2 computed by the engine.
+ U8         Press "Challenge" on a claim.                The critic re-checks it against its evidence and defends or
+                                                         removes it.
+ U9         Compare ideas and see history.               Past ideas and versions are listed and two ideas compare on
+                                                         all six dimensions.
+ U10        See why a verdict is INSUFFICIENT            The card says what was missing and does not guess.
+            EVIDENCE.
+
+The same idea can get different verdicts for different students: a large idea can be GO for a team with 200
+free hours and NO-GO for a solo student with 20.
+
+
+3. Architecture
+
+
+
+
+Figure 1. High-level architecture. Solid arrows are requests and data. Green dotted arrows are telemetry sent to M13.
+The scouts reach the internet only through M5. Each module is its own container.
+
+
+
+CS4032 Semester Project: Description                                                                            Page 2 of 6
+3.1 Discover workflow
+
+
+             1 Request                                    2 Niches                                         3 Ideator                                4 Gap Analyst
+          Student sends profile                         Pick niches and                                   Proposes ideas                           Adds complaints and
+             and niche wish                              trends that fit                               citing gap evidence                           missing features
+
+
+                 M1, M2                                     M7 + M6                                             M8                                       M8 + M6
+
+
+                                                                                  idea list goes on to step 5
+
+
+
+              5 Skeptic                                    6 Critic                                       7 Validate                                   8 Result
+          Argues against each                        Keeps only objections                            Survivors go through                          Ranked ideas with
+           idea with evidence                         backed by evidence                              the Validate workflow                           verdict cards
+
+
+                   M8                                         M12                                           M9 to M11                                    M1, M13
+
+
+                                       debate loop: steps 3 to 6 repeat up to 3 rounds; ideas that the Skeptic defeats with evidence are dropped
+
+Figure 2. Discover. The Skeptic can remove ideas. Survivors are validated like any other idea.
+
+3.2 Validate workflow
+
+
+                                                                                                           3 Scorers
+               1 Intake                                  2 Evidence                                                                                   4 Features
+                                                                                                         4 scorers run in
+             Idea + profile;                            Retrieve cards;                                                                            Computed numbers
+                                                                                                        parallel, each with
+            clarify if needed                          scout on demand                                                                              from the evidence
+                                                                                                          its own rubric
+
+                 M1, M3                                    M6, M4, M5                                       M9 + M10                                     M6, M7
+
+
+                                                                              scores, features and evidence ids
+
+
+
+              5 Verdict                                 6 Challenge                                       7 Stability                                    8 Card
+             Gates, weights,                            Skeptic objects;                              Sensitivity check and                         Verdict card; trace
+         thresholds, confidence                       critic checks claims                            what-would-make-GO                            and cost recorded
+
+
+                  M11                                       M8, M12                                             M11                                      M1, M13
+
+                                           the language model gives scores with evidence; only the Verdict Engine decides the verdict
+
+
+Figure 3. Validate. Four scorers run in parallel. The verdict comes from code, not from a model.
+
+
+4. Modules
+Each module runs in its own container and is reachable from the rest of the system on Kubernetes. Data
+formats and endpoints are in the guide (Sections 2 and 3).
+
+ Module                           What it does                                                     Must have
+ M1 Web UI and API                The only entrance. Chat, live                                    API address set at runtime, login, rate limits, input
+ Gateway                          progress, verdict card, approval                                 validation, component tests.
+                                  prompt, history.
+ M2 Profile, Session              Postgres for users, profiles, ideas,                             Migrations. Cache keys include profile and rubric
+ and Cache                        versions and runs. Redis for cached                              versions. Cache hits are visible. Layered backend
+                                  verdicts and retrieval.                                          (routes, services, repositories) as in Assignment 1.
+ M3 Orchestrator                  Supervisor that runs the Discover and                            Parallel agents, retries and timeouts, stop at budget
+                                  Validate workflows as testable state                             and ask the user, re-run only what changed, every
+                                  machines.                                                        decision traced.
+ M4 Scout agents                  Bring in new data from at least 3                                Scheduled (CronJob) and on demand, per-source
+                                  sources.                                                         rate limits and failure handling, internet only
+                                                                                                   through M5.
+ M5 Tool Layer                    The single controlled exit to the                                Connectors, domain allow-list, rate limits, robots.txt,
+                                  internet.                                                        cache, a sanitiser that strips instructions aimed at
+                                                                                                   models, and a NetworkPolicy so only M5 reaches the
+                                                                                                   internet.
+ M6 Knowledge                     Searchable memory of ideas, and the                              Hybrid search with reranking, filters by date, source
+ Base (RAG)                       source of every piece of evidence.                               and niche, card ids for citations, freshness and
+                                                                                                   coverage tracking, retrieval quality measured on at
+                                                                                                   least 20 hand-written queries.
+
+
+
+
+CS4032 Semester Project: Description                                                                                                                                      Page 3 of 6
+ M6i Ingestion jobs           Turn fetched pages into idea cards:      Repeatable without duplicates. At least 1,500 cards
+                              dedupe, chunk, embed, index.             from at least 3 sources.
+ M7 Niche and Trend           Clusters cards into niches and finds     Named niches, monthly time series, a list of gaps
+ Analyst                      rising, flat and saturated niches and    that feeds M8 and M9.
+                              gaps.
+ M8 Idea Generator            Ideator, Gap Analyst and Skeptic         Limited debate rounds, every idea cites its gap
+ agents                       debate to propose ideas that fit the     evidence, ideas defeated with evidence are
+                              profile.                                 dropped.
+ M9 Validation                Four scorers in parallel: Demand and     Own rubric, tools and output schema each.
+ agents                       Pain, Competition and Differentiation,   Computed features plus model judgment. Every
+                              Feasibility for this student, Risk.      score cites evidence ids, otherwise the scorer
+                                                                       abstains.
+ M10 Scoring Model            Fine-tuned 1B to 3B model (LoRA or       At least 300 training examples, at least 60 checked
+                              QLoRA) in its own container that         by hand. Fallback to a hosted model. Comparison of
+                              applies the rubrics.                     base, fine-tuned and hosted models.
+ M10t Fine-tuning             Offline: data, training, evaluation,     Data, scripts and documented commands in the
+ pipeline                     model.                                   repository.
+ M11 Verdict Engine           Turns the six scores into a verdict by   Plain code with no LLM, same input gives same
+                              fixed rules (Section 5).                 output, rules in a ConfigMap, unit tests for every
+                                                                       gate, threshold edge, sensitivity check and what-if.
+ M12 Critic and               Stops unsupported claims and             Claim check against evidence, injection defence
+ Guardrails                   manipulation.                            (fetched text is data), input rail, approval above
+                                                                       budget.
+ M13 AgenticOps               Shows, limits and evaluates what the     Tracing per run, budgets, prompt and rubric registry,
+                              agents do.                               evaluation harness, drift reports, dashboard.
+ M14 Platform                 Builds, tests, ships and runs the        GitHub with protected main and pull requests,
+                              system.                                  GitHub Actions on every pull request, Jenkins for
+                                                                       delivery, one Docker image per module, full
+                                                                       Kubernetes deployment with rollout and rollback.
+
+
+5. How the verdict is decided
+Principle. The language model never outputs the verdict. Models produce evidence-backed scores, and a
+deterministic, unit-tested program (M11) turns them into the verdict. This makes it explainable, repeatable
+and testable. It is decision support, not a prediction of success.
+Why this design. Idea-validation frameworks list dimensions but give no formula, so your team defines
+and defends one. Weighted scoring models are standard in project selection, but their weights are
+subjective and close totals flip with small changes, so the engine also reports how stable the verdict is.
+Research on LLM judges shows that scores drift unless the rubric is locked, evidence is required and scores
+are calibrated against human labels, so every score carries evidence ids and uses a versioned rubric.
+
+5.1 Six dimensions
+Each is scored 0 to 5 (higher is better for the student) with a confidence from 0 to 1 and evidence ids. Each
+score combines computed features (numbers calculated in code from the knowledge base) with the fine-
+tuned model's judgment, under a versioned rubric.
+
+ Dimension                             5 means
+ Demand and pain                       Many independent sources show the same strong, recurring problem.
+ Competition                           Few or weak direct competitors, so there is room to enter.
+ Differentiation                       A clear gap that existing products do not address.
+ Feasibility for this student          Fits the student's hours, skills and compute with margin.
+ Risk                                  No legal, privacy, safety or platform-dependency concern.
+ Learning and portfolio value Teaches skills the student wants and shows well on a CV.
+
+
+
+
+CS4032 Semester Project: Description                                                                                  Page 4 of 6
+5.2 Hard gates
+Checked first. A failed gate decides the verdict whatever the score.
+
+ Gate                             Passes when                                                                                                  If it fails
+ Evidence                         At least 3 independent sources on at least 2 platforms                                                       INSUFFICIENT EVIDENCE
+ Feasibility                      Estimated build effort fits the student's available hours                                                    NO-GO, hours gap stated
+ Risk                             No legal or safety blocker                                                                                   NO-GO, blocker named
+ Duplicate                        No existing product with the same core features for the                                                      NO-GO, product named
+                                  same user, unless Differentiation is 3 or more
+
+                          Idea + profile + six scored dimensions
+
+
+
+
+                                                                             no              INSUFFICIENT EVIDENCE
+                         Evidence gate: 3+ sources, 2+ platforms?
+                                                                                                 says so, does not guess
+
+                                                  yes
+
+                                                                             no                         NO-GO
+                           Feasibility gate: fits student's hours?
+                                                                                                 too big for this student
+
+                                                  yes
+
+                                                                             no                         NO-GO
+                           Risk gate: no legal or safety blocker?
+                                                                                                    blocker is named
+
+                                                  yes
+
+                                                                             no
+                                                                                                        NO-GO
+                            Duplicate gate: no same-user clone?
+                                                                                    existing product named (unless Differentiation 3+)
+
+                                                  yes
+
+
+                       Weighted score (0 to 100) from profile weights
+
+
+
+
+                                                                             no
+                                                                                             INSUFFICIENT EVIDENCE
+                             Overall confidence high enough?
+                                                                                                   confidence too low
+
+                                                  yes
+                                                                                                                                         yes                PIVOT
+                                                                                                                                                   name the weakest dimension
+                                                                             no
+                       Score >= T_go and no dimension below floor?                                 Score >= T_no ?
+
+                                                                                                                                                            NO-GO
+                                                                                                                                         no
+                                                  yes                                                                                                     score too low
+
+
+                                                                            holds                          GO
+                                                                                                      stable verdict
+                                      Sensitivity check
+                               weights +/- 20%, weakest score +/- 1
+                                                                                                    BORDERLINE
+                                                                            flips
+                                                                                                    show what flips it
+
+
+
+Figure 4. Decision flow in M11. Gates come first. Only an idea that passes every gate is scored.
+
+5.3 Score, thresholds and stability
+      Weighted score. Sum of weight x score, scaled to 0 to 100. Weights come from the goal and add to
+      100. Starting presets (you may change them and must justify it):
+
+ Goal                                  Demand                         Compet.        Differ.                             Feasib.                  Risk                          Learn.
+ Startup                               25                             20             20                                  15                       15                            5
+ Portfolio                             15                             15             15                                  25                       10                            20
+ Course project                        10                             10             15                                  35                       10                            20
+
+      Thresholds. GO needs a score of at least T_go and no score below the floor on the first five
+      dimensions. A score between T_no and T_go, or a floor breach, gives PIVOT and names the weakest
+      dimension. Below T_no is NO-GO. Starting values: T_go 70, T_no 50, floor 1.5. You tune them (Guide
+      Section 10).
+      Confidence. 0.7 x mean dimension confidence + 0.3 x min(1, sources / 5). Below 0.5 the verdict
+      becomes INSUFFICIENT EVIDENCE: the system abstains instead of guessing.
+      Challenge. The Skeptic argues the opposite. Each objection the critic accepts as evidence-backed
+      lowers the matching score by 0.5 (at most 1.0) and its confidence by 0.1. Unsupported objections are
+      discarded.
+      Sensitivity. The engine recomputes the verdict with each weight moved up and down by 20 percent
+      (the difference shared among the others) and the least confident score moved by one point. If any run
+      changes the verdict, the card says BORDERLINE and shows what flips it.
+      What would make this GO. The engine finds the smallest change that changes the verdict. Applying
+      it re-runs the scorers and the engine and creates a new version.
+
+
+
+
+CS4032 Semester Project: Description                                                                                                                                                 Page 5 of 6
+5.4 Worked example
+Goal Portfolio (weights 15 / 15 / 15 / 25 / 10 / 20). Scores: Demand 3.5, Competition 2.0, Differentiation 3.0,
+Feasibility 4.0, Risk 3.5, Learning 4.5. All gates pass.
+  1. Weighted sum = 52.5 + 30 + 45 + 100 + 35 + 90 = 352.5. Divide by 5: 70.5. That is above T_go = 70
+     and no floor is breached, so the first result is GO.
+  2. Lower the Feasibility weight by 20 percent (25 to 20) and share the 5 freed points over the others in
+     proportion. The score becomes about 69.9, so the verdict flips to PIVOT and the card says GO,
+     BORDERLINE.
+  3. What would make this GO: raise Competition from 2.0 to 3.0 (for example by narrowing to a less
+     crowded segment). The score becomes 73.5, and it stays above 70 under the same weight change
+     (about 73.1), so it is a stable GO.
+
+
+6. Submission
+Submit through GCR:
+  1. GitHub repository link. Code, Dockerfiles, workflows, Jenkinsfile, k8s/ , fine-tuning data and scripts,
+     rubrics, evaluation sets and a README that lets someone else start the system. Make sure the people
+     marking can open it.
+  2. Report (PDF, at most 10 pages, not counting the screenshots). Sections: summary and changes from
+     the architecture above; modules and architecture figure; verdict design (gates, weights, thresholds,
+     rubrics, tuning results with a before and after confusion matrix, one worked example); knowledge base
+     (sources, card counts, retrieval results); fine-tuning (data, settings, comparison table, one case where it
+     did not help); AgenticOps results; platform (pipeline, Kubernetes design, how you measured requests
+     and limits); known limits and next steps.
+  3. Screenshots with one-line captions: protected main and a pull request with required checks; the
+     merge-conflict pull request; a green and a failing GitHub Actions run; a green and a failing Jenkins run;
+     all pods running; a rollout and a rollback; the NetworkPolicy test; the interface (profile, Discover results,
+     verdict card, challenge, what-if version 2, INSUFFICIENT EVIDENCE); a trace, the dashboard and a drift
+     report; the retrieval result and the fine-tuning comparison.
+  4. AI-usage log and at least 3 short design decision records (templates in Guide Section 11).
+  5. Contribution table, signed by both members (template in Guide Section 11). It must match the git
+     history.
+
+
+
+
+CS4032 Semester Project: Description                                                                      Page 6 of 6
+

@@ -1,0 +1,19 @@
+{
+  "run_id": "run_90",
+  "step_id": 12,
+  "parent_step": 9,
+  "agent": "competition_scorer",
+  "kind": "tool_call",
+  "tool": "search_kb",
+  "input": "...",
+  "output": "...",
+  "tokens_in": 812,
+  "tokens_out": 140,
+  "cost_usd": 0.0004,
+  "latency_ms": 930,
+  "retries": 0,
+  "model": "scorer-lora@v1",
+  "cache_hit": false,
+  "error": null,
+  "ts": "2026-11-26T10:00:00Z"
+}

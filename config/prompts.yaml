@@ -1,0 +1,12 @@
+# Active prompt versions (prompt registry, M13). Changing a prompt => new file version + evaluation run.
+version: "p1"
+active:
+  intake: "intake@v1"
+  ideator: "ideator@v1"
+  gap_analyst: "gap_analyst@v1"
+  skeptic: "skeptic@v1"
+  change_suggester: "change_suggester@v1"
+  idea_rewriter: "idea_rewriter@v1"
+  scorer: "scorer@v1"
+  critic: "critic@v1"
+  niche_namer: "niche_namer@v1"

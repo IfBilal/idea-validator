@@ -1,0 +1,16 @@
+# copy to services/<name>/.dockerignore
+**/__pycache__
+**/*.pyc
+.venv
+.env
+.env.*
+tests/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+*.gguf
+*.safetensors
+.git
+*.md
+!README.md

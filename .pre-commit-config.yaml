@@ -1,0 +1,16 @@
+# Pin `rev` to the latest release during Phase 0 (P0-T03).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: vX.Y.Z
+    hooks: [{ id: ruff, args: [--fix] }, { id: ruff-format }]
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: vX.Y.Z
+    hooks: [{ id: gitleaks }]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: vX.Y.Z
+    hooks:
+      - { id: end-of-file-fixer }
+      - { id: trailing-whitespace }
+      - { id: check-yaml, args: [--allow-multiple-documents] }
+      - { id: check-added-large-files, args: [--maxkb=5000] }
+      - { id: detect-private-key }

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/evidence_item.schema.json",
+  "title": "Evidence item (M6) - Guide \u00a72.2",
+  "type": "object",
+  "properties": {
+    "evidence_id": {
+      "type": "string",
+      "pattern": "^card_[0-9a-f]{8,12}#c\\d+$"
+    },
+    "card_id": {
+      "type": "string",
+      "pattern": "^card_[0-9a-f]{8,12}$"
+    },
+    "quote": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "source": {
+      "enum": [
+        "hackernews",
+        "github",
+        "reddit",
+        "producthunt",
+        "yc"
+      ]
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "retrieved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "score": {
+      "type": "number"
+    },
+    "rank": {
+      "type": "integer"
+    },
+    "card_name": {
+      "type": "string"
+    },
+    "published_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "niche": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "evidence_id",
+    "card_id",
+    "quote",
+    "source",
+    "url",
+    "retrieved_at"
+  ],
+  "additionalProperties": false
+}

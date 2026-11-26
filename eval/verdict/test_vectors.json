@@ -1,0 +1,3213 @@
+[
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 2.0,
+        "demand_pain": 3.5,
+        "differentiation": 3.0,
+        "feasibility": 4.0,
+        "learning": 4.5,
+        "risk": 3.5
+      },
+      "confidence": 0.825,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 70.50 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 70.5,
+      "sensitivity": {
+        "flipped": 4,
+        "flips": [
+          {
+            "change": "weight competition +20%",
+            "score": 69.4235,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight feasibility -20%",
+            "score": 69.8667,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight learning -20%",
+            "score": 69.525,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "score competition -1",
+            "score": 67.5,
+            "verdict": "PIVOT"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 15.0,
+        "demand_pain": 15.0,
+        "differentiation": 15.0,
+        "feasibility": 25.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 1.0,
+          "dimension": "competition",
+          "from": 2.0,
+          "new_score": 73.5,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 3.0
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "portfolio",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.8,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.6,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.8,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.75,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.85,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.5
+        }
+      ],
+      "version": 1
+    },
+    "name": "PDF worked example: 70.5 GO, BORDERLINE (feasibility weight -20% -> ~69.9 PIVOT)"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 3.0,
+        "demand_pain": 3.5,
+        "differentiation": 3.0,
+        "feasibility": 4.0,
+        "learning": 4.5,
+        "risk": 3.5
+      },
+      "confidence": 0.825,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 73.50 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 73.5,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 15.0,
+        "demand_pain": 15.0,
+        "differentiation": 15.0,
+        "feasibility": 25.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "portfolio",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.8,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.6,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.8,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.75,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.85,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.5
+        }
+      ],
+      "version": 1
+    },
+    "name": "PDF worked example after what-if: competition 3.0 -> 73.5 stable GO"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": null,
+      "gates": {
+        "duplicate": "not_evaluated",
+        "evidence": "fail",
+        "feasibility": "not_evaluated",
+        "risk": "not_evaluated"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "evidence gate: 2 of 3 independent sources, 2 of 2 platforms"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "INSUFFICIENT_EVIDENCE",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 2,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "evidence gate fail: 2 sources -> INSUFFICIENT_EVIDENCE"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": null,
+      "gates": {
+        "duplicate": "not_evaluated",
+        "evidence": "fail",
+        "feasibility": "not_evaluated",
+        "risk": "not_evaluated"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "evidence gate: 3 of 3 independent sources, 1 of 2 platforms"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "INSUFFICIENT_EVIDENCE",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 1,
+        "n_sources": 3,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "evidence gate fail: 1 platform -> INSUFFICIENT_EVIDENCE"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.67,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 80.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 80.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 3,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "evidence gate edge: exactly 3 sources / 2 platforms passes"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": null,
+      "gates": {
+        "duplicate": "not_evaluated",
+        "evidence": "pass",
+        "feasibility": "fail",
+        "risk": "not_evaluated"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "feasibility gate: needs ~30 h, available 20 h (gap 10 h)"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "NO-GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 10.0,
+        "demand_pain": 10.0,
+        "differentiation": 15.0,
+        "feasibility": 35.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "alt": "or cut scope by 10 h",
+          "delta": null,
+          "dimension": "feasibility_gate",
+          "field": "hours_per_week",
+          "from": 20,
+          "new_verdict": "re-evaluate",
+          "stable": null,
+          "to": 30
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 30,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "course_project",
+        "hours_per_week": 20,
+        "team_size": 1,
+        "weeks_available": 1
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "feasibility gate fail: solo student 20 h, effort 30 h -> NO-GO"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 80.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 80.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 30,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 200,
+        "team_size": 1,
+        "weeks_available": 1
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "same idea, team with 200 h -> passes feasibility"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 80.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 80.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 240,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "feasibility edge: effort == available hours passes"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": null,
+      "gates": {
+        "duplicate": "not_evaluated",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "fail"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "risk gate: blocker - collects health data of minors without consent"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "NO-GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": "collects health data of minors without consent"
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "risk gate fail -> NO-GO, blocker named"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 2.5,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": null,
+      "gates": {
+        "duplicate": "fail",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "duplicate gate: existing product card_notion01 (Notion) has the same core features for the same user"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "NO-GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 0.5,
+          "dimension": "differentiation",
+          "from": 2.5,
+          "new_score": 76.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 3.0
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": "card_notion01 (Notion)",
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "duplicate gate fail (differentiation 2.5) -> NO-GO, product named"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 3.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 76.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 76.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": "card_notion01 (Notion)",
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "duplicate gate edge: differentiation 3.0 overrides"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": null
+      },
+      "confidence": null,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "abstained (no evidence): risk"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "INSUFFICIENT_EVIDENCE",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [],
+          "score": null
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "risk scorer abstained -> INSUFFICIENT_EVIDENCE (does not guess)"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.39,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "confidence 0.39 < 0.5; low: demand_pain, competition, differentiation, feasibility, risk, learning"
+      ],
+      "run_id": "run_t",
+      "score": 80.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "INSUFFICIENT_EVIDENCE",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 3,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.3,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.3,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.3,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.3,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.3,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.3,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "low confidence 0.39 -> INSUFFICIENT_EVIDENCE"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.65,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 80.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 80.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.5,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.5,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.5,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.5,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.5,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.5,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "confidence edge exactly 0.65 passes"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 3.5,
+        "demand_pain": 3.5,
+        "differentiation": 3.5,
+        "feasibility": 3.5,
+        "learning": 3.5,
+        "risk": 3.5
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 70.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 70.0,
+      "sensitivity": {
+        "flipped": 1,
+        "flips": [
+          {
+            "change": "score demand_pain -1",
+            "score": 67.0,
+            "verdict": "PIVOT"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 15.0,
+        "demand_pain": 15.0,
+        "differentiation": 15.0,
+        "feasibility": 25.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 1.0,
+          "dimension": "demand_pain",
+          "from": 3.5,
+          "new_score": 73.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 4.5
+        },
+        {
+          "delta": 1.0,
+          "dimension": "competition",
+          "from": 3.5,
+          "new_score": 73.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 4.5
+        },
+        {
+          "delta": 1.0,
+          "dimension": "differentiation",
+          "from": 3.5,
+          "new_score": 73.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 4.5
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "portfolio",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.5
+        }
+      ],
+      "version": 1
+    },
+    "name": "score exactly 70.0 -> GO (T_go inclusive)"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 2.5,
+        "demand_pain": 2.5,
+        "differentiation": 2.5,
+        "feasibility": 2.5,
+        "learning": 2.5,
+        "risk": 2.5
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 50.00 between T_no and T_go; weakest dimension: feasibility"
+      ],
+      "run_id": "run_t",
+      "score": 50.0,
+      "sensitivity": {
+        "flipped": 1,
+        "flips": [
+          {
+            "change": "score demand_pain -1",
+            "score": 47.0,
+            "verdict": "NO-GO"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "PIVOT",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": "feasibility",
+      "weights": {
+        "competition": 15.0,
+        "demand_pain": 15.0,
+        "differentiation": 15.0,
+        "feasibility": 25.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "portfolio",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.5
+        }
+      ],
+      "version": 1
+    },
+    "name": "score exactly 50.0 -> PIVOT (T_no inclusive)"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 2.45,
+        "demand_pain": 2.45,
+        "differentiation": 2.45,
+        "feasibility": 2.45,
+        "learning": 2.45,
+        "risk": 2.45
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 49.00 < T_no 50"
+      ],
+      "run_id": "run_t",
+      "score": 49.0,
+      "sensitivity": {
+        "flipped": 1,
+        "flips": [
+          {
+            "change": "score demand_pain +1",
+            "score": 52.0,
+            "verdict": "PIVOT"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "NO-GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": "feasibility",
+      "weights": {
+        "competition": 15.0,
+        "demand_pain": 15.0,
+        "differentiation": 15.0,
+        "feasibility": 25.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 0.5,
+          "dimension": "demand_pain",
+          "from": 2.45,
+          "new_score": 50.5,
+          "new_verdict": "PIVOT",
+          "stable": false,
+          "to": 2.95
+        },
+        {
+          "delta": 0.5,
+          "dimension": "competition",
+          "from": 2.45,
+          "new_score": 50.5,
+          "new_verdict": "PIVOT",
+          "stable": false,
+          "to": 2.95
+        },
+        {
+          "delta": 0.5,
+          "dimension": "differentiation",
+          "from": 2.45,
+          "new_score": 50.5,
+          "new_verdict": "PIVOT",
+          "stable": false,
+          "to": 2.95
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "portfolio",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.45
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.45
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.45
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.45
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.45
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 2.45
+        }
+      ],
+      "version": 1
+    },
+    "name": "score 49.0 -> NO-GO"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 1.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "floor breach; weakest dimension: competition"
+      ],
+      "run_id": "run_t",
+      "score": 68.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "PIVOT",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": "competition",
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 0.5,
+          "dimension": "competition",
+          "from": 1.0,
+          "new_score": 70.0,
+          "new_verdict": "GO",
+          "stable": false,
+          "to": 1.5
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "floor breach (competition 1.0) with high score -> PIVOT, weakest = competition"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 1.5,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 70.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 70.0,
+      "sensitivity": {
+        "flipped": 7,
+        "flips": [
+          {
+            "change": "weight demand_pain -20%",
+            "score": 69.3333,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight competition +20%",
+            "score": 68.0,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight differentiation -20%",
+            "score": 69.5,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight feasibility -20%",
+            "score": 69.6471,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight risk -20%",
+            "score": 69.6471,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight learning -20%",
+            "score": 69.8947,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "score demand_pain -1",
+            "score": 65.0,
+            "verdict": "PIVOT"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 1.0,
+          "dimension": "demand_pain",
+          "from": 4.0,
+          "new_score": 75.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 5.0
+        },
+        {
+          "delta": 1.5,
+          "dimension": "competition",
+          "from": 1.5,
+          "new_score": 76.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 3.0
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.5
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "floor edge: 1.5 is not a breach"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 4.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 0.5,
+        "risk": 4.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 66.00 between T_no and T_go; weakest dimension: learning"
+      ],
+      "run_id": "run_t",
+      "score": 66.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "PIVOT",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": "learning",
+      "weights": {
+        "competition": 10.0,
+        "demand_pain": 10.0,
+        "differentiation": 15.0,
+        "feasibility": 35.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 1.0,
+          "dimension": "feasibility",
+          "from": 4.0,
+          "new_score": 73.0,
+          "new_verdict": "GO",
+          "stable": false,
+          "to": 5.0
+        },
+        {
+          "delta": 1.0,
+          "dimension": "learning",
+          "from": 0.5,
+          "new_score": 70.0,
+          "new_verdict": "GO",
+          "stable": false,
+          "to": 1.5
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "course_project",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 0.5
+        }
+      ],
+      "version": 1
+    },
+    "name": "learning below floor does NOT breach (floor = first five only)"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 1.2,
+        "demand_pain": 1.2,
+        "differentiation": 1.2,
+        "feasibility": 1.2,
+        "learning": 1.2,
+        "risk": 1.2
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 24.00 < T_no 50"
+      ],
+      "run_id": "run_t",
+      "score": 24.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "NO-GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": "demand_pain",
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.2
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.2
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.2
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.2
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.2
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 1.2
+        }
+      ],
+      "version": 1
+    },
+    "name": "floor breach + low score -> NO-GO (Figure 4: Score >= T_no? no)"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 2.5,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.778,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 74.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 74.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [
+        {
+          "dimension": "competition",
+          "objection_id": "o1"
+        }
+      ],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "challenge: one accepted objection -> competition -0.5, conf -0.1"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 2.0,
+        "demand_pain": 4.0,
+        "differentiation": 4.0,
+        "feasibility": 4.0,
+        "learning": 4.0,
+        "risk": 4.0
+      },
+      "confidence": 0.755,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 72.00 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 72.0,
+      "sensitivity": {
+        "flipped": 1,
+        "flips": [
+          {
+            "change": "score competition -1",
+            "score": 68.0,
+            "verdict": "PIVOT"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 0.5,
+          "dimension": "competition",
+          "from": 3.0,
+          "new_score": 74.0,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 3.5
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [
+        {
+          "dimension": "competition",
+          "objection_id": "o0"
+        },
+        {
+          "dimension": "competition",
+          "objection_id": "o1"
+        },
+        {
+          "dimension": "competition",
+          "objection_id": "o2"
+        }
+      ],
+      "profile": {
+        "goal": "startup",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 4.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "challenge: three objections capped at -1.0 score"
+  },
+  {
+    "expected": {
+      "adjusted_scores": {
+        "competition": 3.0,
+        "demand_pain": 3.0,
+        "differentiation": 3.0,
+        "feasibility": 3.0,
+        "learning": 3.0,
+        "risk": 3.0
+      },
+      "confidence": 0.79,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "reasons": [
+        "score 60.00 between T_no and T_go; weakest dimension: feasibility"
+      ],
+      "run_id": "run_t",
+      "score": 60.0,
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "runs": 14
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70,
+        "T_no": 50,
+        "floor": 1.5
+      },
+      "verdict": "PIVOT",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": "feasibility",
+      "weights": {
+        "competition": 10.0,
+        "demand_pain": 10.0,
+        "differentiation": 15.0,
+        "feasibility": 35.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 1.5,
+          "dimension": "feasibility",
+          "from": 3.0,
+          "new_score": 70.5,
+          "new_verdict": "GO",
+          "stable": false,
+          "to": 4.5
+        }
+      ]
+    },
+    "input": {
+      "gate_inputs": {
+        "duplicate_of": null,
+        "estimated_effort_hours": 100,
+        "n_platforms": 2,
+        "n_sources": 5,
+        "risk_blocker": null
+      },
+      "idea_id": "idea_t",
+      "objections_accepted": [],
+      "profile": {
+        "goal": "course_project",
+        "hours_per_week": 10,
+        "team_size": 2,
+        "weeks_available": 12
+      },
+      "run_id": "run_t",
+      "scores": [
+        {
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        },
+        {
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_x#c0"
+          ],
+          "score": 3.0
+        }
+      ],
+      "version": 1
+    },
+    "name": "PIVOT -> what-if proposes smallest change to GO"
+  }
+]

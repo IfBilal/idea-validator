@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/run_event.schema.json",
+  "title": "SSE run event (M1 /runs/{id}/events)",
+  "type": "object",
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "type": {
+      "enum": [
+        "run_started",
+        "state_changed",
+        "agent_started",
+        "agent_finished",
+        "tool_call",
+        "llm_call",
+        "spend_update",
+        "question",
+        "approval_required",
+        "idea_dropped",
+        "partial_result",
+        "verdict",
+        "run_completed",
+        "run_failed",
+        "budget_stopped",
+        "heartbeat"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "run_id",
+    "seq",
+    "ts",
+    "type",
+    "payload"
+  ],
+  "additionalProperties": false
+}

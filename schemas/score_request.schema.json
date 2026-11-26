@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/score_request.schema.json",
+  "title": "Scoring model request (M10 POST /score)",
+  "type": "object",
+  "properties": {
+    "rubric_id": {
+      "type": "string",
+      "pattern": "^[a-z_]+@v\\d+$"
+    },
+    "idea": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "$ref": "student_profile.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "pattern": "^card_[0-9a-f]{8,12}#c\\d+$"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "features": {
+      "type": "object"
+    },
+    "run_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "rubric_id",
+    "idea",
+    "evidence",
+    "features",
+    "run_id"
+  ],
+  "additionalProperties": false
+}

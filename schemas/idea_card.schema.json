@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/idea_card.schema.json",
+  "title": "Idea card (M6) - Guide \u00a72.1",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^card_[0-9a-f]{8,12}$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "problem": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "customer": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "niche_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stage": {
+      "enum": [
+        "launched",
+        "seed",
+        "series_a",
+        "series_b_plus",
+        "acquired",
+        "dead",
+        "unknown"
+      ]
+    },
+    "funding_usd": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "enum": [
+        "hackernews",
+        "github",
+        "reddit",
+        "producthunt",
+        "yc"
+      ]
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "published_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fetched_at": {
+      "type": "string",
+      "format": "date"
+    },
+    "text": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "product",
+        "complaint",
+        "request",
+        "discussion",
+        "repo"
+      ]
+    },
+    "content_hash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "summary",
+    "niche_tags",
+    "stage",
+    "source",
+    "url",
+    "fetched_at",
+    "text"
+  ],
+  "additionalProperties": false
+}

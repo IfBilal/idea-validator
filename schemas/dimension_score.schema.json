@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idea-validator/schemas/dimension_score.schema.json",
+  "title": "Dimension score (M9/M10) - Guide \u00a72.2. score=null means abstained (no evidence).",
+  "type": "object",
+  "properties": {
+    "dimension": {
+      "enum": [
+        "demand_pain",
+        "competition",
+        "differentiation",
+        "feasibility",
+        "risk",
+        "learning"
+      ]
+    },
+    "score": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^card_[0-9a-f]{8,12}#c\\d+$"
+      }
+    },
+    "features": {
+      "type": "object"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "rubric_version": {
+      "type": "string",
+      "pattern": "^[a-z_]+@v\\d+$"
+    },
+    "model": {
+      "type": "string"
+    },
+    "abstained": {
+      "type": "boolean"
+    },
+    "adjusted_by_challenge": {
+      "type": "number"
+    },
+    "fallback": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "dimension",
+    "score",
+    "confidence",
+    "evidence_ids",
+    "reason",
+    "rubric_version",
+    "model"
+  ],
+  "additionalProperties": false
+}
