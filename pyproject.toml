@@ -16,6 +16,7 @@ dev = [
     "pre-commit>=4.0",
     "jsonschema>=4.23",
     "types-jsonschema>=4.23",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.uv]
