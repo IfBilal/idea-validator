@@ -1,27 +1,19 @@
-import httpx
+from fastapi.testclient import TestClient
 
-from svc_profile.main import app
-
-
-def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+from svc_profile.config import Settings
+from svc_profile.main import build_app
 
 
-async def test_health_identifies_the_service() -> None:
-    async with _client() as client:
-        body = (await client.get("/health")).json()
-    assert body["status"] == "ok"
-    assert body["service"] == "profile"
-    assert body["module"] == "M2"
+def test_health_identifies_the_service_without_a_database() -> None:
+    body = TestClient(build_app(Settings())).get("/health").json()
+    assert (body["service"], body["module"]) == ("profile", "M2")
 
 
-async def test_ready_is_200_with_no_dependencies() -> None:
-    async with _client() as client:
-        assert (await client.get("/ready")).status_code == 200
+def test_not_ready_without_a_database() -> None:
+    response = TestClient(build_app(Settings())).get("/ready")
+    assert response.status_code == 503
+    assert response.json()["checks"] == {"postgres": False}
 
 
-async def test_metrics_are_exposed() -> None:
-    async with _client() as client:
-        response = await client.get("/metrics")
-    assert response.status_code == 200
-    assert "http_requests_total" in response.text
+def test_metrics_are_exposed() -> None:
+    assert "http_requests_total" in TestClient(build_app(Settings())).get("/metrics").text

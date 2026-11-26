@@ -87,7 +87,7 @@ data: {"run_id","seq","ts","type", ...payload}
 ## 3. Internal endpoints
 
 ### M2 Profile/Session/Cache (`/internal/*`)
-`GET /internal/profiles/{user_id}[?version=]`, `PUT /internal/profiles/{user_id}`, `POST /internal/ideas`,
+`POST /internal/users` (`{email,password}` → 201 `{user_id}`; 409 duplicate email, 422 password < 10 chars), `POST /internal/auth/login` (`{email,password}` → `{user_id}`; one generic 401 for every failure; account locked 15 min after 5 failures; the gateway issues the JWT), `GET /internal/profiles/{user_id}[?version=]`, `PUT /internal/profiles/{user_id}` (each PUT adds a version), `POST /internal/ideas`,
 `POST /internal/ideas/{id}/versions`, `GET /internal/ideas/{id}/versions[/{v}]`, `POST /internal/verdicts`,
 `GET|PUT /internal/runs/{id}`, `POST /internal/approvals`, `PUT /internal/approvals/{id}`,
 `GET|PUT /internal/cache/verdict/{key}` (returns `{hit: bool, value}`), `GET /internal/compare`.

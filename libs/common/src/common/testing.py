@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for integration tests (loaded via the root ``conftest.py``).
+"""Shared pytest fixtures for integration tests (loaded with ``-p common.testing``).
 
 Integration tests need Postgres/Redis.
 

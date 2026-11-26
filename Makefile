@@ -9,8 +9,8 @@ help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
 	uv sync --all-packages && uv run pre-commit install && { [ ! -f services/ui/package.json ] || (cd services/ui && npm ci); }
-lint: ## ruff + eslint
-	uv run ruff check . && uv run ruff format --check . && { [ ! -f services/ui/package.json ] || (cd services/ui && npm run lint); }
+lint: ## ruff + import layering + eslint
+	uv run ruff check . && uv run ruff format --check . && uv run lint-imports && { [ ! -f services/ui/package.json ] || (cd services/ui && npm run lint); }
 typecheck: ## mypy + tsc
 	uv run mypy && { [ ! -f services/ui/package.json ] || (cd services/ui && npm run typecheck); }
 test: ## unit/component/behaviour tests

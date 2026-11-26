@@ -18,6 +18,7 @@ dev = [
     "types-jsonschema>=4.23",
     "types-pyyaml>=6.0",
     "testcontainers[postgres,redis]>=4.8",
+    "import-linter>=2.1",
 ]
 
 [tool.uv]
@@ -45,12 +46,37 @@ known-first-party = ["common"]
 [tool.mypy]
 python_version = "3.12"
 files = ["libs", "services"]
+exclude = ["services/profile/tests/integration/conftest.py"]  # same module name as the verdict one
 strict = true
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -p common.testing"
 testpaths = ["libs", "services", "jobs", "eval"]
 markers = ["integration: needs Postgres/Redis/Qdrant (testcontainers; needs a running Docker)"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+# Layering (docs/harness/21 §2): api -> services -> repositories. Checked by `lint-imports`.
+[tool.importlinter]
+root_packages = ["svc_profile"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "profile: routes never touch the database layer"
+type = "forbidden"
+source_modules = ["svc_profile.api"]
+forbidden_modules = ["svc_profile.repositories"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "profile: services never import the web framework"
+type = "forbidden"
+source_modules = ["svc_profile.services", "svc_profile.repositories"]
+forbidden_modules = ["fastapi", "starlette"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "profile: lower layers never import higher ones"
+type = "layers"
+layers = ["svc_profile.api", "svc_profile.services", "svc_profile.repositories"]
