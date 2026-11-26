@@ -28,7 +28,7 @@ def _imports(path: Path) -> set[str]:
     return found
 
 
-def test_engine_core_imports_nothing_that_could_break_determinism_or_purity() -> None:
+def test_engine_core_module_imports_nothing_that_could_break_determinism() -> None:
     assert not _imports(Path(engine.__file__)) & FORBIDDEN
 
 

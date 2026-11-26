@@ -32,9 +32,15 @@ class ConfidenceRules(Message):
     w_sources: float = Field(ge=0, le=1)
     sources_full: float = Field(gt=0)
 
+    @model_validator(mode="after")
+    def _weights_add_to_one(self) -> Self:
+        if not math.isclose(self.w_dims + self.w_sources, 1.0, abs_tol=WEIGHT_TOLERANCE):
+            raise ValueError("confidence.w_dims + confidence.w_sources must equal 1")
+        return self
+
 
 class GateRules(Message):
-    min_sources: int = Field(ge=0)
+    min_sources: int = Field(ge=1)
     min_platforms: int = Field(ge=0)
     duplicate_diff_override: float = Field(ge=0, le=5)
 
@@ -83,6 +89,8 @@ class EngineConfig(Message):
                 raise ValueError(f"weights.{goal} must define all six dimensions")
             if any(w < 0 for w in preset.values()):
                 raise ValueError(f"weights.{goal} must not be negative")
+            if sum(1 for w in preset.values() if w > 0) < 2:
+                raise ValueError(f"weights.{goal} needs at least two non-zero weights")
             if not math.isclose(sum(preset.values()), WEIGHT_TOTAL, abs_tol=WEIGHT_TOLERANCE):
                 raise ValueError(f"weights.{goal} must add to 100, got {sum(preset.values())}")
         return self

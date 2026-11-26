@@ -63,3 +63,31 @@ def test_config_is_read_from_the_mounted_directory(tmp_path: Path) -> None:
     data["thresholds"]["T_go"] = 60
     (tmp_path / "verdict.yaml").write_text(yaml.safe_dump(data))
     assert load_engine_config(tmp_path).thresholds.T_go == 60
+
+
+def test_a_preset_with_a_single_non_zero_weight_is_rejected() -> None:
+    data = raw()
+    data["weights"]["startup"] = {
+        "demand_pain": 100,
+        "competition": 0,
+        "differentiation": 0,
+        "feasibility": 0,
+        "risk": 0,
+        "learning": 0,
+    }
+    with pytest.raises(ValidationError, match="two non-zero"):
+        parse_engine_config(data)
+
+
+def test_confidence_weights_must_add_to_one() -> None:
+    data = raw()
+    data["confidence"]["w_sources"] = 0.5
+    with pytest.raises(ValidationError, match="must equal 1"):
+        parse_engine_config(data)
+
+
+def test_min_sources_cannot_be_zero() -> None:
+    data = raw()
+    data["gates"]["min_sources"] = 0
+    with pytest.raises(ValidationError):
+        parse_engine_config(data)

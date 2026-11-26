@@ -38,3 +38,26 @@ def test_adjustments_never_go_below_zero(build: Build, cfg: EngineConfig) -> Non
 def test_an_abstained_dimension_stays_abstained(build: Build, cfg: EngineConfig) -> None:
     core = run_core(build(scores={**GOOD, "risk": None}, objections=objections(1, "risk")), cfg)
     assert core.adjusted_scores["risk"] is None
+
+
+def test_objections_on_different_dimensions_adjust_each_dimension_separately(
+    build: Build, cfg: EngineConfig
+) -> None:
+    core = run_core(
+        build(
+            scores={**GOOD, "competition": 3.0, "risk": 3.0},
+            objections=[*objections(1), *objections(2, "risk")],
+        ),
+        cfg,
+    )
+    assert core.adjusted_scores["competition"] == 2.5
+    assert core.adjusted_scores["risk"] == 2.0
+    assert core.adjusted_scores["feasibility"] == 4.0
+
+
+def test_confidence_is_clamped_at_zero(build: Build, cfg: EngineConfig) -> None:
+    core = run_core(
+        build(conf={**{d: 0.7 for d in GOOD}, "competition": 0.15}, objections=objections(3)),
+        cfg,
+    )
+    assert core.adjusted_confidences["competition"] == 0.0

@@ -52,3 +52,20 @@ def test_shifting_a_weight_keeps_the_total_at_100_and_shares_proportionally(
     others = [d for d in DIMS if d != dim]
     ratios = [shifted[d] / weights[d] for d in others]
     assert max(ratios) - min(ratios) < 1e-9
+
+
+def test_score_runs_target_the_least_confident_dimension_after_challenge(
+    build: Build, cfg: EngineConfig
+) -> None:
+    # competition starts the most confident, but two accepted objections make it the least.
+    conf = {d: 0.7 for d in DIMENSIONS} | {"competition": 0.85}
+    scores = {d: 3.5 for d in DIMENSIONS}
+    inp = build(
+        "portfolio",
+        scores,
+        conf,
+        objections=[{"dimension": "competition", "objection_id": f"o{i}"} for i in range(2)],
+    )
+    result = evaluate(inp, cfg)
+    changes = [f.change for f in result.sensitivity.flips]
+    assert not any(c.startswith("score ") and "competition" not in c for c in changes)

@@ -4,6 +4,7 @@ No LLM, no network, no database, no randomness, no clock, no global state: the s
 gives the same output. The language model never decides the verdict; this module does.
 """
 
+import math
 from dataclasses import dataclass
 from typing import Final
 
@@ -95,7 +96,10 @@ def run_core(
     th = cfg.thresholds
     gc = cfg.gates
     profile, gi = inp.profile, inp.gate_inputs
-    weights = weights or cfg.weights_for(profile.goal)
+    if weights is None:
+        weights = cfg.weights_for(profile.goal)
+    elif not math.isclose(sum(weights.values()), 100.0, abs_tol=1e-6):
+        raise ValueError("weights must add to 100")
     scores, confs, abstained = _adjust_for_challenges(inp, cfg)
     gates = {
         "evidence": "not_evaluated",
