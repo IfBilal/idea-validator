@@ -64,8 +64,8 @@ class CardIn(Message):
             raise ValueError(
                 "published_at is after fetched_at: a scrape date cannot precede the post"
             )
-        if self.content_hash is None:
-            object.__setattr__(self, "content_hash", content_hash_of(self.text))
+        # never trust a caller's hash: a wrong one would hide a change or fake a duplicate
+        object.__setattr__(self, "content_hash", content_hash_of(self.text))
         return self
 
 

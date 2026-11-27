@@ -12,6 +12,7 @@ members = [
     "idea-validator-finetune",
     "idea-validator-gateway",
     "idea-validator-ideation",
+    "idea-validator-ingestion",
     "idea-validator-kb",
     "idea-validator-orchestrator",
     "idea-validator-profile",
@@ -851,6 +852,25 @@ dependencies = [
 requires-dist = [
     { name = "idea-validator-common", editable = "libs/common" },
     { name = "uvicorn", specifier = ">=0.32" },
+]
+
+[[package]]
+name = "idea-validator-ingestion"
+version = "0.1.0"
+source = { editable = "jobs/ingestion" }
+dependencies = [
+    { name = "asyncpg" },
+    { name = "idea-validator-common" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncpg", specifier = ">=0.30" },
+    { name = "idea-validator-common", editable = "libs/common" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "pydantic-settings", specifier = ">=2.6" },
 ]
 
 [[package]]
