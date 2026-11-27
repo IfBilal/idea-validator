@@ -40,6 +40,16 @@ Refusals are 403 with `error.details.reason`: `DOMAIN_NOT_ALLOWED`, `INVALID_URL
 | `CONFIG_DIR` | Directory with the mounted `sources.yaml` (default `/etc/idea-validator`) |
 | `RUN_MAX_PAGES`, `RUN_MAX_BYTES` | Per-run fetch budget (defaults 60 pages, 120 MB) |
 
+## Bounds on hostile input (measured, round 2)
+- Normalisation is done in chunks and stops at the cap: one character can expand 18x under NFKC (U+FDFA), and a 2.1 MB body
+  of them took 30 s before; it is about 1.6 s now.
+- Sanitising runs in a worker thread (`asyncio.to_thread`), so a heavy page no longer freezes health probes or other requests.
+- A JSON body with more than 20,000 strings plus keys is sanitised as capped plain text instead of structured JSON.
+- One overall deadline (30 s) covers retries and redirects together (`UpstreamTimeout`).
+- A redirect hop is checked like a request: the destination host's source must be `enabled`, and the rate limit of the
+  destination host (not the first one) applies.
+- Not done: a cache hit still returns the stored body even when the caller asked for a smaller `max_bytes`.
+
 ## Known limits
 - The sanitiser is a heuristic layer: obfuscations such as letter-spacing are not caught. Defence in depth is that
   fetched text is only ever shown to models as data, scorers never obey it, and the critic checks every claim.
