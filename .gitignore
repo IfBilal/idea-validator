@@ -39,3 +39,6 @@ eval/results/raw/
 
 # local Claude Code permissions (per developer, never committed)
 .claude/settings.local.json
+
+# per-tag kustomize overlay written by scripts/deploy.sh
+k8s/overlays/_build/
