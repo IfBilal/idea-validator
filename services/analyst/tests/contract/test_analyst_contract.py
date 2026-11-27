@@ -33,7 +33,10 @@ DOC_09_FEATURES = {
 
 
 def test_response_has_every_documented_feature_plus_required_skills() -> None:
-    assert set(FeaturesResponse.model_fields) == DOC_09_FEATURES | {"required_skills"}
+    assert set(FeaturesResponse.model_fields) == DOC_09_FEATURES | {
+        "required_skills",
+        "rejected_evidence_count",
+    }
 
 
 @pytest.mark.parametrize("rubric", sorted((ROOT / "rubrics").glob("*@v1.yaml")))

@@ -27,7 +27,7 @@ Layering: `api -> services -> clients/repositories`; services never import FastA
 | `POST /recompute` | re-read M6, re-cluster, re-detect gaps; returns counts |
 
 Env: `KB_URL` (M6), `KB_TIMEOUT_S`, `KB_MAX_RETRIES`, `KB_PAGE_SIZE`, `INTERNAL_TOKEN`, `RECOMPUTE_ON_START=true`,
-`MAX_BODY_BYTES=65536`, `SEARCH_K=30`, `DEMO_DATA=false` (run on the built-in fixture cards, dev only), `LOG_LEVEL`.
+`MAX_BODY_BYTES=65536`, `SEARCH_K=30`, `AS_OF` (ISO date; overrides the KB snapshot date), `RELEVANCE_TAU`, `DEMO_DATA=false` (run on the built-in fixture cards, dev only), `LOG_LEVEL`.
 Without `KB_URL` (and without `DEMO_DATA`) the service answers 503 and `/ready` is false.
 
 ## Formulas (see the docstrings in `services/features.py`)
@@ -53,9 +53,10 @@ Without `KB_URL` (and without `DEMO_DATA`) the service answers 503 and `/ready` 
   `cv_signal = 0.5 * share(required in in-demand list) + 0.5 * clamp(0.5 + trend_growth, 0, 1)`.
 
 ## Niches and gaps
-Agglomerative (centroid linkage) clustering on TF-IDF cosine, merge threshold 0.15, minimum size 3, small clusters attach to
+`as_of` is never derived from the cards: it is the KB snapshot date (`GET /stats` -> `snapshot_date`, assumed) or `AS_OF`; cards dated after it are ignored and counted in `ignored_future`. Recompute runs in a worker thread, single flight (concurrent calls share one run), and startup recomputes in the background so probes answer at once.
+Agglomerative (centroid linkage) clustering on TF-IDF cosine with an inverted-index candidate search (about 0.2 s for 1,500 cards, near-linear growth), merge threshold 0.15, minimum size 3, small clusters attach to
 the nearest niche at cosine >= 0.05 or stay unassigned. Names are the top-3 c-TF-IDF terms; ids are `niche_` + hash of
-those terms. Status uses the slope of mentions + launches (docs/10 section 8): `rising` >= +0.10; `saturated` = slope <=
+those terms for new niches and are kept across runs by centroid cosine >= 0.85 (doc 10). Status uses the slope of mentions + launches (docs/10 section 8): a niche needs >= 3 months of data to be rising or saturated; `rising` >= +0.10; `saturated` = slope <=
 +0.02 and size in the top quartile and launches/mentions >= 1.5; else `flat`. Gaps: a cluster of >= 3 complaints/requests
 from >= 2 platforms that no product of the niche matches (cosine < 0.75); evidence ids are `<card_id>#c0`.
 HDBSCAN + dense embeddings are the production option: plug an `Embedder` (`vectorize(texts)`) into `analyse`/`detect_gaps`.
@@ -66,11 +67,15 @@ HDBSCAN + dense embeddings are the production option: plug an `Embedder` (`vecto
   (`card_sources.platform`) and optionally `github_stars`; unknown fields are ignored.
 - M6 evidence ids are `<card_id>#c<n>`; M7 cites chunk 0 for whole-card evidence in gaps.
 
-## Not done
-- Postgres `NicheStore` (niches, niche_stats, gaps tables): only the in-memory store exists; the service recomputes on start.
-- Stable niche ids across runs by centroid matching (ids derive from the top terms instead).
-- LLM polishing of niche names (would go through M5).
-- `import-linter` contracts for this package (root `pyproject.toml` is not edited here); `test_analyst_layering.py` covers it.
+## Known limits (see docs/decisions/ADR-009-analyst-clustering.md)
+- D4: not HDBSCAN; thresholds tuned on synthetic fixtures, cluster quality on real data is unmeasured.
+- D6: only an in-memory `NicheStore` (no Postgres tables); state is lost on restart. Production shape: a recompute Job writes
+  the tables and replicas only serve them.
+- `POST /features` returns `rejected_evidence_count` for cited ids M6 does not know; optional `evidence_scores` plus
+  `RELEVANCE_TAU` apply the rerank threshold.
+- LLM polishing of niche names (would go through M5) is not done.
+- No `import-linter` contracts (root `pyproject.toml` is not edited here); `test_analyst_layering.py` covers it.
+- No k8s manifest yet.
 
 ## Run and test
 ```bash

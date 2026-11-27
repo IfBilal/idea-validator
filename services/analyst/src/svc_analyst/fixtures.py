@@ -8,6 +8,7 @@ from datetime import date
 from svc_analyst.models.cards import Card
 
 SEED = 42
+FIXTURE_AS_OF = date(2026, 6, 30)  # the snapshot date of the demo corpus
 PLATFORM_CYCLE = [
     ("reddit",),
     ("hackernews", "reddit"),

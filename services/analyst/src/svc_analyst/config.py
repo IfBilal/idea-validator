@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import Field
 
 from common.config import ServiceSettings
@@ -15,3 +17,5 @@ class Settings(ServiceSettings):
     demo_data: bool = False  # run on built-in fixture cards (dev only, until M6 exists)
     max_body_bytes: int = Field(default=65_536, ge=1)
     search_k: int = Field(default=30, ge=1, le=100)
+    as_of: date | None = None  # overrides the KB snapshot date (env AS_OF, ISO)
+    relevance_tau: float | None = None  # evidence scored below this is not counted

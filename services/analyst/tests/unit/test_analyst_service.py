@@ -1,14 +1,17 @@
 """AnalystService: recompute, niche queries, matching and /features, against in-memory fakes."""
 
 import asyncio
+import threading
+import time
 from collections.abc import Sequence
+from datetime import date
 
 import pytest
 
 from common.errors import NotFound, UpstreamError
 from common.schemas.profile import StudentProfile
 from svc_analyst.clients.fakes import InMemoryCardSource, InMemoryEvidenceSearch
-from svc_analyst.fixtures import build_cards
+from svc_analyst.fixtures import FIXTURE_AS_OF, build_cards
 from svc_analyst.models.api import FeaturesRequest
 from svc_analyst.models.cards import Card, EvidenceHit
 from svc_analyst.repositories.memory import InMemoryNicheStore
@@ -54,8 +57,8 @@ def profile(**kw: object) -> StudentProfile:
 
 
 class CountingSource(InMemoryCardSource):
-    def __init__(self, cards: Sequence[Card]) -> None:
-        super().__init__(cards)
+    def __init__(self, cards: Sequence[Card], snapshot_date: date | None = FIXTURE_AS_OF) -> None:
+        super().__init__(cards, snapshot_date=snapshot_date)
         self.list_calls = 0
         self.fail = False
 
@@ -247,7 +250,7 @@ async def test_features_returns_exactly_the_documented_names() -> None:
     out = await svc.features(
         req("an invoice reminder tool for freelance designers", invoice_evidence())
     )
-    assert set(out.model_dump()) == FEATURE_NAMES
+    assert set(out.model_dump()) == FEATURE_NAMES | {"rejected_evidence_count"}
 
 
 async def test_features_from_evidence() -> None:
@@ -284,6 +287,7 @@ async def test_unknown_evidence_ids_are_ignored() -> None:
     evidence = [*invoice_evidence()[:2], "card_deadbeef#c0"]
     out = await svc.features(req("an invoice tool", evidence))
     assert out.n_sources == len({e.split("#")[0] for e in evidence[:2]})
+    assert out.rejected_evidence_count == 1
 
 
 async def test_duplicate_evidence_ids_are_counted_once() -> None:
@@ -408,3 +412,151 @@ class _Both:
 
     async def get_cards(self, ids: Sequence[str]) -> dict[str, Card]:
         return {**await self.a.get_cards(ids), **await self.b.get_cards(ids)}
+
+    async def snapshot_date(self) -> date | None:
+        return await self.a.snapshot_date()
+
+
+# ---- B1: as_of belongs to the caller ----------------------------------------------------------
+
+
+async def test_as_of_comes_from_the_source_snapshot_date() -> None:
+    svc = service()
+    summary = await svc.recompute()
+    assert summary.as_of == FIXTURE_AS_OF
+
+
+async def test_settings_as_of_overrides_the_snapshot_date() -> None:
+    svc = AnalystService(
+        CountingSource(CARDS),
+        InMemoryNicheStore(),
+        config=AnalystConfig(as_of=date(2026, 3, 1)),
+    )
+    summary = await svc.recompute()
+    assert summary.as_of == date(2026, 3, 1)
+    assert summary.ignored_future > 0
+
+
+async def test_no_snapshot_date_fails_loudly_instead_of_guessing() -> None:
+    svc = AnalystService(CountingSource(CARDS, snapshot_date=None), InMemoryNicheStore())
+    with pytest.raises(UpstreamError, match="snapshot"):
+        await svc.recompute()
+    assert svc.ready is False
+
+
+async def test_one_2099_card_changes_no_niche_status_or_gap_score() -> None:
+    poison = CARDS[0].model_copy(
+        update={"id": "card_0badf00d", "published_at": date(2099, 1, 1), "kind": "complaint"}
+    )
+    clean = service()
+    dirty = service([*CARDS, poison])
+    summary = await dirty.recompute()
+    await clean.recompute()
+    assert summary.ignored_future == 1
+
+    def key(n: object) -> tuple[object, ...]:
+        return (n.id, n.status, n.trend_slope, n.activity_slope)  # type: ignore[attr-defined]
+
+    assert [key(n) for n in await dirty.list_niches(None)] == [
+        key(n) for n in await clean.list_niches(None)
+    ]
+    assert [g.score for g in await dirty.list_gaps(None)] == [
+        g.score for g in await clean.list_gaps(None)
+    ]
+
+
+# ---- B2: off the event loop, single flight ----------------------------------------------------
+
+
+async def test_recompute_does_not_block_the_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    from svc_analyst.services import clustering
+
+    real = clustering.analyse
+    threads: list[int] = []
+
+    def slow(*args: object, **kw: object) -> object:
+        threads.append(threading.get_ident())
+        time.sleep(0.3)
+        return real(*args, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("svc_analyst.services.analyst.analyse", slow)
+    svc = service()
+    ticks = 0
+
+    async def heartbeat() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    beat = asyncio.create_task(heartbeat())
+    await svc.recompute()
+    beat.cancel()
+    assert ticks >= 10  # the loop kept running during the 0.3 s computation
+    assert threads and threads[0] != threading.get_ident()
+
+
+async def test_concurrent_recomputes_share_one_run() -> None:
+    svc = service()
+    source = svc._cards_source
+    results = await asyncio.gather(*(svc.recompute() for _ in range(4)))
+    assert source.list_calls == 1  # type: ignore[attr-defined]
+    assert all(r == results[0] for r in results)
+    await svc.recompute()  # a later call runs again
+    assert source.list_calls == 2  # type: ignore[attr-defined]
+
+
+async def test_a_failed_run_does_not_poison_the_next_one() -> None:
+    svc = service()
+    source = svc._cards_source
+    source.fail = True  # type: ignore[attr-defined]
+    results = await asyncio.gather(*(svc.recompute() for _ in range(3)), return_exceptions=True)
+    assert all(isinstance(r, UpstreamError) for r in results)
+    source.fail = False  # type: ignore[attr-defined]
+    assert (await svc.recompute()).niches == 6
+
+
+# ---- D3: ids survive recomputes --------------------------------------------------------------------
+
+
+async def test_niche_ids_are_stable_across_recomputes_when_cards_change() -> None:
+    first = service()
+    await first.recompute()
+    ids = [n.id for n in await first.list_niches(None)]
+    svc = service(CARDS, store=InMemoryNicheStore())
+    await svc.recompute()
+    svc._cards_source = CountingSource(CARDS[:-3])
+    await svc.recompute()
+    assert sorted(n.id for n in await svc.list_niches(None)) == sorted(ids)
+
+
+# ---- nits ------------------------------------------------------------------------------------------
+
+
+async def test_relevance_tau_filters_scored_evidence() -> None:
+    evidence = invoice_evidence()
+    body = FeaturesRequest.model_validate(
+        {
+            "idea_text": "an invoice tool",
+            "evidence_ids": evidence,
+            "evidence_scores": {evidence[0]: 0.9, evidence[1]: 0.2},
+            "profile": profile().model_dump(),
+        }
+    )
+    svc = AnalystService(
+        CountingSource(CARDS), InMemoryNicheStore(), config=AnalystConfig(relevance_tau=0.5)
+    )
+    out = await svc.features(body)
+    assert out.n_sources == len(evidence) - 1  # the 0.2 item fell below tau 0.5
+    loose = await service().features(body)
+    assert loose.n_sources == len(evidence)
+
+
+async def test_an_unrelated_idea_has_no_unaddressed_gaps() -> None:
+    svc = service()
+    out = await svc.features(req("quantum teleporter cheese zeppelin", []))
+    assert out.unaddressed_gap_count == 0
+    related = await svc.features(
+        req("remind clients about late payment of invoices for freelancers", [])
+    )
+    assert related.unaddressed_gap_count >= 1

@@ -18,15 +18,17 @@ import hashlib
 import heapq
 import math
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
+
+from pydantic import Field
 
 from common.schemas.base import Message
 
 from ..models.cards import Card
 from ..models.domain import MonthStat, Niche, NicheStatus
-from .text import Embedder, TfidfEmbedder, Vector, centroid, cosine, tokenize
+from .text import Embedder, TfidfEmbedder, Vector, centroid, cosine, dot, normalize, tokenize
 
 SEED = 42
 
@@ -42,12 +44,15 @@ class ClusterConfig:
     saturated_ratio: float = 1.5
     keyword_count: int = 10
     name_terms: int = 3
+    min_months: int = 3  # fewer months of data than this is never rising or saturated
+    id_match_threshold: float = 0.85  # new cluster keeps an old niche id above this cosine
 
 
 class Analysis(Message):
     as_of: date | None
     niches: list[Niche]
     unassigned: list[str]
+    ignored_future: list[str] = Field(default_factory=list)
 
 
 # ---- series and slopes -----------------------------------------------------------------------
@@ -124,10 +129,15 @@ def classify(
     launches: int,
     mentions: int,
     config: ClusterConfig,
+    *,
+    months: int | None = None,
 ) -> NicheStatus:
     """rising: slope >= 0.10. saturated: slope <= 0.02 and size in the top quartile and
-    launches/mentions >= 1.5 (all inclusive). Otherwise flat.
+    launches/mentions >= 1.5 (all inclusive). Otherwise flat. A niche with fewer than
+    ``min_months`` months of data (``months``, when given) is always flat.
     """
+    if months is not None and months < config.min_months:
+        return "flat"
     if activity_slope >= config.rising_slope:
         return "rising"
     ordered = sorted(sizes)
@@ -144,33 +154,59 @@ def classify(
 
 # ---- agglomeration ---------------------------------------------------------------------------
 
+_TOP_TERMS = 30  # terms per cluster used to find merge candidates
+_NEIGHBOURS = 12  # best candidates kept per cluster: bounds the heap to O(n)
 
-def agglomerate(vectors: Sequence[Vector], threshold: float) -> list[list[int]]:
+
+def _top_terms(vec: Vector) -> list[tuple[str, float]]:
+    return sorted(vec.items(), key=lambda kv: (-kv[1], kv[0]))[:_TOP_TERMS]
+
+
+def agglomerate(
+    vectors: Sequence[Vector], threshold: float, *, df_cap: int | None = None
+) -> list[list[int]]:
     """Centroid-linkage clustering of ``vectors``; returns index lists (sorted, by first index).
 
-    Deterministic: ties are broken by the smallest member index. Pairs are only considered for
-    clusters that share a term (cosine of disjoint vectors is 0).
+    Deterministic (ties: smallest member index). Sub-quadratic: merge candidates for a cluster
+    come from an inverted index over each cluster's top-30 terms, skipping terms shared by more
+    than ``df_cap`` clusters (default ``max(100, 2*sqrt(n))``). Only the 12 best-scoring
+    candidates per cluster are kept, which bounds the heap to O(n); their similarity is the
+    exact cosine of the L2-normalised centroids and pairs below ``threshold`` never merge.
+    Clusters that only share very common terms are therefore not considered (an approximation
+    that TF-IDF down-weighting makes harmless).
     """
     n = len(vectors)
+    cap = df_cap if df_cap is not None else max(100, int(2 * math.sqrt(n)))
     members: dict[int, list[int]] = {i: [i] for i in range(n)}
-    cents: dict[int, Vector] = {i: vectors[i] for i in range(n)}
+    cents: dict[int, dict[str, float]] = {i: normalize(vectors[i]) for i in range(n)}
+    tops: dict[int, list[tuple[str, float]]] = {i: _top_terms(cents[i]) for i in range(n)}
     postings: dict[str, set[int]] = {}
-    for i, vec in enumerate(vectors):
-        for term in vec:
+    for i in range(n):
+        for term, _ in tops[i]:
             postings.setdefault(term, set()).add(i)
-
     heap: list[tuple[float, int, int, int, int]] = []
 
-    def push(a: int, b: int) -> None:
-        sim = round(cosine(cents[a], cents[b]), 12)
-        if sim >= threshold and sim > 0.0:
-            x, y = (a, b) if members[a][0] < members[b][0] else (b, a)
-            heapq.heappush(heap, (-sim, members[x][0], members[y][0], x, y))
+    def push_candidates(a: int, only_after: bool) -> None:
+        acc: dict[int, float] = {}
+        for term, weight in tops[a]:
+            bucket = postings[term]
+            if len(bucket) > cap:
+                continue
+            for b in bucket:
+                if b == a or (only_after and b < a):
+                    continue
+                acc[b] = acc.get(b, 0.0) + weight * cents[b].get(term, 0.0)
+        best = sorted(acc.items(), key=lambda kv: (-kv[1], kv[0]))[:_NEIGHBOURS]
+        for b, partial in best:
+            if partial < threshold * 0.5:
+                break
+            sim = round(min(1.0, dot(cents[a], cents[b])), 12)  # centroids are unit length
+            if sim >= threshold and sim > 0.0:
+                x, y = (a, b) if members[a][0] < members[b][0] else (b, a)
+                heapq.heappush(heap, (-sim, members[x][0], members[y][0], x, y))
 
     for i in range(n):
-        neighbours = {j for term in vectors[i] for j in postings[term] if j > i}
-        for j in sorted(neighbours):
-            push(i, j)
+        push_candidates(i, only_after=True)
 
     next_id = n
     while heap:
@@ -178,21 +214,21 @@ def agglomerate(vectors: Sequence[Vector], threshold: float) -> list[list[int]]:
         if a not in members or b not in members:
             continue
         merged = sorted(members.pop(a) + members.pop(b))
-        old_a, old_b = cents.pop(a), cents.pop(b)
-        for term in old_a.keys() | old_b.keys():
-            postings[term].discard(a)
-            postings[term].discard(b)
+        for gone in (a, b):
+            for term, _ in tops.pop(gone):
+                postings[term].discard(gone)
+        total: dict[str, float] = {}
+        for old in (cents.pop(a), cents.pop(b)):
+            for term, weight in old.items():
+                total[term] = total.get(term, 0.0) + weight
         new = next_id
         next_id += 1
         members[new] = merged
-        cents[new] = centroid([vectors[i] for i in merged])
-        candidates: set[int] = set()
-        for term in cents[new]:
-            candidates |= postings.setdefault(term, set())
-        for other in sorted(candidates):
-            push(new, other)
-        for term in cents[new]:
-            postings[term].add(new)
+        cents[new] = normalize(total)
+        tops[new] = _top_terms(cents[new])
+        for term, _ in tops[new]:
+            postings.setdefault(term, set()).add(new)
+        push_candidates(new, only_after=False)
     return sorted(members.values(), key=lambda m: m[0])
 
 
@@ -216,20 +252,22 @@ def c_tfidf_terms(class_tokens: Sequence[Sequence[str]]) -> list[list[tuple[str,
     return ranked
 
 
-def niche_ids(clusters: Sequence[tuple[Sequence[str], Sequence[str]]]) -> list[str]:
+def niche_ids(
+    clusters: Sequence[tuple[Sequence[str], Sequence[str]]], taken: Iterable[str] = ()
+) -> list[str]:
     """``niche_`` + 8 hex of sha256 of the sorted top terms; on a collision the smallest member id
     is mixed in. Pass the clusters in a deterministic order.
     """
-    taken: set[str] = set()
+    used = {t.removeprefix("niche_") for t in taken}
     out: list[str] = []
     for terms, members in clusters:
         base = hashlib.sha256("|".join(sorted(terms)).encode()).hexdigest()[:8]
         candidate, salt = base, 0
-        while candidate in taken:
+        while candidate in used:
             salt += 1
             seed = f"{base}|{min(members) if members else ''}|{salt}"
             candidate = hashlib.sha256(seed.encode()).hexdigest()[:8]
-        taken.add(candidate)
+        used.add(candidate)
         out.append(f"niche_{candidate}")
     return out
 
@@ -237,24 +275,81 @@ def niche_ids(clusters: Sequence[tuple[Sequence[str], Sequence[str]]]) -> list[s
 # ---- the whole pipeline ----------------------------------------------------------------------
 
 
+def dedupe_cards(cards: Iterable[Card]) -> list[Card]:
+    """One card per id, sorted by id. Duplicates (the same card seen on several platforms) keep
+    the longest text and the union of all platforms; the result does not depend on input order.
+    """
+    groups: dict[str, list[Card]] = {}
+    for card in cards:
+        groups.setdefault(card.id, []).append(card)
+    out: list[Card] = []
+    for card_id in sorted(groups):
+        group = groups[card_id]
+        if len(group) == 1:
+            out.append(group[0])
+            continue
+        best = sorted(group, key=lambda c: (-len(c.text), c.source, c.name, c.text))[0]
+        platforms = sorted(frozenset().union(*(c.all_platforms for c in group)))
+        out.append(best.model_copy(update={"platforms": platforms}))
+    return out
+
+
+def _match_ids(
+    centroids: Sequence[Vector],
+    previous: Sequence[Niche],
+    vectors: dict[str, Vector],
+    threshold: float,
+) -> dict[int, str]:
+    """Greedy one-to-one match of new clusters to old niches by centroid cosine >= threshold."""
+    pairs: list[tuple[float, int, str]] = []
+    for old in previous:
+        old_vectors = [vectors[i] for i in old.card_ids if i in vectors]
+        if not old_vectors:
+            continue
+        old_centroid = centroid(old_vectors)
+        for k, new_centroid in enumerate(centroids):
+            sim = round(cosine(old_centroid, new_centroid), 12)
+            if sim >= threshold:
+                pairs.append((-sim, k, old.id))
+    pairs.sort()
+    matched: dict[int, str] = {}
+    used: set[str] = set()
+    for _, k, old_id in pairs:
+        if k not in matched and old_id not in used:
+            matched[k] = old_id
+            used.add(old_id)
+    return matched
+
+
 def analyse(
     cards: Sequence[Card],
     config: ClusterConfig | None = None,
     *,
-    as_of: date | None = None,
+    as_of: date | None,
+    previous: Sequence[Niche] = (),
     embedder: Embedder | None = None,
 ) -> Analysis:
-    """Cluster ``cards`` into niches. ``as_of`` defaults to the newest publication date."""
+    """Cluster ``cards`` into niches.
+
+    ``as_of`` comes from the caller (the KB snapshot date); it is never derived from the data,
+    so one bad date cannot move every window. Cards dated after it are ignored and reported in
+    ``ignored_future``. ``None`` means no date is known: series stay empty and statuses flat.
+    ``previous`` are the niches of the last run: a new cluster whose centroid has cosine >=
+    ``id_match_threshold`` with an old niche keeps its id.
+    """
     cfg = config or ClusterConfig()
-    ordered = sorted(cards, key=lambda c: c.id)
-    if as_of is None:
-        dates = [c.published_at for c in ordered if c.published_at is not None]
-        as_of = max(dates) if dates else None
+    unique = dedupe_cards(cards)
+    ignored = [
+        c.id for c in unique if as_of is not None and c.published_at and c.published_at > as_of
+    ]
+    skipped = set(ignored)
+    ordered = [c for c in unique if c.id not in skipped]
     if not ordered:
-        return Analysis(as_of=as_of, niches=[], unassigned=[])
+        return Analysis(as_of=as_of, niches=[], unassigned=[], ignored_future=ignored)
 
     documents = [c.document for c in ordered]
-    vectors = (embedder or TfidfEmbedder(documents)).vectorize(documents)
+    all_vectors = (embedder or TfidfEmbedder(documents)).vectorize(documents)
+    vectors = all_vectors
     clusters = agglomerate(vectors, cfg.merge_threshold)
 
     big = [m for m in clusters if len(m) >= cfg.min_size]
@@ -276,22 +371,26 @@ def analyse(
 
     ranked = c_tfidf_terms([[t for i in m for t in tokenize(documents[i])] for m in kept])
     terms = [[t for t, _ in r[: cfg.keyword_count]] for r in ranked]
-    ids = niche_ids(
-        [
-            (t[: cfg.name_terms], [ordered[i].id for i in m])
-            for t, m in zip(terms, kept, strict=True)
-        ]
+    new_centroids = [centroid([vectors[i] for i in m]) for m in kept]
+    by_id = {c.id: v for c, v in zip(ordered, vectors, strict=True)}
+    matched = _match_ids(new_centroids, previous, by_id, cfg.id_match_threshold)
+    fresh = [k for k in range(len(kept)) if k not in matched]
+    fresh_ids = niche_ids(
+        [(terms[k][: cfg.name_terms], [ordered[i].id for i in kept[k]]) for k in fresh],
+        taken=[*(o.id for o in previous), *matched.values()],
     )
+    ids = dict(matched)
+    ids.update(zip(fresh, fresh_ids, strict=True))
 
     drafts = []
-    for niche_id, member, keywords in zip(ids, kept, terms, strict=True):
+    for k, member in enumerate(kept):
         cards_in = [ordered[i] for i in member]
         series = monthly_series(cards_in, as_of)
         by_month = {s.month: s for s in series}
         window = window_months(as_of, cfg.window) if as_of else []
         mentions = [by_month[m].mentions if m in by_month else 0 for m in window]
         launches = [by_month[m].launches if m in by_month else 0 for m in window]
-        drafts.append((niche_id, cards_in, keywords, series, mentions, launches))
+        drafts.append((ids[k], cards_in, terms[k], series, mentions, launches))
 
     sizes = [len(d[1]) for d in drafts]
     niches: list[Niche] = []
@@ -306,7 +405,13 @@ def analyse(
                 trend_slope=normalised_slope(mentions),
                 activity_slope=activity_slope,
                 status=classify(
-                    activity_slope, len(cards_in), sizes, sum(launches), sum(mentions), cfg
+                    activity_slope,
+                    len(cards_in),
+                    sizes,
+                    sum(launches),
+                    sum(mentions),
+                    cfg,
+                    months=len(series),
                 ),
                 keywords=keywords,
                 card_ids=[c.id for c in cards_in],
@@ -315,5 +420,8 @@ def analyse(
         )
     niches.sort(key=lambda n: (-n.size, n.id))
     return Analysis(
-        as_of=as_of, niches=niches, unassigned=sorted(ordered[i].id for i in unassigned)
+        as_of=as_of,
+        niches=niches,
+        unassigned=sorted(ordered[i].id for i in unassigned),
+        ignored_future=ignored,
     )

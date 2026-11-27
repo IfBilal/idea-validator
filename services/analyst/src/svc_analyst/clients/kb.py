@@ -1,6 +1,7 @@
 """Typed HTTP client for M6 (assumed endpoints, see README): cards, batch fetch and search."""
 
 from collections.abc import Awaitable, Sequence
+from datetime import date
 from typing import Any
 
 import httpx
@@ -86,6 +87,15 @@ class KnowledgeBaseClient:
                 break
         return sorted(cards, key=lambda c: c.id)
 
+    async def snapshot_date(self) -> date | None:
+        """``GET /stats`` -> ``{"snapshot_date": "YYYY-MM-DD"}``; None if absent or unparsable."""
+        payload = await self._json(self._http.get_json("/stats"))
+        raw = payload.get("snapshot_date") if isinstance(payload, dict) else None
+        try:
+            return date.fromisoformat(raw) if isinstance(raw, str) else None
+        except ValueError:
+            return None
+
     async def get_cards(self, ids: Sequence[str]) -> dict[str, Card]:
         """``POST /cards/batch {ids}``; ids M6 does not know are absent from the result."""
         unique = list(dict.fromkeys(ids))
@@ -123,4 +133,7 @@ class UnconfiguredKnowledgeBase:
         raise Unavailable("knowledge base is not configured (set KB_URL)")
 
     async def get_cards(self, ids: Sequence[str]) -> dict[str, Card]:
+        raise Unavailable("knowledge base is not configured (set KB_URL)")
+
+    async def snapshot_date(self) -> date | None:
         raise Unavailable("knowledge base is not configured (set KB_URL)")

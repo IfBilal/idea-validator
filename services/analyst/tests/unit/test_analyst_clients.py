@@ -234,3 +234,22 @@ async def test_unconfigured_knowledge_base_fails_closed() -> None:
         await none.list_cards()
     with pytest.raises(Unavailable):
         await none.get_cards(["card_00000001"])
+
+
+async def test_fake_source_reports_its_snapshot_date() -> None:
+    dated = InMemoryCardSource(CARDS, snapshot_date=date(2026, 6, 30))
+    assert await dated.snapshot_date() == date(2026, 6, 30)
+    assert await InMemoryCardSource(CARDS).snapshot_date() is None
+
+
+async def test_client_reads_the_snapshot_date_from_stats() -> None:
+    ok = kb(
+        httpx.MockTransport(lambda r: httpx.Response(200, json={"snapshot_date": "2026-06-30"}))
+    )
+    assert await ok.snapshot_date() == date(2026, 6, 30)
+    for body in ({}, {"snapshot_date": None}, {"snapshot_date": "yesterday"}, [1]):
+        client = kb(httpx.MockTransport(lambda r, b=body: httpx.Response(200, json=b)))
+        assert await client.snapshot_date() is None
+    down = kb(httpx.MockTransport(lambda r: httpx.Response(500)))
+    with pytest.raises(UpstreamError):
+        await down.snapshot_date()

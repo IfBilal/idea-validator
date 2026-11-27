@@ -8,8 +8,9 @@ import asyncio
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date
 
-from common.errors import DomainError, NotFound
+from common.errors import DomainError, NotFound, UpstreamError
 from common.logging import get_logger
 from common.schemas.profile import StudentProfile
 
@@ -18,7 +19,7 @@ from ..models.cards import PRODUCT_KINDS, Card
 from ..models.domain import Gap, Niche, Snapshot
 from ..models.ports import CardSource, EvidenceSearch, NicheStore
 from . import features as feat
-from .clustering import ClusterConfig, analyse
+from .clustering import ClusterConfig, analyse, dedupe_cards
 from .gaps import GapConfig, detect_gaps
 from .text import TfidfEmbedder, Vector, centroid, cosine, jaccard, tokenize
 
@@ -46,6 +47,7 @@ _STATUS_BONUS = {"rising": 0.2, "flat": 0.0, "saturated": -0.2}
 class AnalystConfig:
     cluster: ClusterConfig = field(default_factory=ClusterConfig)
     gaps: GapConfig = field(default_factory=GapConfig)
+    as_of: date | None = None  # overrides the KB snapshot date
     relevance_tau: float | None = None  # drop evidence scored below this (unscored is kept)
     in_demand_skills: tuple[str, ...] = DEFAULT_IN_DEMAND
     search_k: int = 30
@@ -133,7 +135,7 @@ class AnalystService:
         self._search = search
         self._config = config or AnalystConfig()
         self._index: _Index | None = None
-        self._lock = asyncio.Lock()
+        self._inflight: asyncio.Task[RecomputeResponse] | None = None
 
     @property
     def ready(self) -> bool:
@@ -142,44 +144,79 @@ class AnalystService:
     # ---- lifecycle ---------------------------------------------------------------------------
 
     async def recompute(self) -> RecomputeResponse:
-        """Re-read every card from M6, re-cluster, re-detect gaps, store and swap the index."""
-        async with self._lock:
-            return await self._recompute()
+        """Re-read M6, re-cluster, re-detect gaps, store and swap the index.
+
+        Single flight: callers that arrive while a run is in progress await that same run
+        instead of starting another. The CPU-bound work runs in a worker thread, so the event
+        loop (probes, other requests) stays responsive. In production the same code is meant to
+        be driven by a recompute Job, with replicas only serving the stored result.
+        """
+        task = self._inflight
+        if task is None or task.done():
+            task = asyncio.create_task(self._recompute())
+            self._inflight = task
+            task.add_done_callback(self._clear_inflight)
+        return await asyncio.shield(task)
+
+    def _clear_inflight(self, task: "asyncio.Task[RecomputeResponse]") -> None:
+        if self._inflight is task:
+            self._inflight = None
+        if not task.cancelled():
+            task.exception()  # mark retrieved: callers that went away must not log a warning
+
+    async def _as_of(self) -> date:
+        as_of = self._config.as_of or await self._cards_source.snapshot_date()
+        if as_of is None:
+            raise UpstreamError("knowledge base reported no snapshot date (set AS_OF)")
+        return as_of
 
     async def _recompute(self) -> RecomputeResponse:
         cards = await self._cards_source.list_cards()
-        analysis = analyse(cards, self._config.cluster)
-        gaps = detect_gaps(analysis.niches, cards, analysis.as_of, self._config.gaps)
-        snapshot = Snapshot(
-            as_of=analysis.as_of,
-            niches=analysis.niches,
-            gaps=gaps,
-            unassigned=analysis.unassigned,
-        )
+        as_of = await self._as_of()
+        stored = await self._store.load()
+        previous = stored.niches if stored else []
+        snapshot, index, read = await asyncio.to_thread(self._compute, cards, as_of, previous)
         await self._store.save(snapshot)
-        self._index = _build_index(cards, snapshot)
+        self._index = index
         log.info(
             "analysis_recomputed",
-            cards=len(cards),
+            cards=read,
             niches=len(snapshot.niches),
-            gaps=len(gaps),
+            gaps=len(snapshot.gaps),
             unassigned=len(snapshot.unassigned),
+            ignored_future=len(snapshot.ignored_future),
         )
         return RecomputeResponse(
-            cards=len(cards),
+            cards=read,
             niches=len(snapshot.niches),
-            gaps=len(gaps),
+            gaps=len(snapshot.gaps),
             unassigned=len(snapshot.unassigned),
+            ignored_future=len(snapshot.ignored_future),
             as_of=snapshot.as_of,
         )
 
+    def _compute(
+        self, cards: Sequence[Card], as_of: date, previous: Sequence[Niche]
+    ) -> tuple[Snapshot, _Index, int]:
+        """Pure CPU work (runs in a thread): cluster, find gaps, build the lookup index."""
+        unique = dedupe_cards(cards)
+        analysis = analyse(unique, self._config.cluster, as_of=as_of, previous=previous)
+        skipped = set(analysis.ignored_future)
+        valid = [c for c in unique if c.id not in skipped]
+        gaps = detect_gaps(analysis.niches, valid, as_of, self._config.gaps)
+        snapshot = Snapshot(
+            as_of=as_of,
+            niches=analysis.niches,
+            gaps=gaps,
+            unassigned=analysis.unassigned,
+            ignored_future=analysis.ignored_future,
+        )
+        return snapshot, _build_index(valid, snapshot), len(unique)
+
     async def ensure(self) -> _Index:
         """Recompute once if there is no analysis yet (safe under concurrency)."""
-        if self._index is not None:
-            return self._index
-        async with self._lock:
-            if self._index is None:
-                await self._recompute()
+        if self._index is None:
+            await self.recompute()
         assert self._index is not None
         return self._index
 
@@ -242,21 +279,29 @@ class AnalystService:
 
     # ---- features ----------------------------------------------------------------------------
 
-    async def _evidence(self, index: _Index, evidence_ids: Sequence[str]) -> list[feat.EvidenceRef]:
+    async def _evidence(
+        self,
+        index: _Index,
+        evidence_ids: Sequence[str],
+        scores: dict[str, float] | None,
+    ) -> tuple[list[feat.EvidenceRef], int]:
+        """Resolve cited ids to cards. Returns the refs and how many ids M6 does not know."""
         unique = list(dict.fromkeys(evidence_ids))
         wanted = {e.split("#")[0] for e in unique}
         missing = sorted(wanted - index.cards.keys())
         fetched = await self._cards_source.get_cards(missing) if missing else {}
+        as_of = index.snapshot.as_of
         refs: list[feat.EvidenceRef] = []
+        rejected = 0
         for evidence_id in unique:
-            card = index.cards.get(evidence_id.split("#")[0]) or fetched.get(
-                evidence_id.split("#")[0]
-            )
-            if card is None:
-                log.warning("evidence_unknown_to_kb", evidence_id=evidence_id)
+            card_id = evidence_id.split("#")[0]
+            card = index.cards.get(card_id) or fetched.get(card_id)
+            if card is None or (as_of and card.published_at and card.published_at > as_of):
+                log.warning("evidence_rejected", evidence_id=evidence_id)
+                rejected += 1
                 continue
-            refs.append(feat.EvidenceRef.of(card, evidence_id))
-        return refs
+            refs.append(feat.EvidenceRef.of(card, evidence_id, (scores or {}).get(evidence_id)))
+        return refs, rejected
 
     async def _candidates(self, index: _Index, idea_text: str) -> list[_Product]:
         if self._search is None:
@@ -291,7 +336,8 @@ class AnalystService:
         cfg = self._config
         text = request.idea_text
         profile = request.profile
-        refs = feat.relevant(await self._evidence(index, request.evidence_ids), cfg.relevance_tau)
+        found, rejected = await self._evidence(index, request.evidence_ids, request.evidence_scores)
+        refs = feat.relevant(found, cfg.relevance_tau)
 
         (idea_vec,) = index.embedder.vectorize([text])
         idea_tokens = frozenset(tokenize(text))
@@ -355,6 +401,7 @@ class AnalystService:
             skill_novelty=feat.skill_novelty(required, profile.skills, profile.interests),
             cv_signal=round(feat.cv_signal(required, cfg.in_demand_skills, trend), 4),
             required_skills=required,
+            rejected_evidence_count=rejected,
         )
         log.info(
             "features_computed",

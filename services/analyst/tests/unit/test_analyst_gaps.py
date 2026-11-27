@@ -189,7 +189,7 @@ def test_no_as_of_means_no_recency_credit() -> None:
 
 
 def test_every_fixture_niche_has_gaps_each_with_valid_evidence(cards: list[Card]) -> None:
-    analysis = analyse(cards)
+    analysis = analyse(cards, as_of=AS_OF)
     gaps = detect_gaps(analysis.niches, cards, analysis.as_of)
     by_id = {c.id: c for c in cards}
     assert {g.niche_id for g in gaps} == {n.id for n in analysis.niches}
@@ -208,7 +208,7 @@ def test_every_fixture_niche_has_gaps_each_with_valid_evidence(cards: list[Card]
 
 
 def test_gaps_are_sorted_by_score_and_deterministic(cards: list[Card]) -> None:
-    analysis = analyse(cards)
+    analysis = analyse(cards, as_of=AS_OF)
     one = detect_gaps(analysis.niches, cards, analysis.as_of)
     two = detect_gaps(analysis.niches, cards, analysis.as_of)
     assert [g.model_dump_json() for g in one] == [g.model_dump_json() for g in two]
@@ -218,9 +218,26 @@ def test_gaps_are_sorted_by_score_and_deterministic(cards: list[Card]) -> None:
 
 
 def test_shuffled_cards_give_the_same_gaps(cards: list[Card]) -> None:
-    analysis = analyse(cards)
+    analysis = analyse(cards, as_of=AS_OF)
     shuffled = list(cards)
     random.Random(42).shuffle(shuffled)  # noqa: S311
     a = detect_gaps(analysis.niches, cards, analysis.as_of)
     b = detect_gaps(analysis.niches, shuffled, analysis.as_of)
     assert [g.model_dump_json() for g in a] == [g.model_dump_json() for g in b]
+
+
+def test_a_future_dated_card_does_not_change_gap_scores(cards: list[Card]) -> None:
+    analysis = analyse(cards, as_of=AS_OF)
+    base = detect_gaps(analysis.niches, cards, AS_OF)
+    poison = card(0xFFFFFFF0, "invoice billing late payment", "complaint", "yc", date(2099, 1, 1))
+    members = [*analysis.niches[0].card_ids, poison.id]
+    niches = [analysis.niches[0].model_copy(update={"card_ids": members}), *analysis.niches[1:]]
+    again = detect_gaps(niches, [*cards, poison], AS_OF)
+    assert [g.model_dump_json() for g in again] == [g.model_dump_json() for g in base]
+
+
+def test_duplicate_card_ids_count_once() -> None:
+    one = card(1, "alpha beta gamma", "complaint", "reddit")
+    two = card(1, "alpha beta gamma", "complaint", "github")
+    three = card(1, "alpha beta gamma", "complaint", "yc")
+    assert gaps_for([one, two, three]) == []  # one card is not three complaints

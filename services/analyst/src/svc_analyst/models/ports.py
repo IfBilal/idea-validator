@@ -1,6 +1,7 @@
 """Seams to the outside: M6 (cards, search) and the niche store. Implementations live elsewhere."""
 
 from collections.abc import Sequence
+from datetime import date
 from typing import Protocol
 
 from .cards import Card, EvidenceHit
@@ -16,6 +17,10 @@ class CardSource(Protocol):
 
     async def get_cards(self, ids: Sequence[str]) -> dict[str, Card]:
         """The cards that exist among ``ids`` (unknown ids are simply absent)."""
+        ...
+
+    async def snapshot_date(self) -> date | None:
+        """The KB snapshot / last ingestion date: the analysis reference date (``as_of``)."""
         ...
 
 

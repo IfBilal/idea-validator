@@ -46,3 +46,4 @@ class Snapshot(Message):
     niches: list[Niche]
     gaps: list[Gap]
     unassigned: list[CardId]
+    ignored_future: list[CardId] = Field(default_factory=list)

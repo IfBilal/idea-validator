@@ -277,8 +277,8 @@ def gap(n: int, evidence: str) -> Gap:
 
 def test_unaddressed_gap_count_counts_relevant_gaps_only() -> None:
     gaps = [gap(1, "card_00000001#c0"), gap(2, "card_00000002#c0"), gap(3, "card_00000003#c0")]
-    relevance = {"gap_1": 0.10, "gap_2": 0.0999, "gap_3": 0.5}
-    assert unaddressed_gap_count(gaps, relevance, set()) == 2  # 0.10 is inclusive
+    relevance = {"gap_1": 0.25, "gap_2": 0.2499, "gap_3": 0.5}
+    assert unaddressed_gap_count(gaps, relevance, set()) == 2  # 0.25 is inclusive
 
 
 def test_unaddressed_gap_count_cited_evidence_makes_a_gap_relevant() -> None:

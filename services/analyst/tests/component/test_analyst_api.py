@@ -1,5 +1,6 @@
 """HTTP behaviour of M7: auth, schemas, limits, error envelope, readiness, determinism."""
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -8,7 +9,7 @@ from pydantic import SecretStr
 
 from svc_analyst.clients.fakes import InMemoryCardSource, InMemoryEvidenceSearch
 from svc_analyst.config import Settings
-from svc_analyst.fixtures import build_cards
+from svc_analyst.fixtures import FIXTURE_AS_OF, build_cards
 from svc_analyst.main import build_app
 
 TOKEN = "test-internal-token"
@@ -44,13 +45,16 @@ FEATURE_NAMES = {
     "skill_novelty",
     "cv_signal",
     "required_skills",
+    "rejected_evidence_count",
 }
 
 
 def make_app(**over: Any) -> FastAPI:
     settings = Settings(internal_token=SecretStr(TOKEN), **over)
     return build_app(
-        settings, source=InMemoryCardSource(CARDS), search=InMemoryEvidenceSearch(CARDS)
+        settings,
+        source=InMemoryCardSource(CARDS, snapshot_date=FIXTURE_AS_OF),
+        search=InMemoryEvidenceSearch(CARDS),
     )
 
 
@@ -277,7 +281,8 @@ async def test_recompute_returns_counts() -> None:
     assert body["niches"] == 6
     assert body["gaps"] >= 6
     assert body["unassigned"] == 0
-    assert body["as_of"]
+    assert body["as_of"] == "2026-06-30"
+    assert body["ignored_future"] == 0
 
 
 async def test_ready_when_analysis_is_available() -> None:
@@ -311,6 +316,8 @@ async def test_kb_over_http_end_to_end() -> None:
         if request.url.path == "/cards":
             page = [c.model_dump(mode="json") for c in CARDS]
             return httpx.Response(200, json={"items": page, "total": len(page)})
+        if request.url.path == "/stats":
+            return httpx.Response(200, json={"snapshot_date": "2026-06-30"})
         return httpx.Response(200, json={"items": []})
 
     app = build_app(
@@ -347,11 +354,12 @@ async def test_token_never_appears_in_logs(capsys: Any) -> None:
     assert "wrong-secret-value" not in captured.out + captured.err
 
 
-async def test_startup_recomputes_so_the_first_request_is_instant() -> None:
+async def test_startup_recomputes_in_the_background_so_probes_answer_immediately() -> None:
     app = make_app()
     service = app.state.analyst
     assert service.ready is False
     async with app.router.lifespan_context(app):
+        await app.state.startup_task  # the recompute is a task: the lifespan did not wait for it
         assert service.ready is True
 
 
@@ -361,10 +369,30 @@ async def test_startup_survives_a_dead_knowledge_base_and_closes_the_client() ->
         kb_transport=httpx.MockTransport(lambda r: httpx.Response(500)),
     )
     async with app.router.lifespan_context(app):
+        await app.state.startup_task
         assert app.state.analyst.ready is False
 
 
 async def test_startup_recompute_can_be_disabled() -> None:
     app = make_app(recompute_on_start=False)
     async with app.router.lifespan_context(app):
+        assert app.state.startup_task is None
         assert app.state.analyst.ready is False
+
+
+async def test_as_of_setting_overrides_the_snapshot_date() -> None:
+    async with client(make_app(as_of="2026-03-01")) as c:
+        body = (await c.post("/recompute", headers=HEADERS)).json()
+    assert body["as_of"] == "2026-03-01"
+    assert body["ignored_future"] > 0
+
+
+async def test_concurrent_recompute_requests_do_not_stack() -> None:
+    app = make_app()
+    async with client(app) as c:
+        responses = await asyncio.gather(
+            *(c.post("/recompute", headers=HEADERS) for _ in range(3)),
+            c.get("/health"),
+        )
+    assert all(r.status_code == 200 for r in responses)
+    assert len({r.content for r in responses[:3]}) == 1

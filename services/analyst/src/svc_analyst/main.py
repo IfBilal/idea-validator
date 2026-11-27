@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
@@ -13,7 +14,7 @@ from .api.routes import make_router
 from .clients.fakes import InMemoryCardSource, InMemoryEvidenceSearch
 from .clients.kb import KnowledgeBaseClient, UnconfiguredKnowledgeBase
 from .config import Settings
-from .fixtures import build_cards
+from .fixtures import FIXTURE_AS_OF, build_cards
 from .models.cards import Card
 from .models.ports import CardSource, EvidenceSearch, NicheStore
 from .repositories.memory import InMemoryNicheStore
@@ -35,7 +36,8 @@ def build_app(
     if source is None:
         if settings.demo_data:
             demo: Sequence[Card] = build_cards()
-            source, search = InMemoryCardSource(demo), InMemoryEvidenceSearch(demo)
+            source = InMemoryCardSource(demo, snapshot_date=FIXTURE_AS_OF)
+            search = InMemoryEvidenceSearch(demo)
         elif settings.kb_url:
             token = settings.internal_token.get_secret_value() if settings.internal_token else None
             client = KnowledgeBaseClient(
@@ -54,7 +56,9 @@ def build_app(
         source,
         store or InMemoryNicheStore(),
         search=search,
-        config=AnalystConfig(search_k=settings.search_k),
+        config=AnalystConfig(
+            search_k=settings.search_k, as_of=settings.as_of, relevance_tau=settings.relevance_tau
+        ),
     )
 
     async def analysis_ready() -> bool:
@@ -64,17 +68,23 @@ def build_app(
             return False
         return True
 
+    async def initial_recompute() -> None:
+        try:
+            await service.ensure()
+        except DomainError:
+            # /ready stays false and every request retries; the pod must not crash-loop on M6
+            log.warning("initial_recompute_failed", exc_info=True)
+
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        if settings.recompute_on_start:
-            try:
-                await service.ensure()
-            except DomainError:
-                # /ready stays false and every request retries; the pod must not crash-loop on M6
-                log.warning("initial_recompute_failed", exc_info=True)
+    async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
+        # a background task: the server accepts probes at once while the recompute runs
+        task = asyncio.create_task(initial_recompute()) if settings.recompute_on_start else None
+        app_.state.startup_task = task
         try:
             yield
         finally:
+            if task is not None and not task.done():
+                task.cancel()
             if client is not None:
                 await client.aclose()
 
@@ -87,6 +97,7 @@ def build_app(
     )
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)
     app.state.analyst = service
+    app.state.startup_task = None
     app.include_router(make_router(settings))
     return app
 

@@ -19,7 +19,7 @@ from datetime import date
 
 from ..models.cards import Card
 from ..models.domain import Gap, Niche
-from .clustering import agglomerate, c_tfidf_terms
+from .clustering import agglomerate, c_tfidf_terms, dedupe_cards
 from .features import months_back
 from .text import Embedder, TfidfEmbedder, centroid, cosine, tokenize
 
@@ -45,7 +45,11 @@ def detect_gaps(
 ) -> list[Gap]:
     """Gaps of every niche, sorted by (-score, id)."""
     cfg = config or GapConfig()
-    ordered = sorted(cards, key=lambda c: c.id)
+    ordered = [
+        c
+        for c in dedupe_cards(cards)
+        if as_of is None or c.published_at is None or c.published_at <= as_of
+    ]
     if not ordered or not niches:
         return []
     documents = [c.document for c in ordered]
@@ -61,7 +65,7 @@ def detect_gaps(
 
     gaps: list[Gap] = []
     for niche in niches:
-        members = sorted((by_id[i] for i in niche.card_ids if i in by_id), key=lambda c: c.id)
+        members = sorted((by_id[i] for i in set(niche.card_ids) if i in by_id), key=lambda c: c.id)
         complaint_cards = [c for c in members if c.is_complaint]
         products = [c for c in members if c.is_product]
         clusters = agglomerate([vectors[c.id] for c in complaint_cards], cfg.merge_threshold)

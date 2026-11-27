@@ -23,6 +23,9 @@ class FeaturesRequest(Message):
     evidence_ids: list[EvidenceId] = Field(max_length=MAX_EVIDENCE_IDS)
     profile: StudentProfile
     required_skills: list[Skill] | None = Field(default=None, max_length=30)
+    evidence_scores: dict[EvidenceId, float] | None = Field(
+        default=None, max_length=MAX_EVIDENCE_IDS
+    )
     scope: Literal["S", "M", "L"] | None = None
 
     @field_validator("idea_text")
@@ -55,6 +58,7 @@ class FeaturesResponse(Message):
     skill_novelty: int
     cv_signal: float
     required_skills: list[str]
+    rejected_evidence_count: int  # cited ids M6 does not know (ignored in every count)
 
 
 class MatchRequest(Message):
@@ -104,4 +108,5 @@ class RecomputeResponse(Message):
     niches: int
     gaps: int
     unassigned: int
+    ignored_future: int
     as_of: date | None

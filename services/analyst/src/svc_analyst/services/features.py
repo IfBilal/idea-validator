@@ -177,7 +177,7 @@ def max_similarity(scored: Iterable[Scored]) -> float:
     return max((max(s.cosine, s.jaccard) for s in scored), default=0.0)
 
 
-GAP_RELEVANCE = 0.10
+GAP_RELEVANCE = 0.25
 
 
 def unaddressed_gap_count(
