@@ -15,9 +15,9 @@ async def test_health_identifies_the_service() -> None:
     assert body["module"] == "M6"
 
 
-async def test_ready_is_200_with_no_dependencies() -> None:
+async def test_ready_is_503_until_storage_is_configured() -> None:
     async with _client() as client:
-        assert (await client.get("/ready")).status_code == 200
+        assert (await client.get("/ready")).status_code == 503
 
 
 async def test_metrics_are_exposed() -> None:

@@ -1255,3 +1255,49 @@ def test_a_failed_stream_open_releases_its_slot() -> None:
         e.m3.fail = None
         ok = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
     assert ok.status_code == 200
+
+
+# =========================================================================================
+# M3 restarted and forgot a run that M2 still calls running (restart recovery, fail cleanly)
+# =========================================================================================
+def forgotten_run(e: Env, state: str) -> str:
+    e.m2.add_run(RUN, ALICE)
+    e.m2.runs[RUN]["state"] = state  # M3 has no entry for it: it was lost in a restart
+    return RUN
+
+
+@pytest.mark.parametrize("state", ["created", "running", "awaiting_input", "awaiting_approval"])
+def test_a_run_m3_forgot_is_reported_failed_and_the_mirror_is_corrected(state: str) -> None:
+    e = build()
+    with e.client:
+        forgotten_run(e, state)
+        view = e.client.get(f"/runs/{RUN}", headers=e.headers()).json()
+        assert view["state"] == "failed"
+        assert e.m2.runs[RUN]["state"] == "failed"  # next read does not depend on M3 at all
+
+
+@pytest.mark.parametrize("state", ["succeeded", "failed", "cancelled", "budget_stopped"])
+def test_a_finished_run_m3_forgot_keeps_its_final_state(state: str) -> None:
+    e = build()
+    with e.client:
+        forgotten_run(e, state)
+        view = e.client.get(f"/runs/{RUN}", headers=e.headers()).json()
+        assert view["state"] == state
+
+
+def test_a_forgotten_run_is_still_owner_only() -> None:
+    e = build()
+    with e.client:
+        e.m2.add_run(RUN, BOB)
+        assert e.client.get(f"/runs/{RUN}", headers=e.headers()).status_code == 404
+
+
+def test_a_cancelled_run_m3_forgot_closes_its_stream_instead_of_crashing() -> None:
+    e = build(ScriptedBus(then_idle=True))
+    with e.client:
+        forgotten_run(e, "cancelled")
+        e.m3.replay_status = 404
+        response = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
+    closing = [f for f in frames(response) if f.get("event") == "run_failed"]
+    assert len(closing) == 1
+    assert closing[0]["json"]["payload"]["status"] == "cancelled"
