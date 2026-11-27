@@ -140,7 +140,7 @@ async def test_the_run_state_is_persisted_to_m2() -> None:
     assert record["state"] == "succeeded"
     assert record["kind"] == "validate"
     assert record["user_id"] == "u1"
-    assert record["result"]["verdict"] == "GO"
+    assert record["context"]["result"]["verdict"] == "GO"
     assert rig.world.count("profile", f"PUT /internal/runs/{run_id}") >= 2  # running + finished
     await service.aclose()
 
@@ -402,7 +402,7 @@ async def test_the_run_mirror_carries_the_m11_card_unchanged() -> None:
     service, _ = make(world)
     run_id = await service.start(start_body())
     await service.wait(run_id)
-    result = world.runs[run_id]["result"]
+    result = world.runs[run_id]["context"]["result"]
     for key in ("verdict", "stability", "score", "confidence", "gates", "thresholds", "versions"):
         assert result[key] == sent[-1][key]
     await service.aclose()

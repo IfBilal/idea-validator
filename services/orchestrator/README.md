@@ -14,6 +14,7 @@ This PR implements the **Validate** workflow. Discover, challenge and what-if su
 |---|---|---|
 | `POST /runs` | `{kind:"validate", user_id, input:{idea_text, idea_id, version, title?, overrides?, unknowns?}}` | 202 `{run_id}` |
 | `GET /runs/{id}` | | `{run_id, kind, state, progress, spent, budget, pending_question, pending_approval, result, error}` |
+| `GET /runs/{id}/events?after=<seq>` | | `{events:[RunEvent,...]}` stored events with `seq` > `after` (default 0), oldest first; unknown run: empty |
 | `POST /runs/{id}/answer` | `{question_id, answer}` (number) | 202; 409 if not the open question |
 | `POST /runs/{id}/approve` | `{approval_id, decision: "approve"\|"decline"}` | 202; 409 if not the open approval |
 
@@ -27,6 +28,63 @@ unanswered approval expires as declined (`approval_timeout_s`).
 memory and runs do not survive a restart), `CONFIG_DIR` (mounted `budgets.yaml`),
 `QUESTION_TIMEOUT_S`, `PROFILE_URL`, `KB_URL`, `ANALYST_URL`, `SCOUTS_URL`, `VALIDATORS_URL`,
 `VERDICT_URL`, `CRITIC_URL`.
+Recovery: `LEASE_TTL_S` (60), `RESUME_CONCURRENCY` (4), `RECOVERY_INTERVAL_S` (30; 0 = one pass at startup),
+`RECOVERY_ATTEMPTS` (5), `RECOVERY_ATTEMPT_LIMIT` (3), `FINISHED_TTL_S` (86400).
+
+## Surviving a restart
+Runs are not lost when the pod restarts (docs/harness/07 §1). `RunService.recover()` runs in the
+background at startup (`services/recovery.py`):
+
+1. It pages through M2 `GET /internal/runs?state=created,running,awaiting_input,awaiting_approval`
+   (the run mirror M3 writes after every transition; `context` holds `step`, `spent`, `pending_approval`,
+   `result`, `error`).
+2. For each run it takes a Redis lease (`run:{id}:lease`, TTL `LEASE_TTL_S`, renewed every third of the TTL
+   while the run is active, released when it ends or on graceful shutdown). A run whose lease another
+   replica holds is skipped, so two replicas recovering at once resume each run exactly once.
+3. It reads the LangGraph checkpoint (`thread_id = run_id`):
+   - a pending `interrupt()` becomes `awaiting_input` / `awaiting_approval` again with the same question or
+     approval, so `answer` / `approve` work after the restart (the expiry timer restarts with its full timeout);
+   - unfinished work (`next` nodes) is resumed once with `ainvoke(None)`, at most `RESUME_CONCURRENCY` at a time;
+   - a graph that had finished is settled and the mirror corrected;
+   - a missing, unreadable or foreign checkpoint (another run's `run_id`), or an unknown run kind, fails the
+     run with the fixed text `the run could not be recovered after a restart` (never an exception text).
+4. Budget: the Redis ledger is kept; if Redis lost it, the spend last mirrored to M2 is put back (never over an
+   existing ledger). A step that was in flight is claimed in Redis before it is charged and released when it
+   finishes or fails; a claim left by a dead process means the re-run is not charged again (steps that
+   completed are memoised in the checkpoint and cost nothing).
+5. Events are stored in a bounded Redis list (`run:{id}:events`, 2000 entries, 7 days) before they are
+   published; the emitter continues after the last stored `seq`, and `GET /runs/{id}/events` replays them.
+
+Hardening (docs/harness/13):
+- **Poison runs.** Every restore counts in Redis (`run:{id}:recoveries`); past `RECOVERY_ATTEMPT_LIMIT` (3) the run
+  is failed with the fixed reason. The count resets once the run is safely paused or finished. A step claimed
+  by a dead process may be re-run free at most twice (`MAX_STEP_RERUNS`); then it stops the run as
+  `budget_stopped` (`exceeded: ["reruns"]`). A step is free only after it was charged (`mark_paid`), so a
+  crash between claim and charge never leaves an unbilled step.
+- **Checkpoint trust.** A restored state is validated again from its plain data (LangGraph falls back to an
+  unvalidated `model_construct` when it cannot read one), its `run_id` and `user_id` must equal the mirror's,
+  and a graph with nothing left to run must be terminal (and hold a card for validate/what-if) or the run is
+  failed, never shown as `succeeded` with no result.
+- **No split brain.** A pause is mirrored to M2 before its expiry timer starts; any error while restoring
+  cancels that run's task and timer and frees its lease.
+- **Leases.** The heartbeat abandons a run after `lease_failures_allowed` (2) consecutive failed renewals, before
+  the TTL lets another replica take it, and the loop survives any error inside a pass.
+- **Budget mirror.** Spend and the approved cost raise (`cost_bonus_usd`) are restored atomically (only into a
+  missing hash). A mirror with unreadable spend fails the run instead of giving it a fresh budget. The
+  mirror leaves `result` out (`result_truncated`) when its context passes 60 KB; M2 caps `input`, `context` and
+  `pending_question` at 64 KB each.
+- **Events.** `run:{id}:seq` holds the last sequence number, so it continues even if the list is lost, and a poll
+  reads only the tail of the list (nothing when there is nothing new).
+- **Memory.** Finished runs leave memory `FINISHED_TTL_S` (24 h) after they end; M2 keeps the record.
+- **Logs.** A crashed run logs the exception type and the file:line only, never its message or a traceback
+  (they can quote the idea text).
+- **Access control.** `GET /runs/{id}/events` does not check ownership (M3 never compares `user_id`): the gateway
+  must confirm the run belongs to the caller through M2 before it proxies events or any other run call. M2's
+  `/internal/*` is reachable only by the gateway and the orchestrator (the NetworkPolicy edges
+  `gateway -> profile` and `orchestrator -> profile` in scripts/gen_k8s.py, unchanged) and needs the internal token.
+
+The loop sweeps again every `RECOVERY_INTERVAL_S`, which adopts the runs of a crashed replica once its leases
+lapse (at most `LEASE_TTL_S` later). While M2 is down a pass is retried with a doubling delay.
 
 ## Graph
 ```mermaid
@@ -87,14 +145,19 @@ use LangGraph `interrupt()`.
 - Approval is requested only for deep search (scouting), not for other steps that could pass the budget.
 - CLARIFY runs after the scorers (it needs their effort estimate for the value-of-information call).
 - `concurrency.scorers` is parsed into `RunConfig.scorer_concurrency` but unused: M9 runs the four scorers.
-- Runs are not rehydrated after a restart: LangGraph checkpoints survive in Postgres but `RunService` forgets
-  the in-memory run until rehydration from the M2 run mirror is built.
+- Recovery limits: a question or approval gets its full timeout again after a restart; a step cut off by a
+  crash is re-run from its start (steps are idempotent only through the memo, so an external side effect such
+  as a scout could repeat); Discover children that were in flight are re-run with their parent node; events
+  live in Redis, so a Redis without persistence loses replay (the SSE stream then falls back to live-only).
+- M3 writes the run mirror in M2's shape (`state`, `input`, `context`, `pending_question`); the gateway's
+  own start-time write of `input` is overwritten by M3's copy of the validated request.
 - Without `DATABASE_URL` the checkpointer is in memory; with `ENVIRONMENT=production` startup fails instead.
 - M3 never compares `user_id`: M1 is the only caller and must enforce run ownership.
 - Trace inputs are an `input_hash` only (no idea text or profile, per docs/harness/13 §8). Outputs, such as
   evidence and the verdict, are still traced.
 - The verdict cache key has no `user_id`. This is safe because idea ids are globally unique (M2 guarantees it).
-- `RunStatus` is not registered in LangGraph's msgpack allow-list; it round-trips through the default serializer today (tested with Postgres) but a stricter serializer setting would need it registered.
+- Checkpoints are read through a strict msgpack allow-list (`repositories/serde.py`: `RunStatus` and the three state
+  models). A new state model or enum must be added there; a test fails if one is missing.
 - Cache key versions cover M11, the profile and the idea only (scorer/critic versions are not exposed yet).
 - Step budget: `StepRunner` reserves each step with `BudgetLedger.reserve` (one atomic Lua check-and-charge), so
   parallel fan-outs cannot overshoot `max_steps` (40 parallel reservations against a limit of 10 admit exactly 10).

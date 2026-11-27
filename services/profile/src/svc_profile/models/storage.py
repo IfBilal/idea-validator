@@ -10,6 +10,7 @@ from pydantic import Field, field_validator
 from common.schemas import Verdict
 from common.schemas.base import Message
 
+MAX_RUN_JSON_BYTES = 64 * 1024  # a run row is a mirror, not a document store
 RunKind = Literal["discover", "validate", "whatif", "challenge", "eval"]
 
 
@@ -119,6 +120,16 @@ class RunBody(Message):
     input: dict[str, Any]
     context: dict[str, Any] = Field(default_factory=dict)
     pending_question: dict[str, Any] | None = None
+
+    @field_validator("input", "context", "pending_question")
+    @classmethod
+    def _small(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if (
+            value is not None
+            and len(json.dumps(value, ensure_ascii=False).encode()) > MAX_RUN_JSON_BYTES
+        ):
+            raise ValueError(f"must be at most {MAX_RUN_JSON_BYTES} bytes as JSON")
+        return value
 
 
 class RunOut(RunBody):

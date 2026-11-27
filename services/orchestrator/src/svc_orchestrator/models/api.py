@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, StringConstraints, model_validator
 
+from common.schemas import RunEvent
 from common.schemas.base import Message
 
 EFFORT_CAP = 10_000  # hours: a sane upper bound for one idea
@@ -151,6 +152,10 @@ class ApproveBody(Message):
 class Accepted(Message):
     run_id: str
     state: str
+
+
+class StoredEvents(Message):
+    events: list[RunEvent]
 
 
 class RunView(Message):

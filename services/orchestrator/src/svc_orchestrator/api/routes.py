@@ -2,12 +2,20 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 
 from common.service import require_internal_token
 
 from ..config import Settings
-from ..models.api import Accepted, AnswerBody, ApproveBody, RunStarted, RunView, StartRun
+from ..models.api import (
+    Accepted,
+    AnswerBody,
+    ApproveBody,
+    RunStarted,
+    RunView,
+    StartRun,
+    StoredEvents,
+)
 from ..services.runs import RunService
 
 
@@ -17,6 +25,8 @@ def run_service(request: Request) -> RunService:
 
 
 Runs = Annotated[RunService, Depends(run_service)]
+RUN_ID = r"^[A-Za-z0-9_-]{1,80}$"
+MAX_AFTER = 2**31 - 1
 
 
 def make_router(settings: Settings) -> APIRouter:
@@ -29,6 +39,15 @@ def make_router(settings: Settings) -> APIRouter:
     @router.get("/runs/{run_id}", response_model=RunView)
     async def get_run(run_id: str, runs: Runs) -> RunView:
         return await runs.get(run_id)
+
+    @router.get("/runs/{run_id}/events", response_model=StoredEvents)
+    async def run_events(
+        run_id: Annotated[str, Path(pattern=RUN_ID)],
+        runs: Runs,
+        after: Annotated[int, Query(ge=0, le=MAX_AFTER)] = 0,
+    ) -> StoredEvents:
+        """Events with ``seq`` > ``after``: what M1's SSE stream replays after a reconnect."""
+        return StoredEvents(events=await runs.events(run_id, after))
 
     @router.post("/runs/{run_id}/answer", status_code=202, response_model=Accepted)
     async def answer(run_id: str, body: AnswerBody, runs: Runs) -> Accepted:

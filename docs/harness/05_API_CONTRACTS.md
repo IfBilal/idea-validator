@@ -107,7 +107,7 @@ data: {"run_id","seq","ts","type", ...payload}
 ### M2 Profile/Session/Cache (`/internal/*`)
 `POST /internal/users` (`{email,password}` → 201 `{user_id}`; 409 duplicate email, 422 password < 10 chars), `POST /internal/auth/login` (`{email,password}` → `{user_id}`; one generic 401 for every failure; account locked 15 min after 5 failures; the gateway issues the JWT), `GET /internal/profiles/{user_id}[?version=]`, `PUT /internal/profiles/{user_id}` (each PUT adds a version), `POST /internal/ideas` (creates version 1), `GET /internal/ideas?user_id&limit&cursor` (newest first, keyset cursor),
 `POST /internal/ideas/{id}/versions`, `GET /internal/ideas/{id}/versions[/{v}]?user_id` (the `/{v}` detail has `idea_id, version, text, change_note, card` plus title, clarifications and the stored verdict; `card` is null until a card is stored; a foreign or unknown idea/version is one identical 404), `PUT /internal/ideas/{id}/versions/{v}` (`{user_id,text,change_note,card,idempotency_key,base_version}` → `{idea_id,version,created}`; `{v}` must be `base_version+1` else 422; the card is stored verbatim, a `verdict: null` stays null; same key and same content returns `created:false`, same key with other content, a `base_version` that is not the latest, or a lost race gives 409; unknown or foreign idea 404; card ≤ 256 KB, text ≤ 4000, key `[A-Za-z0-9_.:-]{1,100}`, unknown fields 422), `POST /internal/verdicts` (body is the full `Verdict`; stores the payload and one row per dimension score),
-`GET|PUT /internal/runs/{id}` (`?user_id` on GET; a run belongs to one user), `POST /internal/approvals`, `PUT /internal/approvals/{id}` (decided once, else 409),
+`GET|PUT /internal/runs/{id}` (`?user_id` on GET; a run belongs to one user), `GET /internal/runs?state=a,b&limit=&after=` (M3 recovery: every user's runs in those states, at most 10 states of `[a-z_]{1,40}`, `limit` 1..500 default 100, paged by run id with `after`), `POST /internal/approvals`, `PUT /internal/approvals/{id}` (decided once, else 409),
 `GET|PUT /internal/cache/verdict/{key}` (GET returns `{hit: bool, value}`; PUT 204 with `{value, ttl_s?}`, default TTL 24 h; build the key with `common.cache_keys.verdict_cache_key`), `GET /internal/compare?user_id&idea_ids=..` (2 to 5 ideas).
 Every read takes the caller's `user_id`; someone else's idea, version or run is reported as 404, never 403.
 
@@ -117,7 +117,7 @@ validated strictly (unknown fields, wrong types and out-of-range numbers are 422
 `validate` `{idea_text ≤4000, idea_id, version ≥1, title?, overrides?, unknowns?}`; `discover` `{niche? ≤200, count 1..10 (default 5),
 deep_search?}`; `challenge` `{idea_id, version, claim_id}`; `whatif` `{idea_id, version, change_id | custom_change ≤1000}` (exactly one).
 Ids are `[A-Za-z0-9_-]{1,64}` because they reach URL paths. Budgets come from the run kind in `config/budgets.yaml`.
-`GET /runs/{id}`; `POST /runs/{id}/answer`; `POST /runs/{id}/approve` (only validate and what-if runs ask or need approval; 409 otherwise);
+`GET /runs/{id}`; `GET /runs/{id}/events?after=<seq>` (`{events:[RunEvent]}`, stored events with seq > after); `POST /runs/{id}/answer`; `POST /runs/{id}/approve` (only validate and what-if runs ask or need approval; 409 otherwise);
 `POST /runs/{id}/cancel`; `POST /replay/{run_id}` (used by M13 replay).
 
 ### M4 Scouts
