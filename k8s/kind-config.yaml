@@ -1,4 +1,4 @@
-# kind cluster with NO default CNI -> install Calico (enforces NetworkPolicy). Guide §4.3, §9.3. Pin node image in P1-T04.
+# kind cluster with NO default CNI -> install Calico (enforces NetworkPolicy). Guide §4.3, §9.3. Node image pinned in scripts/k8s_up.sh.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: idea-validator
