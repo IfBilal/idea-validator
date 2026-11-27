@@ -956,7 +956,7 @@ async def test_transitions_are_traced_as_decisions() -> None:
     h = Harness()
     await run(h)
     transitions = [d for d in h.decisions() if d.output["decision"] == "transition"]
-    assert [t.input["from"] for t in transitions][:3] == ["intake", "cache_check", "evidence"]
+    assert [t.input["from"] for t in transitions][:3] == ["rewrite", "intake", "cache_check"]
     assert transitions[-1].output["to"] == "card"
 
 

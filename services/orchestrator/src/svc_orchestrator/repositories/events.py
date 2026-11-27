@@ -66,3 +66,34 @@ class RunEmitter:
         except Exception as exc:
             log.warning("event_publish_failed", run_id=self.run_id, error=type(exc).__name__)
         return event
+
+
+class QuietEmitter(RunEmitter):
+    """Emitter for a Discover child: progress events pass through, lifecycle events are dropped.
+
+    A child is not a run: only the parent announces ``run_completed``, ``verdict`` and so on.
+    Events share the parent's ``seq`` so the stream stays monotonic.
+    """
+
+    DROPPED: frozenset[str] = frozenset(
+        {
+            "state_changed",
+            "verdict",
+            "run_completed",
+            "run_failed",
+            "budget_stopped",
+            "question",
+            "approval_required",
+        }
+    )
+
+    def __init__(self, parent: RunEmitter) -> None:
+        super().__init__(parent.run_id, parent._publisher)
+        self._parent = parent
+
+    async def emit(self, type_: RunEventType, **payload: Any) -> RunEvent:
+        if type_ in self.DROPPED:
+            return RunEvent(
+                run_id=self.run_id, seq=0, ts=datetime.now(UTC), type=type_, payload=payload
+            )
+        return await self._parent.emit(type_, **payload)

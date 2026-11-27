@@ -53,10 +53,14 @@ class UnknownSpec(Message):
         return self
 
 
+SafeId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]  # ends up in URL paths
+PositiveInt = Annotated[int, Field(strict=True, ge=1, le=1_000_000)]
+
+
 class ValidateInput(Message):
     idea_text: Annotated[str, StringConstraints(min_length=1, max_length=4000)]
-    idea_id: str = Field(min_length=1)
-    version: int = Field(ge=1)
+    idea_id: SafeId
+    version: PositiveInt
     title: str | None = Field(default=None, max_length=200)
     overrides: dict[str, StrictFloat] = Field(default_factory=dict)
     unknowns: list[UnknownSpec] = Field(default_factory=list, max_length=3)
@@ -68,10 +72,66 @@ class ValidateInput(Message):
         return self
 
 
+Niche = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+ChangeText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
+
+
+class DiscoverInput(Message):
+    niche: Niche | None = None
+    count: Annotated[int, Field(strict=True, ge=1, le=10)] = 5
+    deep_search: Annotated[bool, Field(strict=True)] = False  # accepted; children never scout
+
+
+class ChallengeInput(Message):
+    idea_id: SafeId
+    version: PositiveInt
+    claim_id: SafeId
+
+
+class WhatIfInput(Message):
+    idea_id: SafeId
+    version: PositiveInt  # the version the change is applied to
+    change_id: SafeId | None = None  # one of the card's proposed changes ...
+    custom_change: ChangeText | None = None  # ... or the student's own words
+
+    @model_validator(mode="after")
+    def _exactly_one_change(self) -> Self:
+        if (self.change_id is None) == (self.custom_change is None):
+            raise ValueError("give exactly one of change_id or custom_change")
+        return self
+
+
+RunInput = ValidateInput | DiscoverInput | ChallengeInput | WhatIfInput
+_INPUTS: dict[str, type[Message]] = {
+    "validate": ValidateInput,
+    "discover": DiscoverInput,
+    "challenge": ChallengeInput,
+    "whatif": WhatIfInput,
+}
+
+
 class StartRun(Message):
-    kind: Literal["validate"]
-    user_id: str = Field(min_length=1)
-    input: ValidateInput
+    kind: Literal["validate", "discover", "challenge", "whatif"]
+    user_id: str = Field(min_length=1, max_length=64)
+    input: RunInput
+
+    @model_validator(mode="before")
+    @classmethod
+    def _typed_input(cls, data: Any) -> Any:
+        """Validate ``input`` with the model of its ``kind``, so shapes can never be mixed up."""
+        if not isinstance(data, dict):
+            return data
+        kind = data.get("kind")
+        model = _INPUTS.get(kind) if isinstance(kind, str) else None
+        if model is not None and isinstance(data.get("input"), dict):
+            return {**data, "input": model.model_validate(data["input"])}
+        return data
+
+    @model_validator(mode="after")
+    def _input_matches_kind(self) -> Self:
+        if not isinstance(self.input, _INPUTS[self.kind]):
+            raise ValueError(f"input does not match kind {self.kind!r}")
+        return self
 
 
 class RunStarted(Message):

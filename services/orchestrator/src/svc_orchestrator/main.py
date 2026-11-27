@@ -21,6 +21,8 @@ from .services.run_config import load_run_config
 from .services.run_context import RunContext
 from .services.runs import RunService
 
+RUN_KINDS = ("validate", "discover", "challenge", "whatif")
+
 
 def service_urls(settings: Settings) -> dict[str, str]:
     return {
@@ -31,6 +33,7 @@ def service_urls(settings: Settings) -> dict[str, str]:
         "validators": settings.validators_url,
         "verdict": settings.verdict_url,
         "critic": settings.critic_url,
+        "ideation": settings.ideation_url,
     }
 
 
@@ -69,18 +72,20 @@ async def _wire(settings: Settings, app: FastAPI, stack: AsyncExitStack) -> RunS
     redis = Redis.from_url(settings.redis_url.get_secret_value())
     app.state.redis = redis
     stack.push_async_callback(redis.aclose)
-    config = load_run_config("validate", config_dir=settings.config_dir)
+    configs = {k: load_run_config(k, config_dir=settings.config_dir) for k in RUN_KINDS}
+    config = configs["validate"]  # timeouts and retries are shared by every kind
     token = settings.internal_token.get_secret_value() if settings.internal_token else None
     clients = build_clients(service_urls(settings), config, internal_token=token)
     stack.push_async_callback(clients.aclose)
     tracer = Tracer("orchestrator")
     publisher = RedisPublisher(redis)
 
-    def context(run_id: str) -> RunContext:
+    def context(run_id: str, kind: str) -> RunContext:
+        run_config = configs[kind]
         return RunContext(
             run_id=run_id,
-            config=config,
-            ledger=BudgetLedger(redis, run_id, config.limits),
+            config=run_config,
+            ledger=BudgetLedger(redis, run_id, run_config.limits),
             tracer=tracer,
             emitter=RunEmitter(run_id, publisher),
             clients=clients,

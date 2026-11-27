@@ -20,3 +20,4 @@ class Settings(ServiceSettings):
     validators_url: str = "http://validators:8000"
     verdict_url: str = "http://verdict:8000"
     critic_url: str = "http://critic:8000"
+    ideation_url: str = "http://ideation:8000"

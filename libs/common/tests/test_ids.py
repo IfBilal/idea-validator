@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from common.ids import canonical_url, card_id_for, evidence_id, parse_evidence_id
+from common.ids import assign_card_id, canonical_url, card_id_for, evidence_id, parse_evidence_id
 from common.schemas.types import CardId, EvidenceId  # noqa: F401  (the patterns the ids must satisfy)
 
 CARD = re.compile(r"^card_[0-9a-f]{8}$")
@@ -106,3 +106,64 @@ def test_evidence_id_rejects_a_bad_card_id_or_negative_chunk() -> None:
         evidence_id("not-a-card", 0)
     with pytest.raises(ValueError, match="chunk"):
         evidence_id("card_c8ee86d2", -1)
+
+
+# ---- collision-safe card ids (security review of the 8-hex scheme) -------------------------------
+def test_longer_ids_extend_the_default_so_existing_ids_stay_valid() -> None:
+    short = card_id_for("https://example.com/a")
+    for length in (8, 10, 12):
+        longer = card_id_for("https://example.com/a", length=length)
+        assert len(longer) == len("card_") + length
+        assert longer.startswith(short)
+        assert re.match(r"^card_[0-9a-f]{8,12}$", longer)
+
+
+@pytest.mark.parametrize("length", [0, 7, 9, 11, 13, 40])
+def test_only_the_lengths_the_schema_allows_are_accepted(length: int) -> None:
+    if length in (9, 11):  # the schema pattern allows 8..12, but we only ever mint 8, 10 or 12
+        with pytest.raises(ValueError, match="length"):
+            card_id_for("https://example.com/a", length=length)
+    else:
+        with pytest.raises(ValueError, match="length"):
+            card_id_for("https://example.com/a", length=length)
+
+
+def forged(url: str) -> str:
+    """A hash that collides on the first 8 hex characters for every URL, as a crafted URL would."""
+    import hashlib
+
+    return "deadbeef" + hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest()
+
+
+def test_a_free_or_own_id_is_used_as_is() -> None:
+    url = "https://example.com/a"
+    assert assign_card_id(url, lambda _id: None) == card_id_for(url)
+    assert assign_card_id(url, lambda _id: canonical_url(url)) == card_id_for(url), (
+        "re-ingesting the same page"
+    )
+
+
+def test_a_different_page_holding_the_id_forces_a_longer_one_instead_of_overwriting_it() -> None:
+    owners: dict[str, str] = {}
+    first = assign_card_id("https://example.com/legit", owners.get, digest=forged)
+    owners[first] = canonical_url("https://example.com/legit")
+    second = assign_card_id("https://evil.example/crafted", owners.get, digest=forged)
+    assert first == "card_deadbeef"
+    assert (
+        second != first and second.startswith("card_deadbeef") and len(second) == len("card_") + 10
+    )
+    assert owners[first] == canonical_url("https://example.com/legit"), (
+        "the legit card is untouched"
+    )
+
+
+def test_the_third_tier_is_twelve_characters_and_after_that_it_refuses() -> None:
+    legit = canonical_url("https://example.com/legit")
+
+    def owner_of(card_id: str) -> str | None:
+        return legit if len(card_id) in (len("card_") + 8, len("card_") + 10) else None
+
+    twelve = assign_card_id("https://evil.example/x", owner_of, digest=forged)
+    assert len(twelve) == len("card_") + 12
+    with pytest.raises(ValueError, match="collision"):
+        assign_card_id("https://evil.example/x", lambda _id: legit, digest=forged)

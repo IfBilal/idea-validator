@@ -9,7 +9,16 @@ def test_service_urls_come_from_settings_not_code() -> None:
     urls = service_urls(s)
     assert urls["kb"] == "http://kb:8000"
     assert urls["profile"] == "http://m2:8000"
-    assert set(urls) == {"profile", "kb", "analyst", "scouts", "validators", "verdict", "critic"}
+    assert set(urls) == {
+        "profile",
+        "kb",
+        "analyst",
+        "scouts",
+        "validators",
+        "verdict",
+        "critic",
+        "ideation",
+    }
 
 
 def test_no_defaults_point_at_localhost() -> None:

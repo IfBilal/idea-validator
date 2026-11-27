@@ -10,6 +10,8 @@ from common.budget import BudgetLimits, limits_from_config
 from common.config import ConfigError, load_yaml_config
 
 MAX_RETRIES_CAP = 2  # CLAUDE.md rule 9
+DEBATE_ROUNDS_CAP = 3  # hard cap: the debate never exceeds 3 rounds
+MAX_CHILDREN = 10
 
 
 class Timeouts(BaseModel):
@@ -41,6 +43,12 @@ class RunConfig(BaseModel):
     deep_search_cost_usd: float
     scorer_concurrency: int
     approval_timeout_s: float
+    debate_max_rounds: int = 3
+    children_concurrency: int = 3
+
+
+def _int_between(value: Any, low: int, high: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
 
 
 def run_config_from(config: Mapping[str, Any], kind: str) -> RunConfig:
@@ -55,6 +63,14 @@ def run_config_from(config: Mapping[str, Any], kind: str) -> RunConfig:
         raise ConfigError(f"invalid timeouts for {kind!r}: {exc}") from exc
     if any(value <= 0 for value in timeouts.model_dump().values()):
         raise ConfigError(f"every timeout for {kind!r} must be positive")
+    rounds = (section.get("debate") or {}).get("max_rounds", DEBATE_ROUNDS_CAP)
+    if not _int_between(rounds, 1, DEBATE_ROUNDS_CAP):
+        raise ConfigError(
+            f"debate max_rounds must be an integer 1..{DEBATE_ROUNDS_CAP}: {rounds!r}"
+        )
+    children = section.get("validate_children_concurrency", 3)
+    if not _int_between(children, 1, MAX_CHILDREN):
+        raise ConfigError(f"validate_children_concurrency must be an integer 1..{MAX_CHILDREN}")
     deep = section.get("deep_search") or {}
     pages = int(deep.get("max_pages", 0))
     per_page = float(deep.get("est_cost_per_page_usd", 0.0))
@@ -67,6 +83,8 @@ def run_config_from(config: Mapping[str, Any], kind: str) -> RunConfig:
         deep_search_cost_usd=pages * per_page,
         scorer_concurrency=int((config.get("concurrency") or {}).get("scorers", 4)),
         approval_timeout_s=float(config.get("approval_timeout_s", 600)),
+        debate_max_rounds=rounds,
+        children_concurrency=children,
     )
 
 

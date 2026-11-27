@@ -22,7 +22,10 @@ Route = Callable[[ValidateState], str]
 STOPPED = [{"status": RunStatus.FAILED}, {"status": RunStatus.BUDGET_STOPPED}]
 
 TABLE: list[tuple[Route, dict[str, object], str]] = [
+    (routing.after_rewrite, {}, "intake"),
     (routing.after_intake, {}, "cache_check"),
+    (routing.after_claims_check, {"new_objections": True}, "recompute"),
+    (routing.after_claims_check, {"new_objections": True, "recomputed": True}, "stability"),
     (routing.after_cache_check, {"cache_hit": False}, "evidence"),
     (routing.after_cache_check, {"cache_hit": True}, "card"),
     (routing.after_evidence, {}, "features"),
@@ -67,6 +70,7 @@ def test_routing_table(route: Route, fields: dict[str, object], expected: str) -
 @pytest.mark.parametrize(
     "route",
     [
+        routing.after_rewrite,
         routing.after_intake,
         routing.after_cache_check,
         routing.after_evidence,
