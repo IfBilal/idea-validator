@@ -2,6 +2,17 @@
 # (record in docs/data-sources.md). Official APIs only. No logins, no private data.
 version: "s1"
 user_agent: "IdeaValidatorBot/1.0 (+https://github.com/<org>/<repo>; CS4032 student project)"
+# API hosts governed by their API terms instead of robots.txt (their robots.txt is for crawlers).
+robots_exempt:
+  - hacker-news.firebaseio.com
+  - hn.algolia.com
+  - api.github.com
+  - oauth.reddit.com
+  - api.producthunt.com
+  - api.openai.com
+  - api.anthropic.com
+  - generativelanguage.googleapis.com
+  - api.groq.com
 allow_list:
   - hacker-news.firebaseio.com
   - hn.algolia.com
