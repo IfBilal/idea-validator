@@ -65,6 +65,35 @@ def build(
     return v
 
 
+def ensure_dev_env(path: Path, rand: Callable[[int], str] = secrets.token_hex) -> list[str]:
+    """Add the keys docker compose needs to the git-ignored ``.env`` if they are missing.
+
+    Only missing keys are written (an existing password is never replaced: the Postgres volume holds
+    it). URLs point at ``localhost`` because they are for tools run on the host (alembic, pytest);
+    inside the cluster the URLs come from ``app-secrets``. Returns the key names that were added.
+    """
+    current = parse_dotenv(path.read_text()) if path.exists() else {}
+    wanted = dict(current)
+    wanted.setdefault("POSTGRES_USER", "idea")
+    wanted.setdefault("POSTGRES_PASSWORD", rand(16))
+    wanted.setdefault("POSTGRES_DB", "idea_validator")
+    user, password, db = wanted["POSTGRES_USER"], wanted["POSTGRES_PASSWORD"], wanted["POSTGRES_DB"]
+    wanted.setdefault("DATABASE_URL", f"postgresql+asyncpg://{user}:{password}@localhost:5432/{db}")
+    wanted.setdefault("REDIS_URL", "redis://localhost:6379/0")
+    added = [k for k in wanted if k not in current]
+    if added:
+        needs_newline = (
+            path.exists() and path.stat().st_size > 0 and not path.read_text().endswith("\n")
+        )
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a") as handle:
+            if needs_newline:
+                handle.write("\n")
+            handle.writelines(f"{k}={wanted[k]}\n" for k in added)
+        os.chmod(path, 0o600)
+    return added
+
+
 def _existing() -> dict[str, str]:
     done = subprocess.run(
         ["kubectl", "-n", NAMESPACE, "get", "secret", SECRET, "-o", "json"],
@@ -79,6 +108,10 @@ def _existing() -> dict[str, str]:
 
 
 def main() -> int:
+    if "--dev-env" in sys.argv:  # no cluster involved: prepare .env for `make up`
+        added = ensure_dev_env(ROOT / ".env")
+        print(f".env: {len(added)} key(s) added" + (f" ({', '.join(added)})" if added else ""))
+        return 0
     subprocess.run(
         ["kubectl", "apply", "-f", str(ROOT / "k8s/base/namespace.yaml")],
         check=True,
