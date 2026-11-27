@@ -1,0 +1,39 @@
+{
+  "note": "SYNTHETIC smoke adapter, Windows 11, Ryzen 5 5600 (6c/12t), llama.cpp b12812 CPU build, Q4_K_M 935 MiB, ctx 4096, 1 slot, JSON-schema constrained decoding, ~570-token prompts (real prompts will be longer: re-measure with real data)",
+  "bench_threads_4": {
+    "latency_s": {
+      "p50": 3.6476487499999166,
+      "p95": 5.491998835000186
+    },
+    "n": 12,
+    "rss_mb_max": 1855.203125,
+    "rss_mb_mean": 1827.1192908653845,
+    "prompt_tokens_mean": null,
+    "threads": 4,
+    "valid_object_rate": 1.0
+  },
+  "bench_threads_6": {
+    "latency_s": {
+      "p50": 3.9674442000000454,
+      "p95": 5.6839914350001886
+    },
+    "n": 12,
+    "rss_mb_max": 1856.3671875,
+    "rss_mb_mean": 1828.2397836538462,
+    "prompt_tokens_mean": null,
+    "threads": 6,
+    "valid_object_rate": 1.0
+  },
+  "quantisation_damage_vs_merged_bf16_40_val_examples": {
+    "n": 40,
+    "identical_score_rate": 0.9,
+    "mean_abs_score_diff": 0.1,
+    "mae_bf16": 0.0,
+    "mae_q4_k_m": 0.1,
+    "valid_json_bf16": 1.0,
+    "valid_json_q4_k_m": 1.0
+  },
+  "gguf_sha256": "5af24a5adda23933b2eadd683e83a75bbff14e71dbc337ec79d0d6e049bcc08e",
+  "gguf_bytes": 986048160,
+  "export_path": "merged bf16 -> f16 GGUF -> llama-quantize Q4_K_M"
+}
