@@ -12,6 +12,7 @@ from pydantic import SecretStr
 
 from common.config import ConfigError
 from common.http import ServiceClient
+from svc_gateway.clients.coordination import MemoryIdempotencyStore, MemoryStreamGate
 from svc_gateway.clients.profile import ProfileClient
 from svc_gateway.config import Settings
 from svc_gateway.main import build_app
@@ -80,7 +81,14 @@ def wired(settings: Settings, limiter: Any, profiles: ProfileClient) -> Any:
     """The app with every upstream faked (the idea/run endpoints have their own test module)."""
     ideas, orchestrator, _ = clients(FakeM2(), FakeM3())
     return build_app(
-        settings, limiter, profiles, ideas=ideas, orchestrator=orchestrator, events=ScriptedBus()
+        settings,
+        limiter,
+        profiles,
+        ideas=ideas,
+        orchestrator=orchestrator,
+        events=ScriptedBus(),
+        store=MemoryIdempotencyStore(),
+        gate=MemoryStreamGate(),
     )
 
 

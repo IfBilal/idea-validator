@@ -50,6 +50,7 @@ class FakeM2:
         self.fail: int | None = None
         self.timeout = False
         self.ready = True
+        self.fail_put_run = False
 
     # ---- seeding helpers -----------------------------------------------------------------
     def add_idea(
@@ -209,6 +210,8 @@ class FakeM2:
     ) -> httpx.Response:
         run_id = rest[0]
         if request.method == "PUT":
+            if self.fail_put_run:
+                return httpx.Response(503, json={})
             existing = self.runs.get(run_id)
             if existing is not None and existing["user_id"] != body["user_id"]:
                 return httpx.Response(404, json={})
@@ -233,6 +236,8 @@ class FakeM3:
         self.replay_status = 200
         self.conflict = False
         self.counter = 0
+        self.cancelled: list[str] = []
+        self.user_headers: list[tuple[str, str | None]] = []
 
     def posts(self, suffix: str = "") -> list[tuple[str, str, dict[str, Any]]]:
         return [c for c in self.calls if c[0] == "POST" and c[1].endswith(suffix)]
@@ -240,6 +245,7 @@ class FakeM3:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         body = _json(request)
         self.calls.append((request.method, request.url.path, body or dict(request.url.params)))
+        self.user_headers.append((request.url.path, request.headers.get("x-user-id")))
         if self.timeout:
             raise httpx.ReadTimeout("slow")
         if request.headers.get("x-internal-token") != INTERNAL_TOKEN:
@@ -266,6 +272,10 @@ class FakeM3:
             after = int(request.url.params.get("after", "0"))
             wanted = [e for e in self.events.get(parts[1], []) if e["seq"] > after]
             return httpx.Response(200, json={"events": wanted})
+        if parts[2] == "cancel":
+            self.cancelled.append(parts[1])
+            run["state"] = "failed"
+            return httpx.Response(202, json={"run_id": parts[1], "state": "failed"})
         if self.conflict:
             return httpx.Response(409, json={"error": {"message": "internal conflict detail"}})
         return httpx.Response(202, json={"run_id": parts[1], "state": "running"})
@@ -276,9 +286,9 @@ class FakeM3:
             "run_id": run_id,
             "kind": run["kind"],
             "state": run["state"],
-            "progress": {"step": "EVIDENCE"},
-            "spent": {"cost_usd": 0.01, "tokens": 10, "pages": 1, "steps": 2},
-            "budget": {"cost_usd": 1.0},
+            "progress": run.get("progress", {"step": "EVIDENCE"}),
+            "spent": run.get("spent", {"cost_usd": 0.01, "tokens": 10, "pages": 1, "steps": 2}),
+            "budget": run.get("budget", {"max_cost_usd": 1.0}),
             "pending_question": run.get("pending_question"),
             "pending_approval": run.get("pending_approval"),
             "result": run.get("result"),

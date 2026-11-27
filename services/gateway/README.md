@@ -44,19 +44,27 @@ validated with unknown fields refused. Errors use the standard envelope (`{"erro
 - **Auth with `fetch`, not `EventSource`:** `EventSource` cannot send an `Authorization` header, so the UI reads the stream with `fetch(url, {headers:{Authorization, "Last-Event-ID": lastSeq}})` and parses frames from `response.body.getReader()`. On disconnect it reconnects with the last `id` it saw.
 - **Resume:** `Last-Event-ID: n` replays events with `seq > n`, then goes live. A malformed or negative value means "from the start".
 - **Heartbeat** every 15 s (`event: heartbeat`, no `id`, so `Last-Event-ID` never moves on it).
-- **Closing:** after `run_completed`, `run_failed` or `budget_stopped`; after `SSE_MAX_S` (default 3600 s, reconnect to continue); or when the client goes away (the Redis subscription is always closed). For a run that already finished the stored events are replayed; if none are stored, one synthetic closing event (`payload.synthesised: true`) with the next `seq` is sent.
+- **Closing:** after `run_completed`, `run_failed` or `budget_stopped`; after `SSE_MAX_S` (default 900 s, reconnect to continue); when the access token expires (a stream never outlives the JWT it was opened with); or when the client goes away (the Redis subscription and the stream slots are always released).
+- **Limits:** at most `SSE_STREAMS_PER_USER` (default 3, counted in Redis with a TTL) open streams per user and `SSE_STREAMS_GLOBAL` (default 100) per replica; over the user cap is 429 with `Retry-After`, over the replica cap is 503. Pub/sub uses its own bounded Redis pool (`SSE_POOL_SIZE`), separate from the rate limiter. A frame over `SSE_MAX_FRAME_BYTES` (64 KB) keeps its type and `id` but its payload becomes `{"truncated": true}`. Failure events carry a fixed `reason` text, never M3's own. For a run that already finished the stored events are replayed; if none are stored, one synthetic closing event (`payload.synthesised: true`) with the next `seq` is sent.
 - **Source:** Redis pub/sub `run:{run_id}` (taken before replay, so nothing is lost; duplicates and old seqs are dropped; a gap in the live sequence is filled from storage).
 - **Assumption about M3:** stored events are read from `GET /runs/{id}/events?after=<seq>` -> `{"events":[RunEvent,...]}`. The orchestrator does not offer it yet; a 404 or error there only means "no stored events" and the stream is live-only. Run kinds `discover`, `challenge`, `whatif` are sent to M3 `POST /runs` as `{kind, user_id, input}`; M3 currently accepts only `validate` and will answer 422 (surfaced as 422) until those flows land.
 
+### Starting runs safely (idempotency)
+`POST /validate`, `/discover`, `/ideas/{id}/challenge` and `/whatif` accept an optional `Idempotency-Key` header (1 to 64 of `A-Za-z0-9_.:-`). A repeat of the same request (same user, kind and body; same key if given) returns the run it already started instead of a second one: 60 s window without the header, 10 min with it. A new idea or version is remembered under the same key, so a start that failed (M3 down) is retried on the same idea, never on a new draft. A run that ended `failed` or `budget_stopped` is not reused. If the owner record cannot be written to M2 after M3 started the run, the gateway retries the write and then calls M3 `POST /runs/{id}/cancel`; `409` means the same request is still being processed. M3 chooses the run id, so the owner record is written right after the start (not before).
+
+### What M3 may tell a browser
+`progress` (`step`, `round`, `percent`), `spent` and `budget` (numeric counters and limits) are rebuilt from an allow-list; `error` is a fixed text chosen by the run state. A run M2 records as running but M3 no longer knows is reported `failed` and M2 is corrected. Every M3 call after the start carries `X-User-Id`.
+
 ### Rate limits
-Per IP on every route (`IP_PER_MIN`, default 100). Per user: starting runs (`validate`, `discover`, `challenge`, `whatif` share `USER_RUNS_PER_MIN`, default 10) and new event streams (`SSE_PER_MIN`, default 30). Over the limit: 429 with `Retry-After`; Redis down: 503.
+Per IP on every route (`IP_PER_MIN`, default 100). Per user: every authenticated request (`USER_PER_MIN`, default 120); starting runs (`validate`, `discover`, `challenge`, `whatif` share `USER_RUNS_PER_MIN`, default 10) and new event streams (`SSE_PER_MIN`, default 30). Over the limit: 429 with `Retry-After`; Redis down: 503.
 
 ## Config (environment / ConfigMap / Secret)
 | Variable | Meaning |
 |---|---|
 | `JWT_SECRET` | Secret, at least 32 characters; the gateway refuses to start without it |
 | `ORCHESTRATOR_URL` | M3 base URL; the gateway also needs `/ready` of M3 for its own `/ready` |
-| `USER_RUNS_PER_MIN` / `SSE_PER_MIN` / `SSE_HEARTBEAT_S` / `SSE_MAX_S` | Defaults 10 / 30 / 15 / 3600 |
+| `USER_RUNS_PER_MIN` / `USER_PER_MIN` / `SSE_PER_MIN` / `SSE_HEARTBEAT_S` / `SSE_MAX_S` | Defaults 10 / 120 / 30 / 15 / 900 |
+| `SSE_STREAMS_PER_USER` / `SSE_STREAMS_GLOBAL` / `SSE_POOL_SIZE` / `SSE_MAX_FRAME_BYTES` | Defaults 3 / 100 / 110 / 65536 |
 | `PROFILE_URL` | M2 base URL (cluster DNS), e.g. `http://profile.idea-validator.svc.cluster.local:8000` |
 | `INTERNAL_TOKEN` | Secret shared with M2 (`X-Internal-Token`) |
 | `REDIS_URL` | Rate-limit counters and the `run:{id}` event channels (Secret) |

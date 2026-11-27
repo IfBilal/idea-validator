@@ -28,8 +28,13 @@ class Settings(ServiceSettings):
     # Starting a run costs money (LLM and fetch budget), so it has its own per-user limit.
     user_runs_per_min: int = Field(default=10, ge=1)
     sse_per_min: int = Field(default=30, ge=1)  # new event streams per user and minute
+    user_per_min: int = Field(default=120, ge=1)  # every authenticated request, per user
+    sse_streams_per_user: int = Field(default=3, ge=1)  # open streams at one time
+    sse_streams_global: int = Field(default=100, ge=1)  # open streams per replica
+    sse_pool_size: int = Field(default=110, ge=1)  # Redis connections for pub/sub
+    sse_max_frame_bytes: int = Field(default=65536, ge=1024)
     sse_heartbeat_s: float = Field(default=15.0, gt=0)
-    sse_max_s: float = Field(default=3600.0, gt=0)  # a stream is closed after this; clients resume
+    sse_max_s: float = Field(default=900.0, gt=0)  # a stream is closed after this; clients resume
     upstream_timeout_s: float = 5.0
     min_password_length: int = 10
 

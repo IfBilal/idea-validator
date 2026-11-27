@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from svc_gateway.clients.coordination import MemoryIdempotencyStore, MemoryStreamGate
 from svc_gateway.config import Settings
 from svc_gateway.main import build_app
 from svc_gateway.ratelimit import MemoryRateLimiter
@@ -34,6 +35,8 @@ class Env:
     m2: FakeM2
     m3: FakeM3
     bus: ScriptedBus
+    store: MemoryIdempotencyStore
+    gate: MemoryStreamGate
 
     def headers(self, user: str = ALICE) -> dict[str, str]:
         return {"Authorization": f"Bearer {issue_token(SECRET, user, 3600)}"}
@@ -41,6 +44,7 @@ class Env:
 
 def build(bus: ScriptedBus | None = None, **settings: Any) -> Env:
     m2, m3, bus = FakeM2(), FakeM3(), bus or ScriptedBus()
+    store, gate = MemoryIdempotencyStore(), MemoryStreamGate()
     ideas, orchestrator, profiles = clients(m2, m3)
     config = Settings(jwt_secret=SecretStr(SECRET), ui_origin="https://ui.test", **settings)
     app = build_app(
@@ -50,8 +54,10 @@ def build(bus: ScriptedBus | None = None, **settings: Any) -> Env:
         ideas=ideas,
         orchestrator=orchestrator,
         events=bus,
+        store=store,
+        gate=gate,
     )
-    return Env(TestClient(app), m2, m3, bus)
+    return Env(TestClient(app), m2, m3, bus, store, gate)
 
 
 @pytest.fixture
@@ -303,8 +309,8 @@ def test_an_orchestrator_that_refuses_the_run_kind_is_not_a_500(env: Env) -> Non
 def test_run_start_is_rate_limited_per_user_with_retry_after() -> None:
     e = build(user_runs_per_min=2)
     with e.client:
-        assert [validate(e).status_code for _ in range(2)] == [202, 202]
-        blocked = validate(e)
+        assert [validate(e, idea_text=f"idea {i}").status_code for i in range(2)] == [202, 202]
+        blocked = validate(e, idea_text="idea 3")
         assert blocked.status_code == 429
         assert error_code(blocked) == "RATE_LIMITED"
         assert int(blocked.headers["Retry-After"]) >= 1

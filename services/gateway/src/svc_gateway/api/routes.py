@@ -1,10 +1,11 @@
 """HTTP layer only: authenticate, rate-limit, validate, call a service, return the result."""
 
 import ipaddress
+import time
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request
 from fastapi.responses import StreamingResponse
 
 from common.errors import RateLimited, Unauthorized, ValidationFailed
@@ -16,6 +17,7 @@ from ..config import Settings
 from ..models.auth import Credentials, ProfileBody, RegisterOut, TokenOut
 from ..models.ideas import Comparison, IdeaPage, VersionCard, VersionSummary
 from ..models.runs import (
+    IDEMPOTENCY_KEY_PATTERN,
     RUN_ID_PATTERN,
     AnswerBody,
     ApproveBody,
@@ -29,10 +31,11 @@ from ..models.runs import (
     WhatIfBody,
 )
 from ..ratelimit import RateLimiter, fingerprint
-from ..security import verify_token
+from ..security import verify_claims
 from ..services.auth import AuthFlow
 from ..services.ideas import IdeaFlow
 from ..services.runs import RunFlow
+from ..services.streaming import stream_deadline
 
 MIN_COMPARE, MAX_COMPARE = 2, 5
 
@@ -84,17 +87,27 @@ def make_router(
         await guarded(request, "ip", settings.ip_per_min)
 
     def current_user(request: Request) -> str:
+        """The token's user; its expiry is kept for streams, which must not outlive it."""
         header = request.headers.get("authorization", "")
         scheme, _, token = header.partition(" ")
         try:
             if scheme.lower() != "bearer" or not token:
                 raise Unauthorized("missing bearer token")
-            return verify_token(secret, token)
+            user, request.state.token_exp = verify_claims(secret, token)
+            return user
         except Unauthorized:
             log.warning("token_rejected", client=fingerprint(ip_of(request)))
             raise
 
-    User = Annotated[str, Depends(current_user)]
+    async def authed(request: Request) -> str:
+        user_id = current_user(request)
+        await user_limit("user_req", settings.user_per_min, user_id)
+        return user_id
+
+    User = Annotated[str, Depends(authed)]
+    IdemKey = Annotated[
+        str | None, Header(alias="Idempotency-Key", pattern=IDEMPOTENCY_KEY_PATTERN)
+    ]
     RunId = Annotated[str, Path(pattern=RUN_ID_PATTERN)]
     IdeaId = Annotated[uuid.UUID, Path()]
     Version = Annotated[int, Path(ge=1)]
@@ -147,14 +160,18 @@ def make_router(
 
     # ---- runs ----------------------------------------------------------------------------
     @router.post("/validate", status_code=202, response_model=ValidateAccepted)
-    async def validate(body: ValidateBody, user_id: User) -> ValidateAccepted:
+    async def validate(
+        body: ValidateBody, user_id: User, idempotency_key: IdemKey = None
+    ) -> ValidateAccepted:
         await user_limit("user_runs", settings.user_runs_per_min, user_id)
-        return await runs.validate(user_id, body)
+        return await runs.validate(user_id, body, idempotency_key)
 
     @router.post("/discover", status_code=202, response_model=RunAccepted)
-    async def discover(body: DiscoverBody, user_id: User) -> RunAccepted:
+    async def discover(
+        body: DiscoverBody, user_id: User, idempotency_key: IdemKey = None
+    ) -> RunAccepted:
         await user_limit("user_runs", settings.user_runs_per_min, user_id)
-        return await runs.discover(user_id, body)
+        return await runs.discover(user_id, body, idempotency_key)
 
     @router.get("/runs/{run_id}", response_model=RunView)
     async def get_run(run_id: RunId, user_id: User) -> RunView:
@@ -173,7 +190,10 @@ def make_router(
         """Server-sent events. A browser ``EventSource`` cannot send ``Authorization``, so the UI
         reads this with ``fetch`` and a stream reader (see the README)."""
         await user_limit("user_sse", settings.sse_per_min, user_id)
-        frames = await runs.open_events(user_id, run_id, request.headers.get("last-event-id"))
+        lifetime = stream_deadline(request.state.token_exp, time.time(), settings.sse_max_s)
+        frames = await runs.open_events(
+            user_id, run_id, request.headers.get("last-event-id"), lifetime
+        )
         return StreamingResponse(
             frames,
             media_type="text/event-stream",
@@ -202,13 +222,17 @@ def make_router(
         return await ideas.compare(user_id, parse_compare_ids(ids))
 
     @router.post("/ideas/{idea_id}/challenge", status_code=202, response_model=RunAccepted)
-    async def challenge(idea_id: IdeaId, body: ChallengeBody, user_id: User) -> RunAccepted:
+    async def challenge(
+        idea_id: IdeaId, body: ChallengeBody, user_id: User, idempotency_key: IdemKey = None
+    ) -> RunAccepted:
         await user_limit("user_runs", settings.user_runs_per_min, user_id)
-        return await runs.challenge(user_id, str(idea_id), body)
+        return await runs.challenge(user_id, str(idea_id), body, idempotency_key)
 
     @router.post("/ideas/{idea_id}/whatif", status_code=202, response_model=RunAccepted)
-    async def whatif(idea_id: IdeaId, body: WhatIfBody, user_id: User) -> RunAccepted:
+    async def whatif(
+        idea_id: IdeaId, body: WhatIfBody, user_id: User, idempotency_key: IdemKey = None
+    ) -> RunAccepted:
         await user_limit("user_runs", settings.user_runs_per_min, user_id)
-        return await runs.whatif(user_id, str(idea_id), body)
+        return await runs.whatif(user_id, str(idea_id), body, idempotency_key)
 
     return router

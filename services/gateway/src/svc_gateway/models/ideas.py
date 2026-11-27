@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import Any
 
+from pydantic import Field
+
 from .base import Upstream
 
 
@@ -75,3 +77,4 @@ class RunRecord(Upstream):
     run_id: str
     kind: str
     state: str
+    input: dict[str, Any] = Field(default_factory=dict)

@@ -43,10 +43,7 @@ class IdeaFlow:
         dimensions = []
         for name in names:
             scores = {row.idea_id: row.scores.get(name) for row in ordered}
-            if any(s is not None for s in scores.values()):
-                dimensions.append(
-                    DimensionDelta(dimension=name, scores=scores, delta=_delta(scores))
-                )
+            dimensions.append(DimensionDelta(dimension=name, scores=scores, delta=_delta(scores)))
         return Comparison(
             ideas=ordered,
             dimensions=dimensions,

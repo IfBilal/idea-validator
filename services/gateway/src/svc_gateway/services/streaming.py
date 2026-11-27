@@ -34,6 +34,12 @@ _STATE_EVENT: dict[str, RunEventType] = {
     "budget_stopped": "budget_stopped",
 }
 RETRY_MS = 3000
+DEFAULT_MAX_FRAME = 64 * 1024
+RAW_FACTOR = 16  # a pub/sub message larger than this many frames is dropped unparsed
+_FAILURE_REASONS = {
+    "run_failed": "the run failed",
+    "budget_stopped": "the run stopped at its budget",
+}
 _SEQ = re.compile(r"[0-9]{1,15}", re.ASCII)
 
 Replay = Callable[[int], Awaitable[list[RunEvent]]]
@@ -46,8 +52,40 @@ def parse_last_event_id(raw: str | None) -> int:
     return int(value) if _SEQ.fullmatch(value) else 0
 
 
-def format_event(event: RunEvent) -> str:
+def stream_deadline(token_exp: float, now: float, max_s: float) -> float:
+    """Seconds a stream may live: never longer than the cap or than the token it was opened with."""
+    return max(0.0, min(max_s, token_exp - now))
+
+
+def scrub_event(event: RunEvent) -> RunEvent:
+    """Nothing M3 wrote as free text reaches a browser: failures get a fixed reason."""
+    payload = event.payload
+    if event.type in _FAILURE_REASONS:
+        clean: dict[str, object] = {}
+        status = payload.get("status")
+        if isinstance(status, str) and len(status) <= 40 and status.replace("_", "").isalnum():
+            clean["status"] = status
+        if payload.get("synthesised") is True:
+            clean["synthesised"] = True
+        clean["reason"] = _FAILURE_REASONS[event.type]
+        payload = clean
+    elif isinstance(payload.get("error"), str):
+        payload = {**payload, "error": "the step failed"}
+    return event.model_copy(update={"payload": payload})
+
+
+def _frame(event: RunEvent) -> str:
     return f"event: {event.type}\nid: {event.seq}\ndata: {event.model_dump_json()}\n\n"
+
+
+def format_event(event: RunEvent, max_bytes: int = DEFAULT_MAX_FRAME) -> str:
+    """One SSE frame. An event over ``max_bytes`` keeps its type and seq but loses its payload."""
+    event = scrub_event(event)
+    frame = _frame(event)
+    if len(frame.encode()) <= max_bytes:
+        return frame
+    small = event.model_copy(update={"payload": {"truncated": True, "reason": "event too large"}})
+    return _frame(small)
 
 
 def _heartbeat(run_id: str, seq: int) -> str:
@@ -55,8 +93,11 @@ def _heartbeat(run_id: str, seq: int) -> str:
     return f"event: heartbeat\ndata: {event.model_dump_json()}\n\n"
 
 
-def _decode(raw: str, run_id: str) -> RunEvent | None:
+def _decode(raw: str, run_id: str, max_raw: int) -> RunEvent | None:
     """A pub/sub message as a RunEvent of this run, or ``None`` if it is anything else."""
+    if len(raw) > max_raw:
+        log.warning("event_dropped", run_id=run_id, reason="too_large")
+        return None
     try:
         event = RunEvent.model_validate(json.loads(raw))
     except (ValueError, ValidationError):
@@ -94,6 +135,7 @@ async def stream_run_events(
     state: StateOf,
     heartbeat_s: float,
     max_s: float,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME,
     clock: Callable[[], float] = time.monotonic,
 ) -> AsyncGenerator[str]:
     try:
@@ -107,7 +149,7 @@ async def stream_run_events(
         yield f"retry: {RETRY_MS}\n\n"
 
         for event in await _stored(replay, run_id, sent):
-            yield format_event(event)
+            yield format_event(event, max_frame_bytes)
             sent = event.seq
             if event.type in TERMINAL_EVENTS:
                 return
@@ -116,7 +158,7 @@ async def stream_run_events(
         if current in TERMINAL_STATES:
             # M3 may have stored the closing event a moment ago: look once more, then synthesise
             for event in await _stored(replay, run_id, sent):
-                yield format_event(event)
+                yield format_event(event, max_frame_bytes)
                 sent = event.seq
                 if event.type in TERMINAL_EVENTS:
                     return
@@ -127,7 +169,7 @@ async def stream_run_events(
                 type=_STATE_EVENT[current],
                 payload={"status": current, "synthesised": True},
             )
-            yield format_event(closing)
+            yield format_event(closing, max_frame_bytes)
             return
 
         next_beat = clock() + heartbeat_s
@@ -137,18 +179,18 @@ async def stream_run_events(
                 yield _heartbeat(run_id, sent)
                 next_beat = clock() + heartbeat_s
                 continue
-            live = _decode(message, run_id)
+            live = _decode(message, run_id, max_frame_bytes * RAW_FACTOR)
             if live is None or live.seq <= sent:
                 continue
             if live.seq > sent + 1:  # pub/sub dropped something: fill the gap from storage
                 for missed in await _stored(replay, run_id, sent):
                     if missed.seq >= live.seq:
                         break
-                    yield format_event(missed)
+                    yield format_event(missed, max_frame_bytes)
                     sent = missed.seq
                     if missed.type in TERMINAL_EVENTS:
                         return
-            yield format_event(live)
+            yield format_event(live, max_frame_bytes)
             sent = live.seq
             if live.type in TERMINAL_EVENTS:
                 return

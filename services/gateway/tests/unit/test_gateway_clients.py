@@ -197,7 +197,7 @@ async def test_start_posts_kind_user_and_input(pair: Any, m3: FakeM3) -> None:
 async def test_get_returns_the_allow_listed_view(pair: Any, m3: FakeM3) -> None:
     _, orch = pair
     run_id = await orch.start("validate", USER, {})
-    view = await orch.get(run_id)
+    view = await orch.get(run_id, USER)
     assert view is not None
     assert view.state == "running"
     assert "internal_only" not in view.model_dump()
@@ -205,19 +205,19 @@ async def test_get_returns_the_allow_listed_view(pair: Any, m3: FakeM3) -> None:
 
 async def test_get_of_a_run_m3_does_not_know_is_none(pair: Any) -> None:
     _, orch = pair
-    assert await orch.get("run_nope") is None
+    assert await orch.get("run_nope", USER) is None
 
 
 async def test_answer_and_approve_forward_the_bodies(pair: Any, m3: FakeM3) -> None:
     _, orch = pair
     run_id = await orch.start("validate", USER, {})
-    assert (await orch.answer(run_id, "q1", 120.0)) == "running"
+    assert (await orch.answer(run_id, USER, "q1", 120.0)) == "running"
     assert m3.calls[-1] == (
         "POST",
         f"/runs/{run_id}/answer",
         {"question_id": "q1", "answer": 120.0},
     )
-    assert (await orch.approve(run_id, "a1", "decline")) == "running"
+    assert (await orch.approve(run_id, USER, "a1", "decline")) == "running"
     assert m3.calls[-1][2] == {"approval_id": "a1", "decision": "decline"}
 
 
@@ -226,7 +226,7 @@ async def test_m3_conflict_is_public_and_generic(pair: Any, m3: FakeM3) -> None:
     run_id = await orch.start("validate", USER, {})
     m3.conflict = True
     with pytest.raises(Conflict) as caught:
-        await orch.answer(run_id, "q1", 1.0)
+        await orch.answer(run_id, USER, "q1", 1.0)
     assert "internal" not in caught.value.message
 
 
@@ -234,7 +234,7 @@ async def test_events_after_parses_and_validates(pair: Any, m3: FakeM3) -> None:
     _, orch = pair
     run_id = await orch.start("validate", USER, {})
     m3.events[run_id] = [make_event(run_id, n).model_dump(mode="json") for n in (1, 2, 3)]
-    events = await orch.events_after(run_id, 1)
+    events = await orch.events_after(run_id, USER, 1)
     assert [e.seq for e in events] == [2, 3]
     assert m3.calls[-1][2] == {"after": "1"}
 
@@ -246,18 +246,19 @@ async def test_events_after_degrades_to_nothing_when_m3_cannot_replay(
     run_id = await orch.start("validate", USER, {})
     for status in (404, 500, 503):
         m3.replay_status = status
-        assert await orch.events_after(run_id, 0) == []
+        assert await orch.events_after(run_id, USER, 0) == []
 
 
 async def test_events_after_drops_invalid_entries() -> None:
     good = make_event("run_1", 1).model_dump(mode="json")
     body = {"events": [good, {"seq": "x"}, "junk", {**good, "type": "nope", "seq": 2}]}
     orch = OrchestratorClient(raw_client(200, body))
-    assert [e.seq for e in await orch.events_after("run_1", 0)] == [1]
+    assert [e.seq for e in await orch.events_after("run_1", USER, 0)] == [1]
     assert (
-        await OrchestratorClient(raw_client(200, {"events": "no"})).events_after("run_1", 0) == []
+        await OrchestratorClient(raw_client(200, {"events": "no"})).events_after("run_1", USER, 0)
+        == []
     )
-    assert await OrchestratorClient(raw_client(200, [1])).events_after("run_1", 0) == []
+    assert await OrchestratorClient(raw_client(200, [1])).events_after("run_1", USER, 0) == []
 
 
 async def test_ready_reports_the_dependency(pair: Any, m3: FakeM3) -> None:
@@ -282,6 +283,7 @@ class FakePubSub:
         self.unsubscribed: list[str] = []
         self.closed = False
         self.waits: list[float] = []
+        self.now = 0.0  # a fake clock: waiting for nothing advances it by the timeout
 
     async def subscribe(self, channel: str) -> None:
         self.subscribed.append(channel)
@@ -295,7 +297,10 @@ class FakePubSub:
         timeout: float = 0.0,  # noqa: ASYNC109 (mirrors redis-py)
     ) -> Any:
         self.waits.append(timeout)
-        return self.messages.pop(0) if self.messages else None
+        if self.messages:
+            return self.messages.pop(0)
+        self.now += timeout
+        return None
 
     async def aclose(self) -> None:
         self.closed = True
@@ -311,9 +316,9 @@ class FakeRedis:
 
 async def test_redis_bus_subscribes_to_the_run_channel_and_decodes() -> None:
     pubsub = FakePubSub(
-        [{"type": "message", "data": b'{"a": 1}'}, {"type": "message", "data": "text"}, None]
+        [{"type": "message", "data": b'{"a": 1}'}, {"type": "message", "data": "text"}]
     )
-    sub = await RedisEventBus(FakeRedis(pubsub)).subscribe("run_1")
+    sub = await RedisEventBus(FakeRedis(pubsub), clock=lambda: pubsub.now).subscribe("run_1")
     assert pubsub.subscribed == ["run:run_1"]
     assert await sub.next(2.5) == '{"a": 1}'
     assert await sub.next(2.5) == "text"
@@ -332,7 +337,7 @@ async def test_redis_bus_ignores_non_message_frames_and_bad_bytes() -> None:
             {"type": "message", "data": 5},
         ]
     )
-    sub = await RedisEventBus(FakeRedis(pubsub)).subscribe("run_1")
+    sub = await RedisEventBus(FakeRedis(pubsub), clock=lambda: pubsub.now).subscribe("run_1")
     assert [await sub.next(1), await sub.next(1), await sub.next(1)] == [None, None, None]
 
 
@@ -343,7 +348,7 @@ async def test_redis_bus_closes_even_if_unsubscribe_fails() -> None:
         raise OSError("gone")
 
     pubsub.unsubscribe = boom  # type: ignore[method-assign]
-    sub = await RedisEventBus(FakeRedis(pubsub)).subscribe("run_1")
+    sub = await RedisEventBus(FakeRedis(pubsub), clock=lambda: pubsub.now).subscribe("run_1")
     await sub.aclose()
     assert pubsub.closed
 
@@ -356,7 +361,7 @@ async def test_redis_bus_closes_the_pubsub_if_subscribing_fails() -> None:
 
     pubsub.subscribe = boom  # type: ignore[method-assign]
     with pytest.raises(OSError, match="refused"):
-        await RedisEventBus(FakeRedis(pubsub)).subscribe("run_1")
+        await RedisEventBus(FakeRedis(pubsub), clock=lambda: pubsub.now).subscribe("run_1")
     assert pubsub.closed
 
 
@@ -370,3 +375,8 @@ async def test_a_start_answer_without_a_run_id_is_a_502() -> None:
 async def test_a_list_endpoint_that_answers_with_an_object_is_a_502() -> None:
     with pytest.raises(UpstreamError):
         await IdeaClient(raw_client(200, {"versions": []})).versions(str(uuid.uuid4()), USER)
+
+
+async def test_cancel_never_raises() -> None:
+    await OrchestratorClient(raw_client(500, {})).cancel("run_1", USER)
+    await OrchestratorClient(raw_client(404, {})).cancel("run_1", USER)
