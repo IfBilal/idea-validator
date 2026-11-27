@@ -496,6 +496,9 @@ class ValidateNodes:
                 await self.ctx.emitter.emit(
                     "question",
                     question_id=question["question_id"],
+                    field=question["field"],
+                    required=question["required"],
+                    range=question["range"],
                     text=question["text"],
                     why_it_matters=question["why_it_matters"],
                 )
@@ -532,6 +535,9 @@ class ValidateNodes:
         await self.ctx.emitter.emit(
             "question",
             question_id=question["question_id"],
+            field=question["field"],
+            required=question["required"],
+            range=question["range"],
             text=question["text"],
             why_it_matters=question["why_it_matters"],
         )
@@ -543,13 +549,15 @@ class ValidateNodes:
         field = str(question.get("field"))
         if isinstance(answer, int | float) and not isinstance(answer, bool):
             return {"answers": {field: float(answer)}, "pending_question": None}
+        if question.get("required"):
+            note = f"no answer for {field}: it is required, so no verdict can be given"
+        else:
+            note = f"no answer for {field}: used the scorer's estimate instead (result not cached)"
         return {
             "answers": {field: None},  # NO_ANSWER (a timeout) or anything that is not a number
             "pending_question": None,
             "degraded": True,
-            "notes": [
-                f"no answer for {field}: used the scorer's estimate instead (result not cached)"
-            ],
+            "notes": [note],
         }
 
     # ---- VERDICT (M11 only) --------------------------------------------------------------------
@@ -570,6 +578,10 @@ class ValidateNodes:
         out = await self._step(
             state, step, tool="m11.verdict", inputs=request, call=call, timeout_s=self.t.verdict
         )
+        if out.value.get("idea_id") != state.idea_id or out.value.get("version") != (
+            state.idea_version
+        ):
+            raise UpstreamError("M11 returned a verdict for a different idea or version")
         return {
             "verdict": out.value,
             "recomputed": recomputed,
@@ -631,7 +643,7 @@ class ValidateNodes:
         cited = {e for s in state.scores for e in s.get("evidence_ids", [])}
         evidence = {e["evidence_id"]: e for e in state.evidence if e["evidence_id"] in cited}
         removed = set(state.removed_claims)
-        settled = state.verdict is not None and state.verdict_final
+        settled = state.verdict is not None and state.verdict_final and not state.stopped
         card: dict[str, Any] = {
             **(state.verdict if settled and state.verdict else {"verdict": None}),
             "run_id": self.ctx.run_id,
@@ -645,7 +657,8 @@ class ValidateNodes:
             "evidence": evidence,
             "notes": list(state.notes),
             "degraded": state.degraded,
-            "partial": not settled or state.stopped,
+            "partial": not settled,
+            "needs_input": list(state.missing_inputs),
         }
         if state.missing_inputs:
             card["missing"] = list(state.missing_inputs)
@@ -702,6 +715,8 @@ class ValidateNodes:
 def _valid_cached_card(card: Any) -> bool:
     """A cache entry must be a complete card whose verdict parses; anything else is a miss."""
     if not isinstance(card, dict) or not card:
+        return False
+    if card.get("partial") or card.get("degraded"):
         return False
     try:
         Verdict.model_validate({k: v for k, v in card.items() if k in Verdict.model_fields})

@@ -64,11 +64,14 @@ use LangGraph `interrupt()`.
 - Effort is never invented. M11 requires `estimated_effort_hours`; when the scorers give no usable
   estimate the run asks a required question (counts toward the cap of 3, range 0..10000). If it is
   unanswered (or the cap is used up) M11 is not called: the run finishes with `verdict: null`,
-  `partial: true` and `missing: ["estimated_effort_hours"]`.
+  `partial: true`, `missing` and `needs_input: ["estimated_effort_hours"]` (run state `succeeded`, but a
+  `partial` card never has a verdict; see docs/harness/05 for how clients must render it).
 - User numbers are range-checked before they reach M11: effort 0..10000, hours_per_week 0..80,
   weeks_available 1..52, team_size 1..10 (finite, not bool). Overrides cover only those four fields;
   `n_sources`/`n_platforms` come from evidence and scores are never user-set (what-if goes through M11
   `/whatif`, out of scope here). Out-of-range answers return 422 and the run keeps waiting.
+- M11 must answer for the run's idea_id and version, otherwise the run fails. A cached card with `partial` or
+  `degraded` set is never served. A `versions` mismatch (mid-run rollout) shows the verdict but does not cache it.
 - A cached card is served, and a fresh card stored, only if its `idea_id`, `version` and `versions`
   (engine, rubrics, profile_weights) equal the key's. A profile without a version fails the run.
 - Cache key: `verdict:{idea_id}:{version}:{idea_hash}:p{profile}:r{rubrics}:w{weights}:e{engine}`.

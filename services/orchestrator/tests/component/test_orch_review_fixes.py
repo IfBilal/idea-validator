@@ -12,6 +12,19 @@ from svc_orchestrator.testing import FakeWorld, Harness, fake_verdict, voi_respo
 
 VERDICT_ROUTE = ("verdict", "POST /verdict")
 EFFORT = "estimated_effort_hours"
+VERDICT_DERIVED_KEYS = (
+    "stability",
+    "score",
+    "gates",
+    "thresholds",
+    "confidence",
+    "what_would_make_go",
+    "weights",
+    "versions",
+    "weakest_dimension",
+    "sensitivity",
+    "reasons",
+)
 
 
 async def run(h: Harness, **over: Any) -> ValidateState:
@@ -42,9 +55,11 @@ def assert_no_final_verdict(h: Harness, state: ValidateState) -> None:
     assert state.card["partial"] is True
     assert "verdict" not in h.event_types()
     assert h.world.cache == {}
+    for key in VERDICT_DERIVED_KEYS:
+        assert key not in state.card, key
 
 
-# ---- 1. a pre-challenge verdict is never presented as final --------------------------------
+# ---- 1. a pre-challenge verdict is never presented as final ----
 async def test_recompute_failure_leaves_no_final_verdict() -> None:
     world = FakeWorld()
     world.check_fn = competition_unsupported
@@ -118,7 +133,7 @@ async def test_after_a_successful_recompute_the_recomputed_verdict_is_final() ->
     assert event.payload["card"]["verdict"] == "PIVOT"
 
 
-# ---- 2. the effort is never invented ---------------------------------------------------------
+# ---- 2. the effort is never invented ----
 def no_effort_world() -> FakeWorld:
     world = FakeWorld()
     world.extra = {}
@@ -224,7 +239,7 @@ async def test_scores_are_never_replaced_by_user_input() -> None:
     assert sent["gate_inputs"]["n_sources"] == 4  # evidence facts come from evidence only
 
 
-# ---- RunService validates answers against the question's range ----------------------------------
+# ---- RunService validates answers against the question's range ----
 async def test_run_service_rejects_out_of_range_answers_and_keeps_waiting() -> None:
     from langgraph.checkpoint.memory import MemorySaver
 
@@ -251,7 +266,7 @@ async def test_run_service_rejects_out_of_range_answers_and_keeps_waiting() -> N
     await service.aclose()
 
 
-# ---- 4. strict cache keys ----------------------------------------------------------------------
+# ---- 4. strict cache keys ----
 async def test_a_profile_without_a_version_fails_the_run_instead_of_defaulting() -> None:
     world = FakeWorld()
     world.profile = {k: v for k, v in world.profile.items() if k != "version"}
@@ -289,28 +304,131 @@ async def test_a_cached_card_that_disagrees_with_the_key_is_a_miss(tamper: Any) 
     }
 
 
-@pytest.mark.parametrize(
-    "override",
-    [
-        {"versions": {"engine": "m11@v9", "rubrics": "r1", "profile_weights": "w1"}},
-        {"idea_id": "idea_other"},
-        {"version": 9},
-    ],
-)
-async def test_a_verdict_that_disagrees_with_the_key_is_not_stored(
-    override: dict[str, Any],
-) -> None:
+async def test_a_verdict_with_different_versions_is_shown_but_not_stored() -> None:
     world = FakeWorld()
-    world.verdict_fn = lambda req: fake_verdict(req, "GO", **override)
+    other = {"engine": "m11@v9", "rubrics": "r1", "profile_weights": "w1"}  # mid-run rollout
+    world.verdict_fn = lambda req: fake_verdict(req, "GO", versions=other)
     state = await run(Harness(world))
     assert state.status is RunStatus.SUCCEEDED
     assert state.card is not None
-    assert state.card["verdict"] == "GO"  # still shown, just not cached
+    assert state.card["verdict"] == "GO"
     assert world.cache == {}
     assert any("not cached" in n for n in state.notes)
 
 
-# ---- 5. no request body carries a verdict (recursive scan) -------------------------------------
+@pytest.mark.parametrize("override", [{"idea_id": "idea_other"}, {"version": 9}])
+async def test_a_verdict_for_another_idea_or_version_fails_the_run(
+    override: dict[str, Any],
+) -> None:
+    world = FakeWorld()
+    world.verdict_fn = lambda req: fake_verdict(req, "GO", **override)
+    h = Harness(world)
+    state = await run(h)
+    assert state.status is RunStatus.FAILED
+    assert "VERDICT" in (state.error or "")
+    assert_no_final_verdict(h, state)
+
+
+# ---- 3. partial / degraded cards are never served from the cache ----
+@pytest.mark.parametrize("flag", ["partial", "degraded"])
+async def test_a_cached_card_flagged_partial_or_degraded_is_a_miss(flag: str) -> None:
+    first = Harness()
+    await run(first)
+    key = next(iter(first.world.cache))
+    first.world.cache[key][flag] = True
+    state = await run(Harness(first.world, run_id="run_2"))
+    assert state.cache_hit is False
+
+
+# ---- 6. a stopped run can never show a settled verdict ----
+@pytest.mark.parametrize("status", [RunStatus.BUDGET_STOPPED, RunStatus.FAILED])
+async def test_a_stopped_run_with_a_settled_flag_still_has_no_verdict(status: RunStatus) -> None:
+    from svc_orchestrator.services.validate_nodes import ValidateNodes
+
+    h = Harness()
+    scores = [{"dimension": d, "score": 3.0, "evidence_ids": []} for d in ("risk",)]
+    state = ValidateState(
+        run_id="run_1",
+        user_id="u1",
+        idea_id="idea_1",
+        idea_text="x",
+        status=status,
+        verdict=fake_verdict({"idea_id": "idea_1", "version": 1, "run_id": "run_1", "scores": []}),
+        verdict_final=True,
+        scores=scores,
+    )
+    update = await ValidateNodes(h.ctx).card(state)
+    assert update["card"]["verdict"] is None
+    assert update["card"]["partial"] is True
+    for key in VERDICT_DERIVED_KEYS:
+        assert key not in update["card"]
+    assert "verdict" not in h.event_types()
+
+
+# ---- 5. timeout notes are field-aware ----
+async def test_the_effort_timeout_note_does_not_claim_a_scorer_estimate() -> None:
+    h = Harness(no_effort_world())
+    await h.start()
+    await h.resume("timeout")
+    notes = (await h.state()).notes
+    assert any(EFFORT in n and "no answer" in n for n in notes)
+    assert not any("scorer's estimate" in n for n in notes)
+
+
+async def test_an_optional_question_timeout_note_names_the_scorer_estimate() -> None:
+    world = FakeWorld()
+    world.voi_fn = lambda body: voi_response(True)
+    h = Harness(world)
+    await h.start()
+    await h.resume("timeout")
+    assert any("scorer's estimate" in n for n in (await h.state()).notes)
+
+
+# ---- 7. the question event carries what a client needs to render the form ----
+async def test_the_required_effort_question_event_has_range_and_required() -> None:
+    h = Harness(no_effort_world())
+    await h.start()
+    event = next(e for e in h.publisher.events if e.type == "question")
+    assert event.payload["required"] is True
+    assert event.payload["range"] == [0, 10_000]
+    assert event.payload["field"] == EFFORT
+
+
+async def test_an_optional_question_event_is_not_required_and_has_the_field_range() -> None:
+    world = FakeWorld()
+    world.voi_fn = lambda body: voi_response(True)
+    h = Harness(world)
+    await h.start()
+    event = next(e for e in h.publisher.events if e.type == "question")
+    assert event.payload["required"] is False
+    assert event.payload["range"] == [0, 10_000]
+
+
+# ---- 1. needs_input is explicit on the card ----
+async def test_a_missing_effort_card_says_needs_input_explicitly() -> None:
+    h = Harness(no_effort_world())
+    await h.start()
+    await h.resume("timeout")
+    card = (await h.state()).card
+    assert card is not None
+    assert card["needs_input"] == [EFFORT]
+    assert card["missing"] == [EFFORT]
+    assert card["verdict"] is None
+    assert card["partial"] is True
+
+
+async def test_other_cards_have_an_empty_needs_input() -> None:
+    card = (await run(Harness())).card
+    assert card is not None
+    assert card["needs_input"] == []
+    world = FakeWorld()
+    world.faults[("critic", "POST /check")] = [503, 503, 503]
+    failed = (await run(Harness(world))).card
+    assert failed is not None
+    assert failed["needs_input"] == []
+
+
+# ---- 5. no request body carries a verdict (recursive scan) ----
 def contains_key(value: Any, key: str) -> bool:
     if isinstance(value, dict):
         return key in value or any(contains_key(v, key) for v in value.values())

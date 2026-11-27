@@ -251,6 +251,7 @@ def question_payload(
         "question_id": f"q_{spec.field}",
         "field": spec.field,
         "scope": spec.scope,
+        "required": False,
         "text": spec.question or f"What is the value of {spec.field}?",
         "range": list(FIELD_RANGES[spec.field]),  # what the user may answer, not the VOI probe
         "why_it_matters": (
