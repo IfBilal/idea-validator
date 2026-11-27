@@ -5,6 +5,10 @@ description = "M10 Scoring Model"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "idea-validator-common",
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "prometheus-client>=0.21",
+    "pyyaml>=6.0",
     "uvicorn>=0.32",
 ]
 
