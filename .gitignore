@@ -42,3 +42,6 @@ eval/results/raw/
 
 # per-tag kustomize overlay written by scripts/deploy.sh
 k8s/overlays/_build/
+# half-written snapshots (atomic writes use .tmp-*)
+data/snapshots/.tmp-*
+data/snapshots/*.partial

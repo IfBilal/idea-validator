@@ -8,6 +8,7 @@ class Settings(ServiceSettings):
 
     service_name: str = "kb"
     database_url: SecretStr | None = None
+    ingest_token: SecretStr | None = None  # separate from internal_token: only ingestion may write
     qdrant_url: str | None = None
     qdrant_collection: str = "chunks"
     model_cache_dir: str | None = None
