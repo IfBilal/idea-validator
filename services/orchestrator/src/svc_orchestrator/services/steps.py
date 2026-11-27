@@ -6,6 +6,7 @@ the budget, the trace or the timeout.
 
 import asyncio
 import time
+import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -28,6 +29,7 @@ from .run_config import RunConfig
 
 TIMEOUT_GRACE_S = 1.0
 AGENT = "orchestrator"
+PROCESS_ID = uuid.uuid4().hex  # tells a step claimed by this process from one a dead process left
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,9 @@ class StepRunner:
         ledger: BudgetLedger,
         tracer: Tracer,
         emitter: RunEmitter,
+        owner: str = PROCESS_ID,
     ) -> None:
+        self._owner = owner
         self._run_id = run_id
         self._config = config
         self._ledger = ledger
@@ -98,11 +102,16 @@ class StepRunner:
             )
             return StepOutcome(memo[key], True, key, {})
 
+        # A claim left by another process means this step was running when that process died and
+        # was already charged: run it again without charging it a second time (recovery, 07 §1).
+        rerun = await self._ledger.claim_step(key, self._owner)
         # One atomic check-and-charge: parallel steps can no longer all pass a separate check and
         # overshoot. M3 charges one step per step it runs; M5 charges pages, tokens and cost.
         try:
-            await self._ledger.reserve(estimate.model_copy(update={"steps": 1}))
+            if not rerun:
+                await self._ledger.reserve(estimate.model_copy(update={"steps": 1}))
         except BudgetExceeded as exc:
+            await self._ledger.release_step(key)
             over = exc.details["exceeded"]
             raise BudgetExceeded(
                 f"step {step} would exceed the run budget: {', '.join(over)}",
@@ -130,6 +139,9 @@ class StepRunner:
                 handle.set_output(value)
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
+            await self._ledger.release_step(
+                key
+            )  # a cancelled step keeps its claim, a failed one not
             raise
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -147,6 +159,7 @@ class StepRunner:
                 "spend_update", spent=spent.model_dump(), budget=limits.model_dump()
             )
             await self._emitter.emit("agent_finished", agent=agent, step=step)
+        await self._ledger.release_step(key)
         return StepOutcome(value, False, key, {key: value} if memoise else {})
 
     def decision(self, name: str, inputs: Any, output: Any) -> None:

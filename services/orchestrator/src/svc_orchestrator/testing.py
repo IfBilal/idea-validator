@@ -198,6 +198,8 @@ class FakeWorld:
         # an int is an HTTP status, "timeout" raises a read timeout, "garbage" returns non-JSON
         self.faults: dict[tuple[str, str], list[int | str]] = {}
         self.hang: set[tuple[str, str]] = set()
+        # awaited before a call is answered: tests use it to hold a call open (a run "mid-step")
+        self.before: Callable[[str, str], Awaitable[None]] | None = None
         self.label = "GO"
         self.verdict_fn: Any = None
         self.voi_fn: Any = None
@@ -237,7 +239,12 @@ class FakeWorld:
         return [b for s, r, b in self.calls if (s, r) == (service, route)]
 
     def transport(self) -> httpx.MockTransport:
-        return httpx.MockTransport(self._handle)
+        return httpx.MockTransport(self._serve)
+
+    async def _serve(self, request: httpx.Request) -> httpx.Response:
+        if self.before is not None:
+            await self.before(_HOSTS[request.url.host], f"{request.method} {request.url.path}")
+        return self._handle(request)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         service = _HOSTS[request.url.host]
@@ -273,8 +280,17 @@ class FakeWorld:
             self.cache[path.removeprefix("/internal/cache/verdict/")] = body["value"]
             return 200, {"ok": True}
         if route.startswith("PUT /internal/runs/"):
-            self.runs[path.removeprefix("/internal/runs/")] = body
+            run_id = path.removeprefix("/internal/runs/")
+            self.runs[run_id] = {**body, "run_id": run_id}
             return 200, {"ok": True}
+        if route == "GET /internal/runs":  # M2's recovery listing: states, limit, after
+            wanted = self.last_query["state"].split(",")
+            after = self.last_query.get("after", "")
+            rows = sorted(
+                (r for i, r in self.runs.items() if r["state"] in wanted and i > after),
+                key=lambda r: str(r["run_id"]),
+            )
+            return 200, rows[: int(self.last_query.get("limit", "100"))]
         if route == "POST /search":
             items = self.after_scout if self._scouted and self.after_scout else self.evidence
             return 200, {"items": items, "index_version": 12, "cache_hit": False}
@@ -503,12 +519,13 @@ class Rig:
             transport=self.world.transport(),
         )
 
-    def context(self, run_id: str, kind: str | None = None) -> Any:
+    def context(self, run_id: str, kind: str | None = None, owner: str | None = None) -> Any:
         from common.budget import BudgetLedger
         from common.tracing import Tracer
 
         from .repositories.events import RunEmitter
         from .services.run_context import RunContext
+        from .services.steps import PROCESS_ID
 
         config = self.configs[kind] if kind else self.config
         return RunContext(
@@ -518,6 +535,7 @@ class Rig:
             tracer=Tracer("orchestrator", sink=self.records.append),
             emitter=RunEmitter(run_id, self.publisher),
             clients=self.clients,
+            owner=owner or PROCESS_ID,
         )
 
 
