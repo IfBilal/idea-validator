@@ -5,6 +5,7 @@ original host name. Redirects are returned, never followed, so the service can r
 Cookies, credentials and proxies are never used.
 """
 
+import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -27,12 +28,42 @@ class Fetcher(Protocol):
     async def get(self, checked: CheckedUrl, timeout_s: float, max_bytes: int) -> RawResponse: ...
 
 
+async def _read(response: httpx.Response, max_bytes: int) -> tuple[bytes, bool]:
+    """Read at most ``max_bytes`` of the raw (never decoded) body."""
+    body = bytearray()
+    try:
+        async for chunk in response.aiter_raw():
+            body += chunk
+            if len(body) > max_bytes:
+                return bytes(body[:max_bytes]), True
+    except httpx.StreamConsumed:  # in-memory test transports hand over the full content
+        data = response.content
+        return data[:max_bytes], len(data) > max_bytes
+    return bytes(body), False
+
+
 class PinnedHttpxFetcher:
-    def __init__(self, user_agent: str, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        user_agent: str,
+        transport: httpx.AsyncBaseTransport | None = None,
+        total_deadline_s: float = 20.0,
+    ) -> None:
         self._user_agent = user_agent
         self._transport = transport
+        self._deadline = total_deadline_s
 
     async def get(self, checked: CheckedUrl, timeout_s: float, max_bytes: int) -> RawResponse:
+        """GET with a total deadline (a slow-drip server cannot hold the connection open)."""
+        try:
+            async with asyncio.timeout(self._deadline):
+                return await self._get(checked, timeout_s, max_bytes)
+        except TimeoutError as exc:
+            raise UpstreamTimeout(
+                "upstream did not answer in time", {"host": checked.host}
+            ) from exc
+
+    async def _get(self, checked: CheckedUrl, timeout_s: float, max_bytes: int) -> RawResponse:
         last: Exception | None = None
         for address in checked.addresses:
             literal = f"[{address}]" if ":" in address else address
@@ -55,16 +86,13 @@ class PinnedHttpxFetcher:
                         "GET", url, headers=headers, extensions={"sni_hostname": checked.host}
                     ) as response,
                 ):
-                    body = bytearray()
-                    truncated = False
-                    async for chunk in response.aiter_bytes():
-                        body += chunk
-                        if len(body) > max_bytes:
-                            truncated = True
-                            del body[max_bytes:]
-                            break
+                    encoding = response.headers.get("content-encoding", "").strip().lower()
+                    if encoding not in ("", "identity"):
+                        # we asked for identity: a compressed answer could be a decompression bomb
+                        raise UpstreamError("unsupported content encoding", {"host": checked.host})
+                    body, truncated = await _read(response, max_bytes)
                     kept = {k.lower(): v for k, v in response.headers.items()}
-                    return RawResponse(response.status_code, kept, bytes(body), truncated)
+                    return RawResponse(response.status_code, kept, body, truncated)
             except httpx.TimeoutException as exc:
                 last = exc
                 continue

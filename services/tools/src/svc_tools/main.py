@@ -36,7 +36,11 @@ def build_app(settings: Settings, service: FetchService | None = None) -> FastAP
             if settings.redis_url is None:
                 raise ConfigError("REDIS_URL is not set")
             sources = load_sources(settings.config_dir)
-            redis = Redis.from_url(settings.redis_url.get_secret_value())
+            redis = Redis.from_url(
+                settings.redis_url.get_secret_value(),
+                socket_timeout=2,
+                socket_connect_timeout=2,
+            )
             policy = UrlPolicy(sources.allow_list, SystemResolver())
             fetcher = PinnedHttpxFetcher(sources.user_agent)
             cache = RedisCache(redis)
