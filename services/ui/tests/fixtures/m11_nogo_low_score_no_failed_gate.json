@@ -1,0 +1,158 @@
+{
+  "confidence": 0.79,
+  "gates": {
+    "duplicate": "pass",
+    "evidence": "pass",
+    "feasibility": "pass",
+    "risk": "pass"
+  },
+  "idea_id": "idea_t",
+  "missing": null,
+  "reasons": [
+    "score 49.00 < T_no 50"
+  ],
+  "run_id": "run_t",
+  "score": 49.0,
+  "scores": [
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.7,
+      "dimension": "demand_pain",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for demand_pain",
+      "rubric_version": "demand_pain@v1",
+      "score": 2.45
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.7,
+      "dimension": "competition",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for competition",
+      "rubric_version": "competition@v1",
+      "score": 2.45
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.7,
+      "dimension": "differentiation",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for differentiation",
+      "rubric_version": "differentiation@v1",
+      "score": 2.45
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.7,
+      "dimension": "feasibility",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for feasibility",
+      "rubric_version": "feasibility@v1",
+      "score": 2.45
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.7,
+      "dimension": "risk",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for risk",
+      "rubric_version": "risk@v1",
+      "score": 2.45
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.7,
+      "dimension": "learning",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for learning",
+      "rubric_version": "learning@v1",
+      "score": 2.45
+    }
+  ],
+  "sensitivity": {
+    "flipped": 1,
+    "flips": [
+      {
+        "change": "score demand_pain +1",
+        "score": 52.0,
+        "verdict": "PIVOT"
+      }
+    ],
+    "runs": 14
+  },
+  "stability": "BORDERLINE",
+  "thresholds": {
+    "T_go": 70.0,
+    "T_no": 50.0,
+    "floor": 1.5
+  },
+  "verdict": "NO-GO",
+  "version": 1,
+  "versions": {
+    "engine": "m11@v1",
+    "profile_weights": "w1",
+    "rubrics": "r1"
+  },
+  "weakest_dimension": "feasibility",
+  "weights": {
+    "competition": 15.0,
+    "demand_pain": 15.0,
+    "differentiation": 15.0,
+    "feasibility": 25.0,
+    "learning": 20.0,
+    "risk": 10.0
+  },
+  "what_would_make_go": [
+    {
+      "delta": 0.5,
+      "dimension": "demand_pain",
+      "from": 2.45,
+      "new_score": 50.5,
+      "new_verdict": "PIVOT",
+      "stable": false,
+      "to": 2.95
+    },
+    {
+      "delta": 0.5,
+      "dimension": "competition",
+      "from": 2.45,
+      "new_score": 50.5,
+      "new_verdict": "PIVOT",
+      "stable": false,
+      "to": 2.95
+    },
+    {
+      "delta": 0.5,
+      "dimension": "differentiation",
+      "from": 2.45,
+      "new_score": 50.5,
+      "new_verdict": "PIVOT",
+      "stable": false,
+      "to": 2.95
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { clearSession, resetAuthForTests, setSession } from "@/lib/auth";
 import { makeRouter } from "@/router";
+import settled from "./fixtures/m11_go.json";
 
 const API = "http://gw.test";
 const server = setupServer();
@@ -156,7 +157,23 @@ describe("validate page", () => {
     );
     renderValidate();
     await submitIdea();
-    expect(await screen.findByRole("alert")).toHaveTextContent(/stopped because it reached its budget/i);
+    expect(await screen.findByText(/stopped because it reached its budget/i)).toBeInTheDocument();
+    // the run result is unavailable: a no-verdict card built from the stop reason, never a verdict
+    expect(await screen.findByRole("heading", { name: /no verdict this time/i })).toBeInTheDocument();
+    expect(screen.getByText(/Reason: token budget/)).toBeInTheDocument();
+  });
+
+  it("a failed run shows the partial card stored by the run, including what is needed", async () => {
+    server.use(
+      http.post(`${API}/validate`, () => HttpResponse.json({ run_id: "run1", idea_id: "i", version: 1 }, { status: 202 })),
+      http.get(`${API}/runs/run1/events`, () => sse(frame(1, "run_started", {}), frame(2, "run_failed", { reason: "scorer unavailable" }))),
+      http.get(`${API}/runs/run1`, () =>
+        HttpResponse.json({ state: "failed", result: { verdict: null, partial: true, needs_input: [], error: "scorer unavailable" } }),
+      ),
+    );
+    renderValidate();
+    await submitIdea();
+    expect(await screen.findByText(/Problem: scorer unavailable/)).toBeInTheDocument();
   });
 
   it("shows a plain error and keeps the form when the gateway rejects the start", async () => {
@@ -171,7 +188,18 @@ describe("validate page", () => {
     expect(screen.getByLabelText("Title")).toHaveValue("Notes exporter");
   });
 
-  it("renders the settled card from the verdict event, and never invents a verdict for a malformed one", async () => {
+  it("renders the settled card from the verdict event", async () => {
+    server.use(
+      http.post(`${API}/validate`, () => HttpResponse.json({ run_id: "run1", idea_id: "i", version: 1 }, { status: 202 })),
+      http.get(`${API}/runs/run1/events`, () => sse(frame(1, "run_started", {}), frame(2, "verdict", settled), frame(3, "run_completed", {}))),
+    );
+    renderValidate();
+    await submitIdea();
+    expect(await screen.findByRole("region", { name: "Verdict" })).toBeInTheDocument();
+    expect(screen.getByText("70.5")).toBeInTheDocument();
+  });
+
+  it("a malformed verdict payload is an error, never shown as GO", async () => {
     server.use(
       http.post(`${API}/validate`, () => HttpResponse.json({ run_id: "run1", idea_id: "i", version: 1 }, { status: 202 })),
       http.get(`${API}/runs/run1/events`, () =>
@@ -180,8 +208,7 @@ describe("validate page", () => {
     );
     renderValidate();
     await submitIdea();
-    // a verdict payload that is not a full card is not shown as GO
-    expect(await screen.findByRole("alert", { name: "" })).toHaveTextContent(/could not be displayed/i);
+    expect(await screen.findByText(/could not be displayed/i)).toBeInTheDocument();
     expect(screen.queryByText("GO")).not.toBeInTheDocument();
   });
 

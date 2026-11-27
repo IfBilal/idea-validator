@@ -1,0 +1,132 @@
+{
+  "confidence": 0.39,
+  "gates": {
+    "duplicate": "pass",
+    "evidence": "pass",
+    "feasibility": "pass",
+    "risk": "pass"
+  },
+  "idea_id": "idea_t",
+  "missing": [
+    "stronger evidence for demand_pain",
+    "stronger evidence for competition",
+    "stronger evidence for differentiation",
+    "stronger evidence for feasibility",
+    "stronger evidence for risk",
+    "stronger evidence for learning"
+  ],
+  "reasons": [
+    "confidence 0.39 < 0.5; low: demand_pain, competition, differentiation, feasibility, risk, learning"
+  ],
+  "run_id": "run_t",
+  "score": 80.0,
+  "scores": [
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.3,
+      "dimension": "demand_pain",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for demand_pain",
+      "rubric_version": "demand_pain@v1",
+      "score": 4.0
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.3,
+      "dimension": "competition",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for competition",
+      "rubric_version": "competition@v1",
+      "score": 4.0
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.3,
+      "dimension": "differentiation",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for differentiation",
+      "rubric_version": "differentiation@v1",
+      "score": 4.0
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.3,
+      "dimension": "feasibility",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for feasibility",
+      "rubric_version": "feasibility@v1",
+      "score": 4.0
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.3,
+      "dimension": "risk",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for risk",
+      "rubric_version": "risk@v1",
+      "score": 4.0
+    },
+    {
+      "abstained": false,
+      "adjusted_by_challenge": 0.0,
+      "confidence": 0.3,
+      "dimension": "learning",
+      "evidence_ids": [
+        "card_1a2b3c00#c0"
+      ],
+      "model": "fixture",
+      "reason": "fixture reason for learning",
+      "rubric_version": "learning@v1",
+      "score": 4.0
+    }
+  ],
+  "sensitivity": {
+    "flipped": 0,
+    "flips": [],
+    "note": "decided before scoring (gate / abstention / confidence)",
+    "runs": 0
+  },
+  "stability": "STABLE",
+  "thresholds": {
+    "T_go": 70.0,
+    "T_no": 50.0,
+    "floor": 1.5
+  },
+  "verdict": "INSUFFICIENT_EVIDENCE",
+  "version": 1,
+  "versions": {
+    "engine": "m11@v1",
+    "profile_weights": "w1",
+    "rubrics": "r1"
+  },
+  "weakest_dimension": null,
+  "weights": {
+    "competition": 20.0,
+    "demand_pain": 25.0,
+    "differentiation": 20.0,
+    "feasibility": 15.0,
+    "learning": 5.0,
+    "risk": 15.0
+  },
+  "what_would_make_go": []
+}
