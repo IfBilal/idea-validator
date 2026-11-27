@@ -73,12 +73,16 @@ class OrchestratorClient:
             log.warning("run_cancel_failed", run_id=run_id, error=type(exc).__name__)
 
     async def events_after(self, run_id: str, user_id: str, after: int) -> list[RunEvent]:
+        """Stored events after ``after``. 404 means M3 keeps none (live events only); any other
+        failure is raised, so a stream does not idle on a broken M3."""
+        headers = {USER_HEADER: user_id}
+        path = f"/runs/{run_id}/events"
         try:
-            data = await self._client.get_json(
-                f"/runs/{run_id}/events", params={"after": after}, headers={USER_HEADER: user_id}
+            data = await guarded(
+                lambda: self._client.get_json(path, params={"after": after}, headers=headers),
+                "events",
             )
-        except DomainError as exc:
-            log.info("event_replay_unavailable", run_id=run_id, error=type(exc).__name__)
+        except NotFound:
             return []
         items = data.get("events") if isinstance(data, dict) else None
         if not isinstance(items, list):

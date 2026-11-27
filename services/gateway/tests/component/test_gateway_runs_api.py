@@ -447,14 +447,16 @@ def test_m3_failure_while_reading_a_run_is_public_safe(env: Env) -> None:
 def test_answer_forwards_to_m3_for_the_owner(env: Env) -> None:
     run_id = seed_run(env)
     response = env.client.post(
-        f"/runs/{run_id}/answer", json={"question_id": "q1", "answer": "120"}, headers=env.headers()
+        f"/runs/{run_id}/answer",
+        json={"question_id": "q_effort", "answer": "120"},
+        headers=env.headers(),
     )
     assert response.status_code == 202
     assert response.json() == {"run_id": run_id, "state": "running"}
     assert env.m3.calls[-1] == (
         "POST",
         f"/runs/{run_id}/answer",
-        {"question_id": "q1", "answer": 120.0},
+        {"question_id": "q_effort", "answer": 120.0},
     )
 
 
@@ -462,11 +464,14 @@ def test_approve_forwards_to_m3_for_the_owner(env: Env) -> None:
     run_id = seed_run(env)
     response = env.client.post(
         f"/runs/{run_id}/approve",
-        json={"approval_id": "a1", "decision": "decline"},
+        json={"approval_id": f"ap_{run_id}_deep_search", "decision": "decline"},
         headers=env.headers(),
     )
     assert response.status_code == 202
-    assert env.m3.calls[-1][2] == {"approval_id": "a1", "decision": "decline"}
+    assert env.m3.calls[-1][2] == {
+        "approval_id": f"ap_{run_id}_deep_search",
+        "decision": "decline",
+    }
 
 
 @pytest.mark.parametrize("action", ["answer", "approve"])
@@ -489,9 +494,9 @@ def test_a_conflict_from_m3_is_a_generic_409(env: Env, action: str) -> None:
     run_id = seed_run(env)
     env.m3.conflict = True
     body = (
-        {"question_id": "q", "answer": 1}
+        {"question_id": "q_effort", "answer": 1}
         if action == "answer"
-        else {"approval_id": "a", "decision": "approve"}
+        else {"approval_id": f"ap_{run_id}_deep_search", "decision": "approve"}
     )
     response = env.client.post(f"/runs/{run_id}/{action}", json=body, headers=env.headers())
     assert response.status_code == 409
@@ -1154,3 +1159,99 @@ def test_question_events_keep_their_field_and_range_for_the_form() -> None:
     asked = next(f for f in frames(response) if f.get("event") == "question")
     assert asked["json"]["payload"]["range"] == [0, 10000]
     assert asked["json"]["payload"]["required"] is True
+
+
+# =========================================================================================
+# review follow-ups: ids belong to the run, and a stream never fails open
+# =========================================================================================
+RUN = "run_000000000001"
+
+
+@pytest.mark.parametrize(
+    "approval_id",
+    [
+        "a1",
+        "ap_",
+        "ap_run_000000000002_deep_search",  # another run's approval
+        "xap_run_000000000001_deep_search",
+        "AP_run_000000000001_deep_search",
+        "",
+    ],
+)
+def test_an_approval_id_must_belong_to_this_run(env: Env, approval_id: str) -> None:
+    seed_run(env)
+    r = env.client.post(
+        f"/runs/{RUN}/approve",
+        json={"approval_id": approval_id, "decision": "approve"},
+        headers=env.headers(),
+    )
+    assert r.status_code == 422
+    assert env.m3.posts("/approve") == []  # never forwarded
+
+
+@pytest.mark.parametrize("question_id", ["x_effort", "Q_effort", "q", "effort", "q-effort", "q_"])
+def test_a_question_id_must_look_like_one(env: Env, question_id: str) -> None:
+    seed_run(env)
+    r = env.client.post(
+        f"/runs/{RUN}/answer", json={"question_id": question_id, "answer": 5}, headers=env.headers()
+    )
+    assert r.status_code == 422
+    assert env.m3.posts("/answer") == []
+
+
+def test_ids_of_the_right_shape_are_forwarded_unchanged(env: Env) -> None:
+    seed_run(env)
+    a = env.client.post(
+        f"/runs/{RUN}/approve",
+        json={"approval_id": f"ap_{RUN}_deep_search", "decision": "approve"},
+        headers=env.headers(),
+    )
+    q = env.client.post(
+        f"/runs/{RUN}/answer", json={"question_id": "q_hours", "answer": 5}, headers=env.headers()
+    )
+    assert (a.status_code, q.status_code) == (202, 202)
+
+
+def test_the_ownership_404_comes_before_any_id_check(env: Env) -> None:
+    seed_run(env, user=BOB)
+    r = env.client.post(
+        f"/runs/{RUN}/approve", json={"approval_id": "garbage", "decision": "approve"},
+        headers=env.headers(),
+    )  # fmt: skip
+    assert r.status_code == 404  # not 422: nothing about someone else's run is revealed
+
+
+def test_the_event_stream_is_a_503_when_m3_is_unreachable_not_a_silent_200() -> None:
+    e = build(ScriptedBus(then_idle=True))
+    with e.client:
+        seed_run(e)
+        e.m3.fail = 500
+        r = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
+    assert r.status_code == 503
+    assert r.headers["content-type"].startswith("application/json")
+    assert "secret internal detail" not in r.text
+
+
+def test_the_event_stream_is_a_503_when_redis_is_unreachable() -> None:
+    class DeadBus:
+        async def subscribe(self, run_id: str) -> Any:
+            raise OSError("redis down")
+
+    e = build(DeadBus())  # type: ignore[arg-type]
+    with e.client:
+        seed_run(e)
+        r = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
+    assert r.status_code == 503
+    assert "redis" not in r.text.lower()
+
+
+def test_a_failed_stream_open_releases_its_slot() -> None:
+    e = build(ScriptedBus(events_for(RUN, 1)), sse_streams_per_user=1)
+    with e.client:
+        seed_run(e)
+        e.m3.fail = 500
+        for _ in range(3):  # would exhaust a single slot if each failure leaked it
+            assert e.client.get(f"/runs/{RUN}/events", headers=e.headers()).status_code == 503
+        e.m3.fail = None
+        ok = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
+    assert ok.status_code == 200

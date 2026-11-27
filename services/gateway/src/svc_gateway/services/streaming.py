@@ -22,7 +22,7 @@ from common.logging import get_logger
 from common.schemas import RunEvent
 from common.schemas.trace import RunEventType
 
-from ..clients.events import EventBus
+from ..clients.events import EventBus, Subscription
 from ..models.runs import TERMINAL_STATES
 
 log = get_logger("gateway.stream")
@@ -109,12 +109,22 @@ def _decode(raw: str, run_id: str, max_raw: int) -> RunEvent | None:
     return event
 
 
+class StreamUnavailable(Exception):
+    """A dependency of an open stream failed: say so and close, never idle with heartbeats."""
+
+
+ERROR_FRAME = (
+    'event: error\ndata: {"code": "UPSTREAM_ERROR", '
+    '"message": "the run service is temporarily unavailable"}\n\n'
+)
+
+
 async def _stored(replay: Replay, run_id: str, after: int) -> list[RunEvent]:
     try:
         events = await replay(after)
-    except Exception as exc:  # stored events are a convenience: live events still flow
+    except Exception as exc:
         log.warning("replay_failed", run_id=run_id, error=type(exc).__name__)
-        return []
+        raise StreamUnavailable from exc
     return sorted((e for e in events if e.run_id == run_id and e.seq > after), key=lambda e: e.seq)
 
 
@@ -123,7 +133,7 @@ async def _state(state: StateOf, run_id: str) -> str | None:
         return await state()
     except Exception as exc:
         log.warning("state_lookup_failed", run_id=run_id, error=type(exc).__name__)
-        return None
+        raise StreamUnavailable from exc
 
 
 async def stream_run_events(
@@ -137,12 +147,14 @@ async def stream_run_events(
     max_s: float,
     max_frame_bytes: int = DEFAULT_MAX_FRAME,
     clock: Callable[[], float] = time.monotonic,
+    subscription: Subscription | None = None,
 ) -> AsyncGenerator[str]:
-    try:
-        subscription = await bus.subscribe(run_id)  # first, so nothing published later is lost
-    except Exception as exc:
-        log.warning("subscribe_failed", run_id=run_id, error=type(exc).__name__)
-        return
+    if subscription is None:  # callers that cannot fail early let the stream end instead
+        try:
+            subscription = await bus.subscribe(run_id)  # first, so nothing published later is lost
+        except Exception as exc:
+            log.warning("subscribe_failed", run_id=run_id, error=type(exc).__name__)
+            return
     started = clock()
     sent = last_seq
     try:
@@ -174,7 +186,11 @@ async def stream_run_events(
 
         next_beat = clock() + heartbeat_s
         while clock() - started < max_s:
-            message = await subscription.next(max(0.0, next_beat - clock()))
+            try:
+                message = await subscription.next(max(0.0, next_beat - clock()))
+            except Exception as exc:
+                log.warning("subscription_failed", run_id=run_id, error=type(exc).__name__)
+                raise StreamUnavailable from exc
             if message is None:
                 yield _heartbeat(run_id, sent)
                 next_beat = clock() + heartbeat_s
@@ -194,5 +210,7 @@ async def stream_run_events(
             sent = live.seq
             if live.type in TERMINAL_EVENTS:
                 return
+    except StreamUnavailable:
+        yield ERROR_FRAME
     finally:
         await subscription.aclose()

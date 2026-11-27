@@ -239,14 +239,25 @@ async def test_events_after_parses_and_validates(pair: Any, m3: FakeM3) -> None:
     assert m3.calls[-1][2] == {"after": "1"}
 
 
-async def test_events_after_degrades_to_nothing_when_m3_cannot_replay(
+async def test_events_after_is_empty_when_m3_keeps_no_events_and_raises_otherwise(
     pair: Any, m3: FakeM3
 ) -> None:
     _, orch = pair
     run_id = await orch.start("validate", USER, {})
-    for status in (404, 500, 503):
+    m3.replay_status = 404
+    assert await orch.events_after(run_id, USER, 0) == []
+    for status in (500, 503):
         m3.replay_status = status
-        assert await orch.events_after(run_id, USER, 0) == []
+        with pytest.raises(UpstreamError):
+            await orch.events_after(run_id, USER, 0)
+
+
+async def test_events_after_timeout_is_a_public_timeout(pair: Any, m3: FakeM3) -> None:
+    _, orch = pair
+    run_id = await orch.start("validate", USER, {})
+    m3.timeout = True
+    with pytest.raises(UpstreamTimeout):
+        await orch.events_after(run_id, USER, 0)
 
 
 async def test_events_after_drops_invalid_entries() -> None:

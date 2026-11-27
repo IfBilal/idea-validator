@@ -261,16 +261,6 @@ async def test_finished_run_resumed_after_its_last_event_closes_at_once() -> Non
     assert bus.subscriptions[0].closed
 
 
-async def test_a_broken_state_lookup_keeps_listening() -> None:
-    class BadState(Source):
-        async def current_state(self) -> str | None:
-            raise RuntimeError("down")
-
-    bus = ScriptedBus([wire(make_event(RUN, 1, "run_completed"))])
-    frames = await collect(stream(bus, BadState()))
-    assert [e["seq"] for e in events_in(frames)] == [1]
-
-
 async def test_no_synthetic_event_when_the_stored_terminal_event_was_already_sent() -> None:
     source = Source([make_event(RUN, 1), make_event(RUN, 2, "run_completed")], state="succeeded")
     frames = await collect(stream(ScriptedBus(then_idle=True), source, last_seq=0))
@@ -408,11 +398,61 @@ async def test_a_broken_bus_ends_the_stream_cleanly() -> None:
     assert await collect(stream(Broken(), Source())) == []
 
 
-async def test_a_failing_replay_degrades_to_live_only() -> None:
+def error_frames(frames: list[str]) -> list[str]:
+    return [f for f in frames if f.startswith("event: error")]
+
+
+async def test_a_failing_replay_ends_the_stream_with_an_error_event() -> None:
     class BadReplay(Source):
         async def replay(self, after: int) -> list[RunEvent]:
             raise RuntimeError("m3 down")
 
-    bus = ScriptedBus([wire(make_event(RUN, 1, "run_completed"))])
+    bus = ScriptedBus(then_idle=True)
     frames = await collect(stream(bus, BadReplay()))
-    assert [e["seq"] for e in events_in(frames)] == [1]
+    assert frames[0].startswith("retry:")
+    assert len(error_frames(frames)) == 1
+    assert "m3 down" not in "".join(frames)
+    assert bus.subscriptions[0].closed
+
+
+async def test_a_failing_state_lookup_ends_the_stream_with_an_error_event() -> None:
+    class BadState(Source):
+        async def current_state(self) -> str | None:
+            raise RuntimeError("down")
+
+    bus = ScriptedBus(then_idle=True)
+    frames = await collect(stream(bus, BadState()))
+    assert len(error_frames(frames)) == 1
+    assert bus.subscriptions[0].closed
+
+
+async def test_a_redis_failure_while_waiting_ends_the_stream_with_an_error_event() -> None:
+    class Flaky(ScriptedBus):
+        async def subscribe(self, run_id: str) -> Any:
+            sub = await super().subscribe(run_id)
+
+            async def broken(timeout_s: float) -> str | None:
+                raise OSError("redis connection lost")
+
+            sub.next = broken  # type: ignore[method-assign]
+            return sub
+
+    bus = Flaky()
+    frames = await collect(stream(bus, Source()))
+    assert len(error_frames(frames)) == 1
+    assert "redis" not in "".join(frames).lower().replace("retry", "")
+    assert bus.subscriptions[0].closed
+
+
+async def test_a_failing_gap_fill_ends_the_stream_with_an_error_event() -> None:
+    class GapFails(Source):
+        async def replay(self, after: int) -> list[RunEvent]:
+            if self.replays:
+                raise RuntimeError("m3 down")
+            self.replays.append(after)
+            return []
+
+    bus = ScriptedBus([wire(make_event(RUN, 1)), wire(make_event(RUN, 3))])
+    frames = await collect(stream(bus, GapFails()))
+    assert [e["seq"] for e in events_in([f for f in frames if "event: error" not in f])] == [1]
+    assert len(error_frames(frames)) == 1

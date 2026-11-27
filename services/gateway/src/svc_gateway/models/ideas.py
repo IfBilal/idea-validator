@@ -1,11 +1,13 @@
 """Idea history and comparison as shown to a browser (an allow-list of what M2 returns)."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .base import Upstream
+
+VerdictLabel = Literal["GO", "PIVOT", "NO-GO", "INSUFFICIENT_EVIDENCE"]  # only M11 makes these
 
 
 class IdeaSummary(Upstream):
@@ -13,7 +15,7 @@ class IdeaSummary(Upstream):
     title: str
     source: str
     latest_version: int
-    latest_verdict: str | None
+    latest_verdict: VerdictLabel | None
     score: float | None
     updated_at: datetime
 
@@ -29,7 +31,7 @@ class VersionSummary(Upstream):
     change_note: str | None
     parent_version: int | None
     created_at: datetime
-    verdict: str | None
+    verdict: VerdictLabel | None
     score: float | None
     stability: str | None
 
@@ -42,12 +44,21 @@ class VersionCard(VersionSummary):
     clarifications: dict[str, Any] | None
     card: dict[str, Any] | None
 
+    @model_validator(mode="after")
+    def _card_agrees_with_the_row(self) -> Self:
+        """Two copies of one verdict must match; if they do not, nothing is shown (no guessing)."""
+        if self.card is not None and "verdict" in self.card:
+            inner = self.card["verdict"]
+            if inner != self.verdict:
+                raise ValueError("the stored card disagrees with its verdict")
+        return self
+
 
 class CompareRow(Upstream):
     idea_id: str
     title: str
     version: int
-    verdict: str | None
+    verdict: VerdictLabel | None
     stability: str | None
     score: float | None
     confidence: float | None
@@ -63,7 +74,7 @@ class DimensionDelta(Upstream):
 class Comparison(Upstream):
     ideas: list[CompareRow]
     dimensions: list[DimensionDelta]
-    verdicts: dict[str, str | None]  # idea_id -> verdict label, copied from M2
+    verdicts: dict[str, VerdictLabel | None]  # idea_id -> verdict label, copied from M2
 
 
 class IdeaCreated(Upstream):

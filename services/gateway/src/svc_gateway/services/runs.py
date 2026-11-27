@@ -13,12 +13,21 @@ transaction, so the flow is built to be safely repeatable:
 
 import hashlib
 import json
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
-from common.errors import Conflict, DomainError, NotFound, RateLimited, Unavailable, UpstreamError
+from common.errors import (
+    Conflict,
+    DomainError,
+    NotFound,
+    RateLimited,
+    Unavailable,
+    UpstreamError,
+    ValidationFailed,
+)
 from common.logging import get_logger
 
 from ..clients.coordination import PENDING_TTL_S, IdempotencyStore, StreamGate
@@ -42,6 +51,7 @@ from ..models.runs import (
 )
 from .streaming import DEFAULT_MAX_FRAME, parse_last_event_id, stream_run_events
 
+QUESTION_ID = re.compile(r"q_[A-Za-z0-9_]{1,64}")
 log = get_logger("gateway.runs")
 
 OWNER_WRITE_ATTEMPTS = 3
@@ -298,12 +308,16 @@ class RunFlow:
             log.warning("run_state_sync_failed", run_id=record.run_id, error=type(exc).__name__)
 
     async def answer(self, user_id: str, run_id: str, body: AnswerBody) -> StepAccepted:
-        await self._ideas.get_run(run_id, user_id)
+        await self._ideas.get_run(run_id, user_id)  # ownership first: nothing else is revealed
+        if not QUESTION_ID.fullmatch(body.question_id):
+            raise ValidationFailed("question_id is not a valid question id")
         state = await self._orchestrator.answer(run_id, user_id, body.question_id, body.answer)
         return StepAccepted(run_id=run_id, state=state)
 
     async def approve(self, user_id: str, run_id: str, body: ApproveBody) -> StepAccepted:
         await self._ideas.get_run(run_id, user_id)
+        if not re.fullmatch(rf"ap_{re.escape(run_id)}_[a-z0-9_]{{1,40}}", body.approval_id):
+            raise ValidationFailed("approval_id does not belong to this run")
         state = await self._orchestrator.approve(run_id, user_id, body.approval_id, body.decision)
         return StepAccepted(run_id=run_id, state=state)
 
@@ -324,6 +338,21 @@ class RunFlow:
             )
         self._open_streams += 1
 
+        async def release() -> None:
+            self._open_streams -= 1
+            try:
+                await self._gate.release(user_id)
+            except DomainError as exc:
+                log.warning("stream_slot_release_failed", error=type(exc).__name__)
+
+        try:  # fail closed: a stream that cannot work answers 503 now, not a silent 200 later
+            await self._orchestrator.get(run_id, user_id)
+            subscription = await self._bus.subscribe(run_id)
+        except Exception as exc:
+            await release()
+            log.warning("stream_preflight_failed", run_id=run_id, error=type(exc).__name__)
+            raise Unavailable("live events are temporarily unavailable") from exc
+
         async def replay(after: int) -> list[Any]:
             return await self._orchestrator.events_after(run_id, user_id, after)
 
@@ -335,17 +364,11 @@ class RunFlow:
                 await self._sync(user_id, record, live.state)
             return live.state
 
-        async def release() -> None:
-            self._open_streams -= 1
-            try:
-                await self._gate.release(user_id)
-            except DomainError as exc:
-                log.warning("stream_slot_release_failed", error=type(exc).__name__)
-
         frames = stream_run_events(
             run_id=run_id,
             last_seq=parse_last_event_id(last_event_id),
             bus=self._bus,
+            subscription=subscription,
             replay=replay,
             state=state,
             heartbeat_s=config.heartbeat_s,

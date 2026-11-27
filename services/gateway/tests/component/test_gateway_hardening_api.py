@@ -231,8 +231,8 @@ def test_a_slot_is_released_even_if_the_stream_fails() -> None:
     with e.client:
         seed_run(e)
         response = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
-        assert response.status_code == 200  # headers were sent; the stream just ends
-        assert e.gate.count(ALICE) == 0
+        assert response.status_code == 503  # fails closed: no silent 200 with an empty stream
+        assert e.gate.count(ALICE) == 0  # and the slot is not leaked
 
 
 def test_a_gate_outage_fails_closed() -> None:
@@ -289,7 +289,7 @@ def test_a_large_but_sane_answer_is_still_accepted() -> None:
     e = build()
     with e.client:
         seed_run(e)
-        body = {"question_id": "q1", "answer": 10_000}
+        body = {"question_id": "q_effort", "answer": 10_000}
         assert (
             e.client.post(f"/runs/{RUN}/answer", json=body, headers=e.headers()).status_code == 202
         )
@@ -425,11 +425,13 @@ def test_every_m3_call_after_the_start_carries_the_user_id() -> None:
         seed_run(e)
         e.client.get(f"/runs/{RUN}", headers=e.headers())
         e.client.post(
-            f"/runs/{RUN}/answer", json={"question_id": "q", "answer": 1}, headers=e.headers()
+            f"/runs/{RUN}/answer",
+            json={"question_id": "q_effort", "answer": 1},
+            headers=e.headers(),
         )
         e.client.post(
             f"/runs/{RUN}/approve",
-            json={"approval_id": "a", "decision": "approve"},
+            json={"approval_id": f"ap_{RUN}_deep_search", "decision": "approve"},
             headers=e.headers(),
         )
         e.client.get(f"/runs/{RUN}/events", headers=e.headers())
@@ -582,3 +584,25 @@ def test_compare_lists_all_six_dimensions_even_when_scores_are_missing() -> None
         empty = next(d for d in body["dimensions"] if d["dimension"] == "risk")
         assert empty["scores"] == {a: None, b: None}
         assert empty["delta"] is None
+
+
+def test_the_event_stream_is_a_503_when_m3_times_out() -> None:
+    e = build(ScriptedBus(then_idle=True))
+    with e.client:
+        seed_run(e)
+        e.m3.timeout = True
+        response = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
+        assert response.status_code == 503
+        assert e.gate.count(ALICE) == 0
+
+
+def test_a_replay_failure_after_the_stream_opened_sends_an_error_event_and_closes() -> None:
+    e = build(ScriptedBus(then_idle=True))
+    with e.client:
+        seed_run(e)
+        e.m3.replay_status = 500
+        response = e.client.get(f"/runs/{RUN}/events", headers=e.headers())
+        assert response.status_code == 200
+        assert response.text.startswith("retry: 3000")
+        assert [f["event"] for f in frames(response) if "event" in f] == ["error"]
+        assert e.gate.count(ALICE) == 0

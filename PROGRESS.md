@@ -8,6 +8,7 @@
 |---|---|
 | Current phase | **Phase 0-2 foundation merged (PR #12); in progress: M2 storage (this PR) + gateway, then Phase 5** |
 | Current task | Dev B: M2 storage + cache in review (P2-T07, P2-T08), next gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (P1-T04 k8s_up merged in #13, not verified end to end) |
+| Gateway (P5-T07/T08, PR #41) | Run, idea, compare, challenge, what-if and SSE endpoints in review. Review rounds done: ownership 404s, idempotent run starts, stream caps, scrubbed M3 output, fail-closed stream open (503), run-scoped approval/question ids, closed verdict labels with card/row reconciliation. Open: M3 must accept `run_id` from the gateway and serve `GET /runs/{id}/events?after=` and `POST /runs/{id}/cancel`; M3 only runs `validate` so far. |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
