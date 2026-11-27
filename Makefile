@@ -4,7 +4,7 @@ TAG ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo dev)
 NS  := idea-validator
 SERVICES := gateway profile orchestrator scouts tools kb analyst ideation validators scorer verdict critic agentops
 
-.PHONY: help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
+.PHONY: k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
@@ -33,6 +33,8 @@ images: ## build all module images tagged by commit SHA
 	docker build -t localhost:5001/ingestion:$(TAG) jobs/ingestion
 k8s-up: ## kind + calico + registry + ingress + metrics-server (P1)
 	./scripts/k8s_up.sh
+k8s-verify: ## prove registry, ingress, metrics and NetworkPolicy enforcement on the kind cluster (P1)
+	./scripts/verify_cluster.sh
 deploy: ## kustomize apply with images at TAG (P1)
 	./scripts/deploy.sh $(TAG)
 smoke: ## smoke test through ingress (P1)
