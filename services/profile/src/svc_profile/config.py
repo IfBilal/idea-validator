@@ -12,3 +12,4 @@ class Settings(ServiceSettings):
     max_failed_logins: int = 5
     lockout_minutes: int = 15
     min_password_length: int = 10
+    verdict_cache_ttl_s: int = 24 * 3600
