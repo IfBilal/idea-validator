@@ -8,6 +8,7 @@ resources:
 - serviceaccount.yaml
 - data/postgres.yaml
 - data/redis.yaml
+- data/redis-tools.yaml
 - data/qdrant.yaml
 - services/gateway.yaml
 - services/profile.yaml

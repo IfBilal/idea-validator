@@ -47,7 +47,10 @@ spec:
         - name: AGENTOPS_URL
           value: http://agentops:8000
         - name: REDIS_URL
-          value: redis://redis:6379/0
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: REDIS_URL
         - name: INTERNAL_TOKEN
           valueFrom:
             secretKeyRef:

@@ -47,6 +47,8 @@ spec:
             drop:
             - ALL
         args:
+        - --requirepass
+        - $(REDIS_PASSWORD)
         - --save
         - '60'
         - '1'
@@ -54,6 +56,15 @@ spec:
         - 'no'
         - --dir
         - /data
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef: &id001
+              name: app-secrets
+              key: REDIS_PASSWORD
+        - name: REDISCLI_AUTH
+          valueFrom:
+            secretKeyRef: *id001
         readinessProbe:
           exec:
             command:

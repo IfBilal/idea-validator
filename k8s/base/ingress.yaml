@@ -6,13 +6,13 @@ metadata:
   namespace: idea-validator
   annotations:
     nginx.ingress.kubernetes.io/use-regex: 'true'
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/rewrite-target: /$1$2
 spec:
   ingressClassName: nginx
   rules:
   - http:
       paths:
-      - path: /api(/|$)(.*)
+      - path: /api/(health|auth|profile|validate|discover|runs|ideas|versions|compare|history|events)(.*)
         pathType: ImplementationSpecific
         backend:
           service:

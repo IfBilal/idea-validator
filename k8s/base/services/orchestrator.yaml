@@ -57,7 +57,10 @@ spec:
         - name: PROFILE_URL
           value: http://profile:8000
         - name: REDIS_URL
-          value: redis://redis:6379/0
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: REDIS_URL
         - name: SCOUTS_URL
           value: http://scouts:8000
         - name: TOOLS_URL
