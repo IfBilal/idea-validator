@@ -22,6 +22,11 @@ if [ "$inotify" -lt 512 ] && [ "$KIND_CONFIG" = k8s/kind-config.yaml ]; then
   exit 1
 fi
 
+# Pin kubectl to the project's own kubeconfig file from the start: until the guard below has
+# verified the cluster, any kubectl call fails (file missing) instead of reaching another cluster.
+source "$(dirname "$0")/lib/kube_guard.sh"
+export KUBECONFIG="$PROJECT_KUBECONFIG"
+
 log() { printf '\n==> %s\n' "$*"; }
 
 log "local registry ${REG_NAME} on localhost:${REG_PORT}"
@@ -34,6 +39,8 @@ log "kind cluster ${CLUSTER}"
 if ! kind get clusters | grep -qx "$CLUSTER"; then
   kind create cluster --config "$KIND_CONFIG" --image "$NODE_IMAGE"
 fi
+
+use_project_cluster || exit 1
 
 log "wire registry into node containerd (localhost:${REG_PORT} -> ${REG_NAME}:5000)"
 for node in $(kind get nodes --name "$CLUSTER"); do
@@ -48,7 +55,11 @@ kubectl create -f "https://raw.githubusercontent.com/projectcalico/calico/${CALI
   kubectl replace -f "https://raw.githubusercontent.com/projectcalico/calico/${CALICO}/manifests/tigera-operator.yaml"
 kubectl wait --for=condition=Established crd/installations.operator.tigera.io --timeout=120s
 kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/${CALICO}/manifests/custom-resources.yaml"
-until kubectl get ds/calico-node -n calico-system >/dev/null 2>&1; do sleep 3; done
+for _ in $(seq 100); do  # the operator creates the DaemonSet a little later: wait at most 5 minutes
+  kubectl get ds/calico-node -n calico-system >/dev/null 2>&1 && break
+  sleep 3
+done
+kubectl get ds/calico-node -n calico-system >/dev/null  # still missing: fail the script here
 kubectl rollout status ds/calico-node -n calico-system --timeout=300s
 kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
