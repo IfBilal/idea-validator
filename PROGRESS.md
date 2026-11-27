@@ -7,7 +7,7 @@
 | Field | Value |
 |---|---|
 | Current phase | **Phase 0-2 foundation merged (PR #12); in progress: M2 storage (this PR) + gateway, then Phase 5** |
-| Current task | Dev B: M2 storage + cache in review (P2-T07, P2-T08), next gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (PR #13 k8s_up in review) |
+| Current task | Dev B: M2 storage + cache in review (P2-T07, P2-T08), next gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (P1-T04 k8s_up merged in #13, not verified end to end) |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
@@ -48,7 +48,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 ## Completed tasks
 | Task | PR | Date | Notes |
 |---|---|---|---|
-| P0-T03 uv workspace, tooling, pre-commit | #12 (in review) | 2026-11-26 | Dev A's task, done early by Dev B to unblock |
+| P0-T03 uv workspace, tooling, pre-commit | #12 | 2026-11-26 | Dev A's task, done early by Dev B to unblock |
 | P0-T04 Pydantic schemas + drift test | #12 | 2026-11-26 | 12 models mirror `schemas/*.schema.json`; worked-example verdict is raw engine output (see 27) |
 | P0-T05 libs/common (config, logging, http, tracing, errors) | #12 | 2026-11-26 | |
 | P0-T09, P0-T10 README, AI log | #12 | 2026-11-26 | |
@@ -56,6 +56,8 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P1-T02 13 stub services | #12 | 2026-11-26 | all 13 images build |
 | P2-T01..T05 M11 verdict engine | #12 | 2026-11-26 | 24 golden vectors, 99% coverage, verdict-guardian reviewed twice |
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
+| P0-T07 pr-checks workflow repaired | #16 | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
+| P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
@@ -64,6 +66,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 - [ ] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
+- [ ] **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
 - [ ] Decide which laptop hosts kind + Jenkins (≥ 16 GB RAM)
 - [ ] Colab / Kaggle account for fine-tuning
 - [ ] Ask instructor the open questions in `docs/harness/27_ASSUMPTIONS_AND_OPEN_QUESTIONS.md` §B
@@ -74,6 +77,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 
 ## Lessons / notes for future sessions
 - Docker is not installed system-wide. A rootless Docker 29 lives in `~/.local/docker-rootless` (start: `DOCKERD_ROOTLESS_ROOTLESSKIT_NET=pasta ~/.local/docker-rootless/bin/dockerd-rootless.sh`, then `DOCKER_HOST=unix:///run/user/1000/docker.sock`). Its published ports do not reach the host here; use Podman (`podman run -p`) for local databases and set `TEST_DATABASE_URL` / `TEST_REDIS_URL`. CI uses real Docker + testcontainers.
+- A bare `models/` line in `.gitignore` hid every Python `models/` package from git (found in review of #12). Ignore rules for ML weights must be anchored (`/models/`); `libs/common/tests/test_repo_hygiene.py` now fails if source files are ignored. Always verify a PR from a fresh clone (`git clone`, `uv sync --all-packages`, `make lint typecheck test`), not from your working tree.
 - Stacked PRs: merge with "Create a merge commit", never squash (squash makes the PRs above it conflict).
 - Pytest loads shared fixtures with `-p common.testing`; two `conftest.py` files with the same name confuse mypy, so name helpers uniquely.
 - `ruff format` rewrites files after the pre-commit hook runs; if a commit fails on end-of-file fixes, re-stage and commit again.
