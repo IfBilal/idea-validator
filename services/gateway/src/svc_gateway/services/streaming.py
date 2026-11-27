@@ -32,6 +32,7 @@ _STATE_EVENT: dict[str, RunEventType] = {
     "succeeded": "run_completed",
     "failed": "run_failed",
     "budget_stopped": "budget_stopped",
+    "cancelled": "run_failed",  # the event schema has no cancelled type: status says which
 }
 RETRY_MS = 3000
 DEFAULT_MAX_FRAME = 64 * 1024
