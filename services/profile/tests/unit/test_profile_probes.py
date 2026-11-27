@@ -12,7 +12,7 @@ def test_health_identifies_the_service_without_a_database() -> None:
 def test_not_ready_without_a_database() -> None:
     response = TestClient(build_app(Settings())).get("/ready")
     assert response.status_code == 503
-    assert response.json()["checks"] == {"postgres": False}
+    assert response.json()["checks"] == {"postgres": False, "redis": False}
 
 
 def test_metrics_are_exposed() -> None:

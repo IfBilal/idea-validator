@@ -25,8 +25,8 @@ PROFILE: dict[str, Any] = {
 
 
 @pytest.fixture
-def client(migrated_url: str, engine) -> Iterator[TestClient]:  # type: ignore[no-untyped-def]
-    settings = Settings(database_url=migrated_url, internal_token="tok")
+def client(migrated_url: str, redis_url: str, engine) -> Iterator[TestClient]:  # type: ignore[no-untyped-def]
+    settings = Settings(database_url=migrated_url, redis_url=redis_url, internal_token="tok")
     with TestClient(build_app(settings)) as test_client:
         yield test_client
 
@@ -141,7 +141,10 @@ def test_internal_endpoints_need_the_token(client: TestClient) -> None:
 
 
 def test_ready_reports_the_database(client: TestClient) -> None:
-    assert client.get("/ready").json() == {"status": "ready", "checks": {"postgres": True}}
+    assert client.get("/ready").json() == {
+        "status": "ready",
+        "checks": {"postgres": True, "redis": True},
+    }
 
 
 async def test_concurrent_updates_get_distinct_consecutive_versions(sessions, engine) -> None:  # type: ignore[no-untyped-def]

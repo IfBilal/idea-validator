@@ -1,7 +1,7 @@
 # M4/M5 source configuration. Allow-list is EXACT host match, https only. Read each site's terms + robots.txt first
 # (record in docs/data-sources.md). Official APIs only. No logins, no private data.
 version: "s1"
-user_agent: "IdeaValidatorBot/1.0 (+https://github.com/<org>/<repo>; CS4032 student project)"
+user_agent: "IdeaValidatorBot/1.0 (+https://github.com/IfBilal/idea-validator; CS4032 student project)"
 # API hosts governed by their API terms instead of robots.txt (their robots.txt is for crawlers).
 robots_exempt:
   - hacker-news.firebaseio.com
@@ -32,6 +32,7 @@ allow_list:
 sources:
   hackernews:
     enabled: true
+    hosts: [hacker-news.firebaseio.com, hn.algolia.com]
     rate_limit_per_min: 600
     cache_ttl_s: 21600
     schedule: "0 */6 * * *"
@@ -39,6 +40,7 @@ sources:
     algolia_tags: [show_hn, ask_hn]
   github:
     enabled: true
+    hosts: [api.github.com]
     rate_limit_per_min: 25          # search API: 30/min authenticated
     cache_ttl_s: 43200
     schedule: "30 */12 * * *"
@@ -46,12 +48,14 @@ sources:
     min_stars: 50
   reddit:
     enabled: true
+    hosts: [oauth.reddit.com, www.reddit.com]
     rate_limit_per_min: 60
     cache_ttl_s: 21600
     schedule: "15 */6 * * *"
     subreddits: [SideProject, startups, SaaS, EntrepreneurRideAlong, Entrepreneur, webdev]
   producthunt:
     enabled: false                  # enable when token is available
+    hosts: [api.producthunt.com]
     rate_limit_per_min: 30
     cache_ttl_s: 86400
     schedule: "0 3 * * *"

@@ -23,7 +23,7 @@ from common.errors import (
 )
 from common.schemas import FetchRequest, FetchResponse, SanitiserReport
 
-from ..config_sources import DEFAULT_SOURCE, SourcesConfig
+from ..config_sources import SourcesConfig, source_for_host
 from .cache import KeyValueCache
 from .fetcher import Fetcher, RawResponse
 from .ratelimit import TokenBucket
@@ -81,8 +81,40 @@ class FetchMetrics(Protocol):
 Sleep = Callable[[float], Awaitable[None]]
 
 
-def _sanitise_json(value: Any) -> tuple[Any, int]:
-    """Sanitise every string value (keys are left alone). Returns the new value and a count."""
+MAX_JSON_DEPTH = 50
+_CHARSET_NAMES = """
+utf-8 utf8 ascii us-ascii latin-1 latin1 iso-8859-1 iso-8859-2 iso-8859-15
+windows-1250 windows-1251 windows-1252 utf-16 utf-16le utf-16be
+"""
+SAFE_CHARSETS = frozenset(re.split(r"\s+", _CHARSET_NAMES.strip()))
+
+
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"non-finite number {name}")
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if value in (float("inf"), float("-inf")):
+        raise ValueError("number out of range")
+    return value
+
+
+def _parse_json(decoded: str) -> Any:
+    """``None`` when the body is not usable JSON (invalid, non-finite numbers, too deep)."""
+    try:
+        return json.loads(decoded, parse_constant=_no_constant, parse_float=_finite_float)
+    except (ValueError, RecursionError):
+        return None
+
+
+def _sanitise_json(value: Any, depth: int = 0) -> tuple[Any, int]:
+    """Sanitise every string value and key. Returns the new value and a removal count.
+
+    Nesting deeper than ``MAX_JSON_DEPTH`` is cut off and counted as one removal.
+    """
+    if depth > MAX_JSON_DEPTH:
+        return None, 1
     if isinstance(value, str):
         content_type = "text/html" if _HTML_TAG.search(value) else None
         result = sanitise(value, content_type)
@@ -91,15 +123,22 @@ def _sanitise_json(value: Any) -> tuple[Any, int]:
         total = 0
         items = []
         for item in value:
-            cleaned, count = _sanitise_json(item)
+            cleaned, count = _sanitise_json(item, depth + 1)
             items.append(cleaned)
             total += count
         return items, total
     if isinstance(value, dict):
         total = 0
         out: dict[str, Any] = {}
-        for key, item in value.items():
-            out[key], count = _sanitise_json(item)
+        for index, (key, item) in enumerate(value.items()):
+            cleaned_key = sanitise(key, max_chars=200)
+            name = cleaned_key.text
+            if cleaned_key.flagged:
+                total += cleaned_key.removed_patterns
+                name = f"[removed key {index}]"
+            if name in out:  # two keys sanitised to the same text: never overwrite a value
+                name = f"{name}#{index}"
+            out[name], count = _sanitise_json(item, depth + 1)
             total += count
         return out, total
     return value, 0
@@ -139,33 +178,40 @@ class FetchService:
         self._sources, self._metrics, self._sleep, self._clock = sources, metrics, sleep, clock
 
     async def fetch(self, req: FetchRequest) -> FetchResponse:
-        entry = self._sources.sources.get(req.source, DEFAULT_SOURCE)
+        label = "other"  # metrics label: derived from the host, never from caller input
         try:
+            checked = await self._policy.check(req.url)
+            label, entry = source_for_host(self._sources, checked.host)
             if not entry.enabled:
                 raise Forbidden("this source is disabled", {"reason": "SOURCE_DISABLED"})
-            response, outcome = await self._fetch(req, entry.rate_limit_per_min, entry.cache_ttl_s)
+            response, outcome = await self._fetch(
+                req, checked, entry.rate_limit_per_min, entry.cache_ttl_s, label
+            )
         except Forbidden:
-            self._metrics.outcome(req.source, "blocked")
+            self._metrics.outcome(label, "blocked")
             raise
         except RateLimited:
-            self._metrics.outcome(req.source, "rate_limited")
+            self._metrics.outcome(label, "rate_limited")
             raise
         except BudgetExceeded:
-            self._metrics.outcome(req.source, "budget")
+            self._metrics.outcome(label, "budget")
             raise
         except DomainError:
-            self._metrics.outcome(req.source, "error")
+            self._metrics.outcome(label, "error")
             raise
-        self._metrics.outcome(req.source, outcome)
+        self._metrics.outcome(label, outcome)
         return response
 
-    async def _fetch(self, req: FetchRequest, rate: int, ttl_s: int) -> tuple[FetchResponse, str]:
-        checked = await self._policy.check(req.url)
+    async def _fetch(
+        self, req: FetchRequest, checked: CheckedUrl, rate: int, ttl_s: int, label: str
+    ) -> tuple[FetchResponse, str]:
         normalised = f"https://{checked.host}{checked.path_and_query}"
         key = "fetch:" + hashlib.sha256(normalised.encode()).hexdigest()
         cached = await self._cache.get(key)
         if cached is not None:
-            hit = FetchResponse.model_validate(cached).model_copy(update={"cache_hit": True})
+            hit = FetchResponse.model_validate(cached).model_copy(
+                update={"cache_hit": True, "url": req.url}
+            )
             return hit, "cache_hit"
         if req.run_id:
             self._budget.check(req.run_id)
@@ -186,6 +232,8 @@ class FetchService:
                 raise UpstreamError("redirect without a location", {"host": current.host})
             target = urljoin(f"https://{current.host}{current.path_and_query}", location)
             moved = await self._policy.check(target)  # allow-list + SSRF checks on every hop
+            if not await self._robots.allowed(moved.host, moved.path_and_query):
+                raise Forbidden("robots.txt disallows this path", {"reason": "ROBOTS_DISALLOWED"})
             if moved.host != current.host:
                 await self._bucket.acquire(moved.host, rate)
             current = moved
@@ -199,8 +247,8 @@ class FetchService:
         if req.run_id:
             self._budget.charge(req.run_id, len(raw.body))
         if response.sanitiser.removed_patterns:
-            self._metrics.injection(req.source, response.sanitiser.removed_patterns)
-        if 200 <= raw.status < 300:
+            self._metrics.injection(label, response.sanitiser.removed_patterns)
+        if 200 <= raw.status < 300 and not raw.truncated:  # a cut-off body must not be reused
             await self._cache.set(key, response.model_dump(mode="json", by_alias=True), ttl_s)
         return response, "fetched"
 
@@ -232,10 +280,7 @@ class FetchService:
             decoded = raw.body.decode(_safe_charset(header), errors="replace")
             parsed: Any = None
             if content_type.endswith("json") and not raw.truncated:
-                try:
-                    parsed = json.loads(decoded)
-                except ValueError:
-                    parsed = None
+                parsed = _parse_json(decoded)
             if parsed is not None:
                 data, removed = _sanitise_json(parsed)
             else:
@@ -255,9 +300,5 @@ class FetchService:
 
 
 def _safe_charset(header: str) -> str:
-    name = _charset(header)
-    try:
-        "".encode(name)
-    except LookupError:
-        return "utf-8"
-    return name
+    name = _charset(header).lower()
+    return name if name in SAFE_CHARSETS else "utf-8"

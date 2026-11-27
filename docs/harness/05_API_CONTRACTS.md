@@ -87,10 +87,11 @@ data: {"run_id","seq","ts","type", ...payload}
 ## 3. Internal endpoints
 
 ### M2 Profile/Session/Cache (`/internal/*`)
-`POST /internal/users` (`{email,password}` → 201 `{user_id}`; 409 duplicate email, 422 password < 10 chars), `POST /internal/auth/login` (`{email,password}` → `{user_id}`; one generic 401 for every failure; account locked 15 min after 5 failures; the gateway issues the JWT), `GET /internal/profiles/{user_id}[?version=]`, `PUT /internal/profiles/{user_id}` (each PUT adds a version), `POST /internal/ideas`,
-`POST /internal/ideas/{id}/versions`, `GET /internal/ideas/{id}/versions[/{v}]`, `POST /internal/verdicts`,
-`GET|PUT /internal/runs/{id}`, `POST /internal/approvals`, `PUT /internal/approvals/{id}`,
-`GET|PUT /internal/cache/verdict/{key}` (returns `{hit: bool, value}`), `GET /internal/compare`.
+`POST /internal/users` (`{email,password}` → 201 `{user_id}`; 409 duplicate email, 422 password < 10 chars), `POST /internal/auth/login` (`{email,password}` → `{user_id}`; one generic 401 for every failure; account locked 15 min after 5 failures; the gateway issues the JWT), `GET /internal/profiles/{user_id}[?version=]`, `PUT /internal/profiles/{user_id}` (each PUT adds a version), `POST /internal/ideas` (creates version 1), `GET /internal/ideas?user_id&limit&cursor` (newest first, keyset cursor),
+`POST /internal/ideas/{id}/versions`, `GET /internal/ideas/{id}/versions[/{v}]?user_id`, `POST /internal/verdicts` (body is the full `Verdict`; stores the payload and one row per dimension score),
+`GET|PUT /internal/runs/{id}` (`?user_id` on GET; a run belongs to one user), `POST /internal/approvals`, `PUT /internal/approvals/{id}` (decided once, else 409),
+`GET|PUT /internal/cache/verdict/{key}` (GET returns `{hit: bool, value}`; PUT 204 with `{value, ttl_s?}`, default TTL 24 h; build the key with `common.cache_keys.verdict_cache_key`), `GET /internal/compare?user_id&idea_ids=..` (2 to 5 ideas).
+Every read takes the caller's `user_id`; someone else's idea, version or run is reported as 404, never 403.
 
 ### M3 Orchestrator
 `POST /runs` `{kind, user_id, input}` → `{run_id}`; `GET /runs/{id}`; `POST /runs/{id}/answer`; `POST /runs/{id}/approve`;

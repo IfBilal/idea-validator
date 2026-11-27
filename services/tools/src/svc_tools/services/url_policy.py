@@ -18,6 +18,16 @@ from urllib.parse import urlsplit
 from common.errors import Forbidden, UpstreamError
 
 MAX_URL_LENGTH = 2048
+_SPECIAL_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "fec0::/10",  # deprecated site-local
+        "2002::/16",  # 6to4
+        "2001::/32",  # Teredo
+        "64:ff9b:1::/48",  # local-use NAT64
+        "192.88.99.0/24",  # 6to4 relay anycast
+    )
+)
 _FORBIDDEN_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
 
 
@@ -66,6 +76,8 @@ def _is_public(address: str) -> bool:
             ip = ip.ipv4_mapped
         elif ip in ipaddress.ip_network("64:ff9b::/96"):
             ip = ipaddress.ip_address(int(ip) & 0xFFFFFFFF)
+    if any(ip in network for network in _SPECIAL_NETWORKS if network.version == ip.version):
+        return False
     return bool(
         ip.is_global
         and not (
@@ -102,7 +114,10 @@ class UrlPolicy:
     def _parse(self, url: str) -> tuple[str, str]:
         if not url or len(url) > MAX_URL_LENGTH or _FORBIDDEN_CHARS.search(url):
             raise _deny("INVALID_URL", "url is empty, too long or contains forbidden characters")
-        parts = urlsplit(url)
+        try:
+            parts = urlsplit(url)
+        except ValueError as exc:
+            raise _deny("INVALID_URL", "url could not be parsed") from exc
         if parts.scheme.lower() != "https":
             raise _deny("INVALID_URL", "only https urls are allowed")
         try:
