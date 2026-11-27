@@ -12,7 +12,7 @@ kubeconfig*
 *.bin
 *.pt
 *.ckpt
-models/
+/models/
 jobs/finetune/outputs/
 # python
 __pycache__/
@@ -22,6 +22,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.hypothesis/
+.import_linter_cache/
 htmlcov/
 # node
 node_modules/
