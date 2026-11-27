@@ -90,7 +90,7 @@ use LangGraph `interrupt()`.
 - Trace inputs are an `input_hash` only (no idea text or profile, per docs/harness/13 §8). Outputs, such as
   evidence and the verdict, are still traced.
 - The verdict cache key has no `user_id`. This is safe because idea ids are globally unique (M2 guarantees it).
-- `RunStatus` is not registered in LangGraph's msgpack allow-list; it is stored as a plain string value.
+- `RunStatus` is not registered in LangGraph's msgpack allow-list; it round-trips through the default serializer today (tested with Postgres) but a stricter serializer setting would need it registered.
 - Cache key versions cover M11, the profile and the idea only (scorer/critic versions are not exposed yet).
 - Parallel fan-outs check the step budget per call and can overshoot `max_steps` by the fan-out width; the
   atomic compare-and-reserve belongs in `common/budget.py` (owned by Dev A).
