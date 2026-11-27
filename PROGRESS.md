@@ -80,6 +80,7 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 | P8 Phase A (M10t): pipeline pieces, QLoRA train script, export, CPU serving benchmark | this PR | 2026-11-27 | gpu-session. RTX 3060 Ti 8 GB, Windows 11. Smoke (synthetic): 50 steps 382 s, peak VRAM 4.24 GB, 1118 tok/s; Q4_K_M 935 MiB, CPU p50 3.6 s / p95 5.5 s (570-token prompt, 4 threads), peak RSS 1.86 GB; quantisation damage 0.1 mean abs score diff. Real data and hand-checks still missing (see Blocked) |
+| P8-T07 scorer serves the GGUF first (llama.cpp client, constrained JSON, retry once, hosted fallback, abstain, warm-up readiness) | this PR | 2026-11-27 | gpu-session. 140 scorer tests; verified live: wrapper + llama-server with the smoke GGUF, then server killed: fallback to hosted logged (`scorer_fallback_total{reason=unavailable}`). k8s sidecar + model-import Job still to do (laptop-session) |
 
 ## Blocked / Needs human
 - [ ] gpu-session (P8-T03): >= 60 human-reviewed examples via `python -m finetune.review` (Taimoor and Bilal); never simulated. Until then the test set cannot be called hand-checked.
