@@ -6,6 +6,7 @@ the output directory is git-ignored.
 """
 
 import random
+from pathlib import Path
 from typing import Any
 
 from common.schemas import DIMENSIONS
@@ -53,3 +54,33 @@ def synthetic_examples(factory: PromptFactory, *, n: int, seed: int) -> list[dic
             )
         )
     return out
+
+
+def main(argv: list[str] | None = None) -> None:
+    """``python -m finetune.synthetic --n 96``: write git-ignored synthetic train/val files."""
+    import argparse
+    import json
+
+    from .prompting import repo_root
+    from .split import grouped_split
+
+    p = argparse.ArgumentParser(prog="finetune.synthetic")
+    p.add_argument("--n", type=int, default=96)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--out", default="jobs/finetune/data/synthetic")
+    a = p.parse_args(argv)
+    root = repo_root()
+    rows = synthetic_examples(PromptFactory(root / "rubrics", root / "prompts"), n=a.n, seed=a.seed)
+    flat = [{"idea_id": r["meta"]["idea_id"], "row": r} for r in rows]
+    parts = grouped_split(flat, test_ideas=set(), val_fraction=0.1, seed=a.seed)
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for name, items in parts.items():
+        with open(out / f"{name}.jsonl", "w", encoding="utf-8") as handle:
+            for item in items:
+                handle.write(json.dumps(item["row"], ensure_ascii=False) + "\n")
+    print({k: len(v) for k, v in parts.items()}, "->", out)
+
+
+if __name__ == "__main__":
+    main()
