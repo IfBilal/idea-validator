@@ -1,9 +1,12 @@
 """HTTP layer only: parse, validate, call the service, map errors. Every endpoint is internal."""
 
+import hmac
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from common.errors import Forbidden, Unauthorized
 from common.service import require_internal_token
 from svc_kb.config import Settings
 from svc_kb.models.api import (
@@ -31,8 +34,27 @@ def kb_service(request: Request) -> KbService:
 Kb = Annotated[KbService, Depends(kb_service)]
 
 
+INGEST_TOKEN_HEADER = "X-Ingest-Token"  # noqa: S105 (header name, not a secret)
+
+
+def require_ingest_token(settings: Settings) -> Callable[[Request], None]:
+    """Writes need a second credential that the read-only agent services never get."""
+
+    def dependency(request: Request) -> None:
+        if settings.ingest_token is None:
+            raise Forbidden("writes are disabled: INGEST_TOKEN is not set")
+        given = request.headers.get(INGEST_TOKEN_HEADER, "")
+        if not hmac.compare_digest(
+            given.encode(), settings.ingest_token.get_secret_value().encode()
+        ):
+            raise Unauthorized("missing or invalid ingest token")
+
+    return dependency
+
+
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_internal_token(settings))])
+    writes = [Depends(require_ingest_token(settings))]
 
     @router.post("/search", response_model=SearchResponse)
     async def search(body: SearchRequest, kb: Kb) -> SearchResponse:
@@ -66,11 +88,11 @@ def make_router(settings: Settings) -> APIRouter:
     async def stats(kb: Kb) -> KbStats:
         return await kb.stats()
 
-    @router.post("/ingest", response_model=IngestResponse)
+    @router.post("/ingest", response_model=IngestResponse, dependencies=writes)
     async def ingest(body: IngestRequest, kb: Kb) -> IngestResponse:
         return await kb.ingest(list(body.cards))
 
-    @router.post("/reindex", response_model=ReindexResponse)
+    @router.post("/reindex", response_model=ReindexResponse, dependencies=writes)
     async def reindex(kb: Kb) -> ReindexResponse:
         return await kb.reindex()
 

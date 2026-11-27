@@ -63,6 +63,11 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: DATABASE_URL
+        - name: INGEST_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: INGEST_TOKEN
         readinessProbe:
           httpGet:
             path: /ready
