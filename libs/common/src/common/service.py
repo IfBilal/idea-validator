@@ -96,7 +96,11 @@ def create_app(
 
     @app.exception_handler(DomainError)
     async def domain_error(_: Request, exc: DomainError) -> JSONResponse:
-        return _envelope_response(exc.status_code, exc.to_envelope(request_id_var.get()))
+        response = _envelope_response(exc.status_code, exc.to_envelope(request_id_var.get()))
+        retry_after = exc.details.get("retry_after")
+        if exc.status_code == 429 and isinstance(retry_after, int):
+            response.headers["Retry-After"] = str(retry_after)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

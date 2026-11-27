@@ -605,13 +605,19 @@ name = "idea-validator-gateway"
 version = "0.1.0"
 source = { editable = "services/gateway" }
 dependencies = [
+    { name = "email-validator" },
     { name = "idea-validator-common" },
+    { name = "pyjwt" },
+    { name = "redis" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "email-validator", specifier = ">=2.2" },
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "pyjwt", specifier = ">=2.10" },
+    { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 

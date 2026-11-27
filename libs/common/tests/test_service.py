@@ -136,3 +136,19 @@ async def test_internal_endpoints_are_closed_when_no_token_is_configured() -> No
 
     with pytest.raises(Unauthorized):
         dependency(Request({"type": "http", "headers": []}))
+
+
+async def test_rate_limited_errors_carry_a_retry_after_header() -> None:
+    from common.errors import RateLimited
+
+    app = make()
+
+    @app.get("/slow-down")
+    async def slow_down() -> None:
+        raise RateLimited("too many requests", {"retry_after": 17})
+
+    async with client(app) as c:
+        r = await c.get("/slow-down")
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "17"
+    assert r.json()["error"]["code"] == "RATE_LIMITED"
