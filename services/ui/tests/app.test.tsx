@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { clearSession, setSession } from "@/lib/auth";
 import { makeRouter } from "@/router";
 
 function renderAt(path: string) {
@@ -15,13 +16,16 @@ function renderAt(path: string) {
 }
 
 describe("app shell", () => {
+  afterEach(() => clearSession());
+
   it("shows the home screen with the honesty line", async () => {
     renderAt("/");
     expect(await screen.findByRole("heading", { name: /should you build it/i })).toBeInTheDocument();
     expect(screen.getByText(/decision support, not a prediction of success/i)).toBeInTheDocument();
   });
 
-  it("navigates between screens from the main navigation", async () => {
+  it("navigates between screens from the main navigation when logged in", async () => {
+    setSession("tok", 3600);
     renderAt("/");
     const nav = await screen.findByRole("navigation", { name: /main/i });
     await userEvent.click(nav.querySelector('a[href="/ideas"]') as HTMLElement);
