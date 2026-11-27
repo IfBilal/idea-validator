@@ -8,9 +8,10 @@ from pydantic import Field, model_validator
 from common.schemas import EvidenceItem
 from common.schemas.base import Message
 from common.schemas.types import CardId, EvidenceId, Kind, Source
-from svc_kb.models.cards import CardOut
+from svc_kb.models.cards import CardIn, CardOut, UpsertResult
 
 MAX_BATCH = 200
+MAX_INGEST = 50
 
 
 class SearchFiltersIn(Message):
@@ -84,3 +85,16 @@ class CardsBatchResponse(Message):
 class CardsPage(Message):
     items: list[CardOut]
     total: int
+
+
+class IngestRequest(Message):
+    cards: list[CardIn] = Field(min_length=1, max_length=MAX_INGEST)
+
+
+class IngestResponse(Message):
+    results: list[UpsertResult]
+
+
+class ReindexResponse(Message):
+    cards: int
+    chunks: int

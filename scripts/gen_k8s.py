@@ -89,6 +89,12 @@ JOBS: dict[str, dict[str, Any]] = {
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
     },
+    "migrate-kb": {  # the kb schema has its own Alembic history and version table
+        "image": "kb",
+        "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
+        "secrets": ["DATABASE_URL"],
+        "calls": ["postgres"],
+    },
 }
 IMAGE_TAG = "unset"  # the overlay / deploy script sets the commit SHA; never "latest"
 RESOURCES = {  # placeholders until scripts/measure_resources.sh (P11-T01) sets them from measurements

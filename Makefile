@@ -26,7 +26,7 @@ up: dev-env ## dev stack (postgres, redis, qdrant via docker compose), waits unt
 down: ## stop the dev stack; data volumes are kept (docker compose down -v deletes them)
 	docker compose down
 migrate: ## alembic upgrade on the compose Postgres (run `make up` first)
-	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head
+	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head && uv run --package idea-validator-kb alembic -c services/kb/alembic.ini upgrade head
 seed: ## restore the card snapshot into Postgres + Qdrant (needs M6 and ingestion, issue 30)
 	@echo "make seed needs the ingestion job (issue #30, P3-T09), which is not built yet" >&2; exit 1
 images: ## build and push every module image to the local registry, tagged TAG (default: commit SHA)

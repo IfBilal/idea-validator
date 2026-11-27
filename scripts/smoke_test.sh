@@ -26,7 +26,9 @@ for s in postgres redis redis-tools qdrant; do
   r="$(kubectl -n "$NS" get sts "$s" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)"
   [ "${r:-0}" -ge 1 ] && pass "StatefulSet $s ready" || fail "StatefulSet $s not ready"
 done
-[ "$(kubectl -n "$NS" get job migrate -o jsonpath='{.status.succeeded}' 2>/dev/null)" = 1 ] && pass "migrate Job succeeded" || fail "migrate Job did not succeed"
+for j in migrate migrate-kb; do
+  [ "$(kubectl -n "$NS" get job "$j" -o jsonpath='{.status.succeeded}' 2>/dev/null)" = 1 ] && pass "$j Job succeeded" || fail "$j Job did not succeed"
+done
 
 # 2. public surface: health yes, ops endpoints no
 check 200 "$(code "$BASE/api/health")" "GET /api/health through the ingress"

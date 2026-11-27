@@ -7,9 +7,11 @@ import hashlib
 import math
 import re
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
-from common.ids import parse_evidence_id
-from svc_kb.models.cards import CardOut, EvidenceRow, KbStats
+from common.ids import canonical_url, card_id_for, parse_evidence_id
+from svc_kb.models.cards import CardIn, CardOut, EvidenceRow, KbStats, UpsertResult
+from svc_kb.services.chunking import chunk_text
 from svc_kb.services.search import SparseVec
 
 DIM = 64
@@ -98,6 +100,37 @@ class InMemoryStore:
             fresh_90d_share=0.0,
             snapshot_date=newest,
         )
+
+    async def upsert(self, card: CardIn) -> UpsertResult:
+        url = canonical_url(card.url)
+        existing = next((c for c in self._cards.values() if c.url == url), None)
+        now = datetime.now(UTC)
+        if existing is not None:
+            changed = existing.content_hash != card.content_hash
+            if changed:
+                self._store(existing.id, card, url, existing.first_seen_at, now)
+            return UpsertResult(card_id=existing.id, created=False, changed=changed)
+        card_id = card_id_for(url)
+        self._store(card_id, card, url, now, now)
+        return UpsertResult(card_id=card_id, created=True, changed=True)
+
+    def _store(self, card_id: str, card: CardIn, url: str, first: datetime, last: datetime) -> None:
+        fields = card.model_dump(exclude={"url"})
+        self._cards[card_id] = CardOut.model_validate(
+            fields
+            | {
+                "id": card_id,
+                "url": url,
+                "platforms": [card.source],
+                "first_seen_at": first,
+                "last_seen_at": last,
+            }
+        )
+        for key in [k for k in self._chunks if k.startswith(f"{card_id}#")]:
+            del self._chunks[key]
+        for ch in chunk_text(card_id, card.text):
+            self._chunks[ch.evidence_id] = ch.text
+        self._cards = dict(sorted(self._cards.items()))
 
     async def ping(self) -> bool:
         return True

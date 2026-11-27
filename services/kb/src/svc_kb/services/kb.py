@@ -5,19 +5,23 @@ from datetime import UTC, datetime
 from typing import Any
 
 from common.errors import NotFound, Unavailable
+from common.ids import canonical_url
 from common.schemas import EvidenceItem
 from svc_kb.models.api import (
     CardsBatchResponse,
     CardsPage,
     EvidenceBatchResponse,
     EvidenceFull,
+    IngestResponse,
+    ReindexResponse,
     SearchRequest,
     SearchResponse,
 )
-from svc_kb.models.cards import CardOut, EvidenceRow, KbStats
+from svc_kb.models.cards import CardIn, CardOut, EvidenceRow, KbStats
+from svc_kb.services.chunking import chunk_text
 from svc_kb.services.quotes import MAX_QUOTE_CHARS, best_quote
-from svc_kb.services.search import ChunkIndex, Mode, SearchFilters
-from svc_kb.services.store import Store
+from svc_kb.services.search import ChunkIndex, IndexedCard, Mode, SearchFilters
+from svc_kb.services.store import MAX_PAGE, Store
 
 
 def _full(row: EvidenceRow, now: datetime) -> EvidenceFull:
@@ -99,6 +103,48 @@ class KbService:
     async def cards_page(self, *, limit: int, offset: int) -> CardsPage:
         items, total = await self._store.list(limit=limit, offset=offset)
         return CardsPage(items=items, total=total)
+
+    def _indexed(self, card: CardIn | CardOut, card_id: str) -> IndexedCard:
+        return IndexedCard(
+            card_id=card_id,
+            url=canonical_url(card.url),
+            source=card.source,
+            kind=card.kind,
+            niche_tags=list(card.niche_tags),
+            published_at=card.published_at,
+            chunks=chunk_text(card_id, card.text),
+            card_name=card.name,
+        )
+
+    async def ingest(self, cards: list[CardIn]) -> IngestResponse:
+        """Store each card, then index it. A re-seen unchanged card is not embedded again.
+
+        If indexing fails after the store committed, the error surfaces (503) and ``reindex``
+        repairs the gap; re-ingesting the same card is "unchanged" and would not repair it.
+        """
+        results = []
+        for card in cards:
+            result = await self._store.upsert(card)
+            if result.changed:
+                await self._index.upsert(self._indexed(card, result.card_id))
+            results.append(result)
+        return IngestResponse(results=results)
+
+    async def reindex(self) -> ReindexResponse:
+        """Rebuild the search index from the store (after a snapshot restore or a failed index)."""
+        await self._index.ensure_collection()
+        cards = chunks = offset = 0
+        while True:
+            page, total = await self._store.list(limit=MAX_PAGE, offset=offset)
+            for card in page:
+                indexed = self._indexed(card, card.id)
+                await self._index.upsert(indexed)
+                chunks += len(indexed.chunks)
+            cards += len(page)
+            offset += len(page)
+            if not page or offset >= total:
+                break
+        return ReindexResponse(cards=cards, chunks=chunks)
 
     async def stats(self) -> KbStats:
         return await self._store.stats()
