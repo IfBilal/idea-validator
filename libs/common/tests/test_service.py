@@ -152,3 +152,35 @@ async def test_rate_limited_errors_carry_a_retry_after_header() -> None:
     assert r.status_code == 429
     assert r.headers["retry-after"] == "17"
     assert r.json()["error"]["code"] == "RATE_LIMITED"
+
+
+async def test_untrusted_request_ids_are_replaced_not_echoed() -> None:
+    async with client(make()) as c:
+        for bad in ("a b", "x" * 65, "line\\nbreak", "<script>", "über"):
+            r = await c.get("/health", headers={b"X-Request-Id": bad.encode("utf-8")})
+            assert r.headers["x-request-id"].startswith("req_"), bad
+        ok = await c.get("/health", headers={"X-Request-Id": "x" * 64})
+        assert ok.headers["x-request-id"] == "x" * 64
+
+
+async def test_api_docs_are_off_unless_asked_for() -> None:
+    async with client(make()) as c:
+        assert [(await c.get(p)).status_code for p in ("/docs", "/redoc", "/openapi.json")] == [
+            404
+        ] * 3
+    on = create_app(name="kb", module="M6", expose_docs=True)
+    async with client(on) as c:
+        assert (await c.get("/openapi.json")).status_code == 200
+
+
+async def test_unexpected_errors_carry_the_configured_headers() -> None:
+    app = create_app(name="kb", module="M6", error_headers={"x-content-type-options": "nosniff"})
+
+    @app.get("/boom")
+    async def boom() -> None:
+        raise RuntimeError("secret internals")
+
+    async with client(app) as c:
+        r = await c.get("/boom")
+    assert r.status_code == 500
+    assert r.headers["x-content-type-options"] == "nosniff"

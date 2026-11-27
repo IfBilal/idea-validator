@@ -56,3 +56,36 @@ async def test_two_gateway_replicas_share_one_counter(redis_url: str, redis: Red
     with pytest.raises(RateLimited):
         await a.hit("k", "i", 2)
     await other.aclose()
+
+
+async def test_peek_reads_without_counting_and_blocks_at_the_limit(redis: Redis) -> None:
+    limiter = RedisRateLimiter(redis, lambda: 7000.0)
+    for _ in range(5):
+        await limiter.peek("fail", "e", 2)
+    assert [k async for k in redis.scan_iter("ratelimit:*")] == []  # peeking creates nothing
+    await limiter.hit("fail", "e", 2)
+    await limiter.hit("fail", "e", 2)
+    with pytest.raises(RateLimited):
+        await limiter.peek("fail", "e", 2)
+
+
+async def test_every_hit_refreshes_the_ttl_so_no_key_can_be_left_without_one(redis: Redis) -> None:
+    limiter = RedisRateLimiter(redis, lambda: 8000.0)
+    await limiter.hit("k", "i", 10)
+    (key,) = [k async for k in redis.scan_iter("ratelimit:*")]
+    await redis.persist(key)  # simulate a lost EXPIRE
+    assert await redis.ttl(key) == -1
+    await limiter.hit("k", "i", 10)
+    assert 0 < await redis.ttl(key) <= 61
+
+
+async def test_a_dead_redis_raises_unavailable_not_a_raw_connection_error() -> None:
+    from common.errors import Unavailable
+
+    dead = Redis.from_url("redis://127.0.0.1:1", socket_connect_timeout=0.2)
+    limiter = RedisRateLimiter(dead)
+    with pytest.raises(Unavailable):
+        await limiter.hit("k", "i", 1)
+    with pytest.raises(Unavailable):
+        await limiter.peek("k", "i", 1)
+    await dead.aclose()

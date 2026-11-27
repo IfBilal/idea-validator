@@ -6,6 +6,7 @@ Every service gets ``/health`` (liveness), ``/ready`` (real dependency checks) a
 """
 
 import hmac
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
@@ -34,10 +35,15 @@ from .errors import DomainError, ErrorCode, ErrorDetail, ErrorEnvelope, Unauthor
 from .logging import configure_logging, get_logger
 
 ReadyCheck = Callable[[], Awaitable[bool]]
+_REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")  # anything else is replaced (log injection)
 
 
-def _envelope_response(status: int, envelope: ErrorEnvelope) -> JSONResponse:
-    return JSONResponse(status_code=status, content=envelope.model_dump(mode="json"))
+def _envelope_response(
+    status: int, envelope: ErrorEnvelope, headers: Mapping[str, str] | None = None
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status, content=envelope.model_dump(mode="json"), headers=dict(headers or {})
+    )
 
 
 def create_app(
@@ -48,6 +54,8 @@ def create_app(
     settings: ServiceSettings | None = None,
     ready_checks: Mapping[str, ReadyCheck] | None = None,
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+    error_headers: Mapping[str, str] | None = None,
+    expose_docs: bool = False,
 ) -> FastAPI:
     """Build the app. ``ready_checks`` map a dependency name to an async "is it reachable?"."""
     settings = settings or ServiceSettings(service_name=name)
@@ -69,7 +77,14 @@ def create_app(
         registry=registry,
     )
 
-    app = FastAPI(title=f"{module} {name}", version=version, lifespan=lifespan)
+    app = FastAPI(
+        title=f"{module} {name}",
+        version=version,
+        lifespan=lifespan,
+        docs_url="/docs" if expose_docs else None,
+        redoc_url="/redoc" if expose_docs else None,
+        openapi_url="/openapi.json" if expose_docs else None,
+    )
     app.state.settings = settings
     app.state.metrics_registry = registry
 
@@ -77,7 +92,8 @@ def create_app(
     async def request_context(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        request_id = request.headers.get(REQUEST_ID_HEADER) or f"req_{uuid.uuid4().hex[:12]}"
+        supplied = request.headers.get(REQUEST_ID_HEADER, "")
+        request_id = supplied if _REQUEST_ID.fullmatch(supplied) else f"req_{uuid.uuid4().hex[:12]}"
         # Not reset afterwards: each request runs in its own task, and the outer 500 handler
         # still needs the id.
         request_id_var.set(request_id)
@@ -124,7 +140,7 @@ def create_app(
                 code=ErrorCode.INTERNAL, message="internal error", request_id=request_id_var.get()
             )
         )
-        return _envelope_response(500, envelope)
+        return _envelope_response(500, envelope, error_headers)
 
     @app.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:

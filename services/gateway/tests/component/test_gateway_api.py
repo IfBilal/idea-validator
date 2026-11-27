@@ -143,7 +143,7 @@ def test_control_characters_extra_fields_and_missing_fields_are_rejected(
     client: TestClient,
 ) -> None:
     assert register(client, password="bad\x00password!!").status_code == 422
-    assert register(client, password="bad\npassword!!").status_code == 422
+    assert register(client, "tab@example.com", "tab\tword\nPass9!z").status_code == 201
     base = {"email": "a@b.co", "password": PASSWORD}
     assert client.post("/auth/register", json={**base, "is_admin": True}).status_code == 422
     assert client.post("/auth/register", json={"email": "a@b.co"}).status_code == 422
@@ -168,7 +168,9 @@ def test_login_returns_a_bearer_token_that_lasts_an_hour(client: TestClient) -> 
         "/auth/login", json={"email": "ada@example.com", "password": PASSWORD}
     ).json()
     assert (body["token_type"], body["expires_in"]) == ("bearer", 3600)
-    claims = jwt.decode(body["access_token"], SECRET, algorithms=["HS256"])
+    claims = jwt.decode(
+        body["access_token"], SECRET, algorithms=["HS256"], audience="idea-validator"
+    )
     assert claims["exp"] - claims["iat"] == 3600
 
 
@@ -325,7 +327,7 @@ def test_login_is_limited_to_five_per_minute_per_ip_with_retry_after(client: Tes
 def test_login_attempts_on_one_email_are_limited_across_different_ips(
     m2: FakeProfileService,
 ) -> None:
-    with make_app(m2, trust_forwarded_for=True) as client:
+    with make_app(m2, trusted_proxy_hops=1) as client:
         body = {"email": "ada@example.com", "password": "wrong-wrong-wrong"}
         codes = [
             client.post(
@@ -446,3 +448,200 @@ def test_the_gateway_refuses_to_start_without_its_upstream_configuration() -> No
     no_profile = Settings(jwt_secret=secret, redis_url=SecretStr("redis://x"))
     with pytest.raises(ConfigError, match="PROFILE_URL"), TestClient(build_app(no_profile)):
         pass
+
+
+# ---- review follow-ups: fail-closed limiter, headers on 500, per-email failures, logging, schema
+class BrokenLimiter:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def hit(self, kind: str, ident: str, limit: int) -> None:
+        raise self.error
+
+    async def peek(self, kind: str, ident: str, limit: int) -> None:
+        raise self.error
+
+
+def app_with_limiter(m2: FakeProfileService, limiter: Any) -> TestClient:
+    settings = Settings(jwt_secret=SecretStr(SECRET), ui_origin="https://ui.test")
+    client = ServiceClient(
+        "http://profile.internal.test:8000",
+        timeout_s=1,
+        backoff_s=0,
+        internal_token=INTERNAL,
+        transport=httpx.MockTransport(m2),
+    )
+    return TestClient(
+        build_app(settings, limiter, ProfileClient(client)), raise_server_exceptions=False
+    )
+
+
+def test_a_redis_outage_is_a_clean_503_on_every_public_route(m2: FakeProfileService) -> None:
+    from common.errors import Unavailable
+
+    with app_with_limiter(m2, BrokenLimiter(Unavailable("rate limiter unavailable"))) as client:
+        responses = [
+            client.post("/auth/login", json={"email": "a@b.co", "password": PASSWORD}),
+            client.post("/auth/register", json={"email": "a@b.co", "password": PASSWORD}),
+            client.get("/profile", headers={"Authorization": "Bearer x"}),
+        ]
+        assert [r.status_code for r in responses] == [503, 503, 503]
+        assert responses[0].json()["error"]["code"] == "UPSTREAM_ERROR"
+        assert client.get("/health").status_code == 200  # liveness does not depend on Redis
+
+
+def test_an_unreachable_redis_server_fails_closed_with_503() -> None:
+    from redis.asyncio import Redis
+
+    from svc_gateway.ratelimit import RedisRateLimiter
+
+    dead = Redis.from_url("redis://127.0.0.1:1", socket_connect_timeout=0.2)
+    with app_with_limiter(FakeProfileService(), RedisRateLimiter(dead)) as client:
+        r = client.post("/auth/login", json={"email": "a@b.co", "password": PASSWORD})
+    assert r.status_code == 503
+    assert "127.0.0.1" not in r.text
+
+
+def test_unexpected_errors_are_500_without_leaks_and_still_carry_the_security_headers(
+    m2: FakeProfileService,
+) -> None:
+    with app_with_limiter(m2, BrokenLimiter(RuntimeError("redis password is hunter2"))) as client:
+        r = client.post("/auth/login", json={"email": "a@b.co", "password": PASSWORD})
+    assert r.status_code == 500
+    assert "hunter2" not in r.text
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+
+
+def test_api_docs_and_the_openapi_document_are_not_public(client: TestClient) -> None:
+    assert [client.get(p).status_code for p in ("/docs", "/redoc", "/openapi.json")] == [404] * 3
+
+
+@pytest.mark.parametrize(
+    "origin", ["*", "ui.test", "https://ui.test/path", "https://a.test, https://b.test", ""]
+)
+def test_ui_origin_must_be_one_plain_origin(origin: str) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="UI_ORIGIN"):
+        Settings(ui_origin=origin)
+
+
+@pytest.mark.parametrize(
+    "origin", ["https://ui.test", "http://localhost:5173", "https://ui.example.org:8443"]
+)
+def test_valid_ui_origins_are_accepted(origin: str) -> None:
+    assert Settings(ui_origin=origin).ui_origin == origin
+
+
+def test_only_failed_logins_count_against_an_email(m2: FakeProfileService) -> None:
+    with make_app(m2, trusted_proxy_hops=1) as client:
+        register(client)
+        for i in range(1, 6):  # five successful logins from five addresses
+            ok = client.post(
+                "/auth/login",
+                json={"email": "ada@example.com", "password": PASSWORD},
+                headers={"X-Forwarded-For": f"10.1.0.{i}"},
+            )
+            assert ok.status_code == 200
+        bad = client.post(
+            "/auth/login",
+            json={"email": "ada@example.com", "password": "wrong-wrong-wrong"},
+            headers={"X-Forwarded-For": "10.1.0.99"},
+        )
+        assert bad.status_code == 401  # not 429: the successes did not use up the budget
+
+
+def test_five_failures_from_different_addresses_block_that_email_but_not_others(
+    m2: FakeProfileService,
+) -> None:
+    with make_app(m2, trusted_proxy_hops=1) as client:
+        register(client, "victim@example.com")
+        register(client, "other@example.com")
+        codes = [
+            client.post(
+                "/auth/login",
+                json={"email": "victim@example.com", "password": "wrong-wrong-wrong"},
+                headers={"X-Forwarded-For": f"10.2.0.{i}"},
+            ).status_code
+            for i in range(1, 8)
+        ]
+        other = client.post(
+            "/auth/login",
+            json={"email": "other@example.com", "password": PASSWORD},
+            headers={"X-Forwarded-For": "10.2.0.50"},
+        )
+    assert codes == [401] * 5 + [429, 429]
+    assert other.status_code == 200
+
+
+def test_a_forged_forwarded_for_prefix_cannot_dodge_the_ip_limit(m2: FakeProfileService) -> None:
+    with make_app(m2, trusted_proxy_hops=1) as client:
+        codes = [
+            client.post(
+                "/auth/login",
+                json={"email": f"u{i}@example.com", "password": "wrong-wrong-wrong"},
+                headers={"X-Forwarded-For": f"1.1.1.{i}, 203.0.113.7"},
+            ).status_code
+            for i in range(6)
+        ]
+    assert codes == [401] * 5 + [429]  # the entry the proxy added (203.0.113.7) is what counts
+
+
+def test_password_policy_over_http_whitespace_trivial_and_email_name(client: TestClient) -> None:
+    assert register(client, "w@example.com", " " * 12).status_code == 422
+    assert register(client, "t@example.com", "aaaaaaaaaaaa").status_code == 422
+    assert register(client, "grace.hopper@example.com", "grace.hopper-1906!").status_code == 422
+
+
+def test_tags_are_trimmed_and_blank_tags_are_rejected(
+    client: TestClient, m2: FakeProfileService
+) -> None:
+    headers = token_for(client)
+    ok = client.put("/profile", json={**PROFILE, "skills": ["  python  "]}, headers=headers)
+    assert ok.status_code == 200
+    assert ok.json()["skills"] == ["python"]
+    blank = client.put("/profile", json={**PROFILE, "skills": ["   "]}, headers=headers)
+    assert blank.status_code == 422
+
+
+def test_fields_the_profile_service_adds_later_never_reach_the_browser(
+    client: TestClient, m2: FakeProfileService
+) -> None:
+    headers = token_for(client)
+    user_id = next(iter(m2.users.values()))[0]
+    m2.profiles[user_id] = {**PROFILE, "user_id": user_id, "version": 1, "internal_note": "secret"}
+    r = client.get("/profile", headers=headers)
+    assert "secret" not in r.text
+
+
+def test_failures_are_logged_without_secrets(
+    client: TestClient, capsys: pytest.CaptureFixture[str]
+) -> None:
+    register(client)
+    capsys.readouterr()
+    client.post("/auth/login", json={"email": "ada@example.com", "password": "wrong-wrong-wrong"})
+    client.get("/profile", headers={"Authorization": "Bearer abc.def.ghi"})
+    out = capsys.readouterr().out
+    assert "auth_failed" in out
+    assert "token_rejected" in out
+    for secret in ("ada@example.com", "wrong-wrong-wrong", "abc.def.ghi", SECRET):
+        assert secret not in out
+
+
+def test_rate_limit_hits_are_logged_with_the_kind(
+    client: TestClient, capsys: pytest.CaptureFixture[str]
+) -> None:
+    body = {"email": "ada@example.com", "password": "wrong-wrong-wrong"}
+    for _ in range(6):
+        client.post("/auth/login", json=body)
+    assert "rate_limited" in capsys.readouterr().out
+
+
+def test_a_non_numeric_content_length_does_not_crash_the_body_limit(client: TestClient) -> None:
+    r = client.post(
+        "/auth/login",
+        content=b'{"email":"a@b.co","password":"x"}',
+        headers={"Content-Type": "application/json", "Content-Length": "abc"},
+    )
+    assert r.status_code in {400, 401, 422}

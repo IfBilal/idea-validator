@@ -15,15 +15,24 @@ COMMON_PASSWORDS = frozenset(
         "password12", "password123", "password1234", "1234567890", "12345678910", "qwertyuiop",
         "qwerty12345", "1q2w3e4r5t", "iloveyou123", "letmein1234", "welcome1234", "admin12345",
         "abcdefghij", "abc1234567", "0123456789", "9876543210", "changeme123", "passw0rd123",
+        "p@ssword123", "p@ssw0rd123", "welcome123!", "letmein12345", "trustno1234", "superman123",
+        "monkey12345", "dragon12345", "football123", "baseball123", "starwars123", "123456789a",
+        "1234512345", "asdfghjkl1", "zxcvbnm123", "internet123", "sunshine123", "princess123",
     }
 )  # fmt: skip
 
 
-def check_password_policy(password: str, minimum: int) -> None:
+def check_password_policy(password: str, minimum: int, email: str = "") -> None:
     if len(password) < minimum:
         raise ValidationFailed(f"password must be at least {minimum} characters")
-    if password.lower() in COMMON_PASSWORDS:
+    if not password.strip():
+        raise ValidationFailed("password must not be only whitespace")
+    lowered = password.lower()
+    if lowered in COMMON_PASSWORDS or len(set(lowered)) <= 2:
         raise ValidationFailed("password is too common")
+    local = email.split("@", 1)[0].lower()
+    if len(local) >= 4 and local in lowered:
+        raise ValidationFailed("password must not contain your email name")
 
 
 class AuthFlow:
@@ -40,7 +49,7 @@ class AuthFlow:
         self._clock = clock
 
     async def register(self, email: str, password: str) -> str:
-        check_password_policy(password, self._settings.min_password_length)
+        check_password_policy(password, self._settings.min_password_length, email)
         return await self._profiles.register(email, password)
 
     async def login(self, email: str, password: str) -> TokenOut:

@@ -9,6 +9,7 @@ from common.schemas.base import Message
 from common.schemas.types import Compute, Goal
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_NUL = re.compile(r"\x00")
 
 
 def _no_control_chars(value: str) -> str:
@@ -17,13 +18,25 @@ def _no_control_chars(value: str) -> str:
     return value
 
 
-Clean = Annotated[str, AfterValidator(_no_control_chars)]
-Tag = Annotated[str, Field(min_length=1, max_length=50), AfterValidator(_no_control_chars)]
+def _no_nul(value: str) -> str:
+    if _NUL.search(value):
+        raise ValueError("NUL characters are not allowed")
+    return value
+
+
+def _stripped_tag(value: str) -> str:
+    cleaned = _no_control_chars(value).strip()
+    if not cleaned:
+        raise ValueError("must not be blank")
+    return cleaned
+
+
+Tag = Annotated[str, Field(max_length=50), AfterValidator(_stripped_tag)]
 
 
 class Credentials(Message):
     email: EmailStr
-    password: Annotated[str, Field(max_length=128), AfterValidator(_no_control_chars)]
+    password: Annotated[str, Field(max_length=128), AfterValidator(_no_nul)]
 
 
 class RegisterOut(Message):

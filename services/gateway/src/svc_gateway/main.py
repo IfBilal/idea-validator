@@ -12,7 +12,7 @@ from common.service import create_app
 from .api.routes import make_router
 from .clients.profile import ProfileClient
 from .config import Settings
-from .middleware import BodyLimitMiddleware, SecurityHeadersMiddleware
+from .middleware import SECURITY_HEADERS, BodyLimitMiddleware, SecurityHeadersMiddleware
 from .ratelimit import RateLimiter, RedisRateLimiter
 from .security import MIN_SECRET_LENGTH
 from .services.auth import AuthFlow
@@ -84,6 +84,7 @@ def build_app(
         settings=settings,
         ready_checks={"redis": redis_up, "profile": profile_up},
         lifespan=lifespan,
+        error_headers={k.decode(): v.decode() for k, v in SECURITY_HEADERS.items()},
     )
     # later additions wrap earlier ones: the body limit is innermost, so even its 413 gets headers
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.body_limit_bytes)

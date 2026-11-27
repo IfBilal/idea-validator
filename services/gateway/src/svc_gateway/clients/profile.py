@@ -13,8 +13,10 @@ from common.errors import (
     ValidationFailed,
 )
 from common.http import ServiceClient
+from common.schemas import StudentProfile
 
 T = TypeVar("T")
+PUBLIC_PROFILE_FIELDS = frozenset(StudentProfile.model_fields)
 INVALID_LOGIN = "invalid email or password"
 
 
@@ -31,6 +33,11 @@ def _public(exc: DomainError, what: str) -> DomainError:
     if isinstance(exc, UpstreamTimeout):
         return UpstreamTimeout("the service took too long to answer")
     return UpstreamError("the service is temporarily unavailable")
+
+
+def _public_profile(data: dict[str, Any]) -> dict[str, Any]:
+    """Allow-list: a field M2 adds later never reaches a browser until it is added here."""
+    return {k: v for k, v in data.items() if k in PUBLIC_PROFILE_FIELDS}
 
 
 class ProfileClient:
@@ -59,14 +66,14 @@ class ProfileClient:
         data = await self._call(
             "profile", lambda: self._client.get_json(f"/internal/profiles/{user_id}")
         )
-        return dict(data)
+        return _public_profile(dict(data))
 
     async def put_profile(self, user_id: str, body: dict[str, Any]) -> dict[str, Any]:
         data = await self._call(
             "profile",
             lambda: self._client.request("PUT", f"/internal/profiles/{user_id}", json=body),
         )
-        return dict(data.json())
+        return _public_profile(dict(data.json()))
 
     async def ready(self) -> bool:
         try:

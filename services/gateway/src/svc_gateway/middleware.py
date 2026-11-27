@@ -1,7 +1,6 @@
 """Pure-ASGI middleware: security headers on every response and a hard request-body limit."""
 
 import json
-from collections.abc import MutableMapping
 from typing import Any
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -26,10 +25,10 @@ class SecurityHeadersMiddleware:
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                headers: MutableMapping[bytes, bytes] = dict(message.get("headers", []))
-                for name, value in SECURITY_HEADERS.items():
-                    headers.setdefault(name, value)
-                message["headers"] = list(headers.items())
+                existing = list(message.get("headers", []))
+                present = {name.lower() for name, _ in existing}
+                existing += [(n, v) for n, v in SECURITY_HEADERS.items() if n not in present]
+                message["headers"] = existing
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
