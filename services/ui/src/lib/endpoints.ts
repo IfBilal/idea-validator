@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { apiFetch } from "./api";
 import { Accepted, LoginResponse, Profile, ProfileInput, RegisterResponse, ValidateAccepted } from "./schemas";
 
@@ -29,3 +30,9 @@ export const decideApproval = (runId: string, approvalId: string, decision: "app
     method: "POST",
     json: { approval_id: approvalId, decision },
   });
+
+const RunDetail = z.object({ result: z.unknown().optional() }).passthrough();
+
+/** The run's stored result: a verdict card, or a partial card when no verdict could be given. */
+export const getRunResult = async (runId: string): Promise<unknown> =>
+  (await apiFetch(`/runs/${encodeURIComponent(runId)}`, RunDetail)).result;
