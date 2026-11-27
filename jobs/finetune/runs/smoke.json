@@ -1,0 +1,286 @@
+{
+  "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 3060 Ti",
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.16",
+    "vram_gb": 8.0
+  },
+  "loss_curve": [
+    {
+      "step": 1,
+      "train_loss": 0.9054
+    },
+    {
+      "step": 2,
+      "train_loss": 0.8801
+    },
+    {
+      "step": 3,
+      "train_loss": 0.6649
+    },
+    {
+      "step": 4,
+      "train_loss": 0.3658
+    },
+    {
+      "step": 5,
+      "train_loss": 0.2226
+    },
+    {
+      "step": 6,
+      "train_loss": 0.1548
+    },
+    {
+      "step": 7,
+      "train_loss": 0.1055
+    },
+    {
+      "step": 8,
+      "train_loss": 0.0816
+    },
+    {
+      "step": 9,
+      "train_loss": 0.0695
+    },
+    {
+      "step": 10,
+      "train_loss": 0.0723
+    },
+    {
+      "step": 11,
+      "train_loss": 0.0644
+    },
+    {
+      "step": 11,
+      "val_loss": 0.0595756396651268
+    },
+    {
+      "step": 12,
+      "train_loss": 0.0568
+    },
+    {
+      "step": 13,
+      "train_loss": 0.052
+    },
+    {
+      "step": 14,
+      "train_loss": 0.0616
+    },
+    {
+      "step": 15,
+      "train_loss": 0.052
+    },
+    {
+      "step": 16,
+      "train_loss": 0.0521
+    },
+    {
+      "step": 17,
+      "train_loss": 0.056
+    },
+    {
+      "step": 18,
+      "train_loss": 0.0433
+    },
+    {
+      "step": 19,
+      "train_loss": 0.0389
+    },
+    {
+      "step": 20,
+      "train_loss": 0.0444
+    },
+    {
+      "step": 21,
+      "train_loss": 0.0415
+    },
+    {
+      "step": 22,
+      "train_loss": 0.0416
+    },
+    {
+      "step": 22,
+      "val_loss": 0.03511248901486397
+    },
+    {
+      "step": 23,
+      "train_loss": 0.0341
+    },
+    {
+      "step": 24,
+      "train_loss": 0.0346
+    },
+    {
+      "step": 25,
+      "train_loss": 0.041
+    },
+    {
+      "step": 26,
+      "train_loss": 0.0397
+    },
+    {
+      "step": 27,
+      "train_loss": 0.0349
+    },
+    {
+      "step": 28,
+      "train_loss": 0.0355
+    },
+    {
+      "step": 29,
+      "train_loss": 0.0381
+    },
+    {
+      "step": 30,
+      "train_loss": 0.0303
+    },
+    {
+      "step": 31,
+      "train_loss": 0.0323
+    },
+    {
+      "step": 32,
+      "train_loss": 0.0385
+    },
+    {
+      "step": 33,
+      "train_loss": 0.033
+    },
+    {
+      "step": 33,
+      "val_loss": 0.03015158511698246
+    },
+    {
+      "step": 34,
+      "train_loss": 0.0293
+    },
+    {
+      "step": 35,
+      "train_loss": 0.0308
+    },
+    {
+      "step": 36,
+      "train_loss": 0.0283
+    },
+    {
+      "step": 37,
+      "train_loss": 0.0278
+    },
+    {
+      "step": 38,
+      "train_loss": 0.0303
+    },
+    {
+      "step": 39,
+      "train_loss": 0.0291
+    },
+    {
+      "step": 40,
+      "train_loss": 0.0277
+    },
+    {
+      "step": 41,
+      "train_loss": 0.0313
+    },
+    {
+      "step": 42,
+      "train_loss": 0.0294
+    },
+    {
+      "step": 43,
+      "train_loss": 0.0284
+    },
+    {
+      "step": 44,
+      "train_loss": 0.0274
+    },
+    {
+      "step": 44,
+      "val_loss": 0.02881883643567562
+    },
+    {
+      "step": 45,
+      "train_loss": 0.0301
+    },
+    {
+      "step": 46,
+      "train_loss": 0.0282
+    },
+    {
+      "step": 47,
+      "train_loss": 0.0282
+    },
+    {
+      "step": 48,
+      "train_loss": 0.027
+    },
+    {
+      "step": 49,
+      "train_loss": 0.0297
+    },
+    {
+      "step": 50,
+      "train_loss": 0.0301
+    }
+  ],
+  "metrics": {
+    "best_val_loss": 0.02881883643567562,
+    "final_train_loss": 0.10024096492677927,
+    "peak_vram_gb": 4.239,
+    "steps": 50,
+    "token_lengths": {
+      "max": 570,
+      "n": 400,
+      "p50": 541,
+      "p95": 567,
+      "p99": 570
+    },
+    "tokens_per_s": 1118.3
+  },
+  "notes": [],
+  "run_id": "smoke",
+  "settings": {
+    "bf16": true,
+    "early_stopping_patience_evals": 2,
+    "effective_batch": 16,
+    "epochs": 3,
+    "eval_every_steps": 11,
+    "grad_accum": 8,
+    "learning_rate": 0.0002,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "lora_r": 16,
+    "max_seq_len": 576,
+    "max_steps": 50,
+    "method": "QLoRA 4-bit nf4, plain transformers+PEFT+bitsandbytes",
+    "n_train": 360,
+    "n_val": 40,
+    "optimizer": "paged_adamw_8bit",
+    "per_device_batch": 2,
+    "schedule": "cosine",
+    "seed": 42,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "total_params": 1562179072,
+    "trainable_params": 18464768,
+    "warmup_ratio": 0.05
+  },
+  "synthetic": true,
+  "versions": {
+    "accelerate": "1.16.0",
+    "bitsandbytes": "0.50.2",
+    "datasets": "5.0.1",
+    "peft": "0.22.0",
+    "torch": "2.11.0+cu128",
+    "transformers": "4.57.6"
+  },
+  "wall_time_s": 382.5
+}
