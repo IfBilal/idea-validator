@@ -1,0 +1,42 @@
+{
+ "hits": [
+  {
+   "objectID": "41000001",
+   "title": "Show HN: Invoice tool for freelancers",
+   "url": "https://example.com/invoice",
+   "story_text": null,
+   "created_at_i": 1760000300,
+   "points": 120,
+   "num_comments": 33,
+   "author": "someone",
+   "_tags": [
+    "story",
+    "show_hn"
+   ]
+  },
+  {
+   "objectID": "41000002",
+   "title": "Show HN: Text only post",
+   "url": null,
+   "story_text": "<p>I built a thing &amp; it helps</p>",
+   "created_at_i": 1760000200,
+   "points": 8,
+   "num_comments": 0,
+   "author": "x"
+  },
+  {
+   "objectID": "41000003",
+   "title": null,
+   "url": "https://example.com/no-title",
+   "created_at_i": 1760000100,
+   "points": 1
+  },
+  {
+   "title": "Missing id and time"
+  },
+  "not-an-object"
+ ],
+ "nbPages": 1,
+ "page": 0,
+ "nbHits": 5
+}

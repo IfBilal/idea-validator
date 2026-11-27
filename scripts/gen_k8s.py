@@ -95,6 +95,12 @@ JOBS: dict[str, dict[str, Any]] = {
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
     },
+    "migrate-scouts": {  # the scouts schema (raw_pages, scout_state): own Alembic history
+        "image": "scouts",
+        "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
+        "secrets": ["DATABASE_URL"],
+        "calls": ["postgres"],
+    },
     # M6i seed: restores the newest snapshot baked into the ingestion image through M6 /ingest.
     # `manual`: kept out of the kustomization (it is applied by `make seed`, which first builds
     # the image), so a plain `make deploy` on a repo with no snapshot yet does not fail a Job.
@@ -110,6 +116,29 @@ JOBS: dict[str, dict[str, Any]] = {
         "fail_fast_codes": [2, 3, 4],
     },
 }
+# scheduled one-shot runs (docs/harness/10 section 4). They reach M5 and Postgres only: the internet
+# is M5's alone (CLAUDE.md rule 4). Schedules mirror config/sources.yaml. The credential-gated
+# sources are created suspended: flip `suspend` once the Secret keys exist and M5 forwards auth.
+CRONJOBS: dict[str, dict[str, Any]] = {
+    "scout-hackernews": {"source": "hackernews", "schedule": "0 */6 * * *"},
+    "scout-github": {"source": "github", "schedule": "30 */12 * * *"},
+    "scout-lobsters": {"source": "lobsters", "schedule": "45 */6 * * *"},
+    "scout-stackexchange": {"source": "stackexchange", "schedule": "0 4 * * *"},
+    "scout-reddit": {
+        "source": "reddit",
+        "schedule": "15 */6 * * *",
+        "suspend": True,
+        "optional": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
+    },
+    "scout-producthunt": {
+        "source": "producthunt",
+        "schedule": "0 3 * * *",
+        "suspend": True,
+        "optional": ["PRODUCTHUNT_TOKEN"],
+    },
+}
+CRONJOB_CALLS = ["postgres", "tools"]
+
 # the browser UI (services/ui): nginx-unprivileged on 8080 as uid 101, no secrets, no egress at all.
 # Not in SERVICES: it has no /ready, no /metrics, no trace edge and is built from services/ui as its own context.
 UI_PORT = 8080
@@ -131,6 +160,8 @@ def edges() -> dict[str, list[str]]:
         out[caller] = sorted(callees)
     for job, spec in JOBS.items():
         out[job] = sorted(spec["calls"])
+    for cron in CRONJOBS:
+        out[cron] = sorted(CRONJOB_CALLS)
     return out
 
 
@@ -581,10 +612,84 @@ def _job(name: str) -> str:
     return _dump(job)
 
 
+def _cronjob(name: str) -> str:
+    spec = CRONJOBS[name]
+    env: list[dict[str, Any]] = [
+        {"name": "CONFIG_DIR", "value": "/etc/idea-validator"},
+        {"name": "LOG_LEVEL", "value": "INFO"},
+        {"name": "TOOLS_URL", "value": _url("tools")},
+    ]
+    for key in ("INTERNAL_TOKEN", "DATABASE_URL"):
+        env.append(
+            {"name": key, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}}}
+        )
+    optional = ["GITHUB_TOKEN"] if spec["source"] == "github" else spec.get("optional", [])
+    for key in optional:  # the pod starts without it: the source stays keyless or off
+        ref = {"name": "app-secrets", "key": key, "optional": True}
+        env.append({"name": key, "valueFrom": {"secretKeyRef": ref}})
+    container = {
+        "name": name,
+        "image": f"{NAMESPACE}/scouts:{IMAGE_TAG}",
+        "command": ["python", "-m", "scouts", "--source", spec["source"]],
+        "env": env,
+        "resources": RESOURCES,
+        "securityContext": {
+            "allowPrivilegeEscalation": False,
+            "readOnlyRootFilesystem": True,
+            "capabilities": {"drop": ["ALL"]},
+        },
+        "volumeMounts": [
+            {"name": "tmp", "mountPath": TMP_MOUNT},
+            {"name": "app-config", "mountPath": "/etc/idea-validator", "readOnly": True},
+        ],
+    }
+    pod = {
+        "serviceAccountName": "app",
+        "automountServiceAccountToken": False,
+        "restartPolicy": "Never",
+        "securityContext": {
+            "runAsNonRoot": True,
+            "runAsUser": 10001,
+            "runAsGroup": 10001,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
+        "containers": [container],
+        "volumes": [
+            {"name": "tmp", "emptyDir": {}},
+            {"name": "app-config", "configMap": {"name": "app-config"}},
+        ],
+    }
+    cron = {
+        "apiVersion": "batch/v1",
+        "kind": "CronJob",
+        "metadata": _meta(name, "m4"),
+        "spec": {
+            "schedule": spec["schedule"],
+            "concurrencyPolicy": "Forbid",
+            "startingDeadlineSeconds": 300,
+            "successfulJobsHistoryLimit": 1,
+            "failedJobsHistoryLimit": 3,
+            "suspend": bool(spec.get("suspend", False)),
+            "jobTemplate": {
+                "spec": {
+                    "backoffLimit": 0,  # the circuit breaker owns retries, not Kubernetes
+                    "activeDeadlineSeconds": 1200,
+                    "ttlSecondsAfterFinished": 3600,
+                    "template": {
+                        "metadata": {"labels": {"app": name, "module": "m4"}},
+                        "spec": pod,
+                    },
+                }
+            },
+        },
+    }
+    return _dump(cron)
+
+
 def _netpols() -> str:
     docs: list[dict[str, Any]] = []
     edge = edges()
-    for name in [*SERVICES, *DATA, *JOBS]:
+    for name in [*SERVICES, *DATA, *JOBS, *CRONJOBS]:
         callers = _callers(name)
         callees = edge.get(name, [])
         spec: dict[str, Any] = {
@@ -749,6 +854,7 @@ def _kustomization() -> str:
         + [f"services/{n}.yaml" for n in SERVICES]
         + ["services/ui.yaml"]
         + [f"jobs/{n}.yaml" for n, spec in JOBS.items() if not spec.get("manual")]
+        + [f"cronjobs/{n}.yaml" for n in CRONJOBS]
         + [
             "ingress.yaml",
             "ingress-ui.yaml",
@@ -821,6 +927,8 @@ def render() -> dict[str, str]:
     for name, spec in JOBS.items():
         folder = "k8s/jobs" if spec.get("manual") else "k8s/base/jobs"
         files[f"{folder}/{name}.yaml"] = _job(name)
+    for name in CRONJOBS:
+        files[f"k8s/base/cronjobs/{name}.yaml"] = _cronjob(name)
     return files
 
 

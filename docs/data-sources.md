@@ -96,3 +96,10 @@ Stack Exchange content is CC BY-SA and the API expects attribution (link back to
 mind: we store no usernames, so store the question link and the licence name). Reddit and Product Hunt content is governed by
 their API terms. Hacker News and GitHub data are public; we store titles/descriptions/urls only. Cards carry `source` and
 `url` so every claim in a verdict links back to the original page.
+
+## Personal data decision (scouts, 2026-11-27)
+Scouts store **public project identifiers only**: title, text, canonical url, score/stars, topics/tags, timestamps. They never store an
+author, username, submitter, owner, display name or avatar (Hacker News `by`/`author`, Lobsters `submitter_user`, GitHub `owner`,
+Stack Exchange `owner`, Reddit `author`, Product Hunt makers are dropped at parse time; `RawItem.metadata` has a key whitelist and
+`services/scouts/tests/component/test_scouts_security_review.py` scans every recorded fixture for such keys and names). Free text may
+still mention people: it is kept short (8,000 chars), and processed rows can be deleted with `python -m scouts prune`.

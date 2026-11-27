@@ -13,6 +13,8 @@ FROM python:3.12.16-slim-bookworm
 RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
+# the migrate-scouts Job runs `alembic -c /app/alembic.ini upgrade head` (migrations ship in the package)
+COPY --from=build --chown=10001:10001 /app/services/scouts/alembic.ini /app/alembic.ini
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER 10001
 EXPOSE 8000
