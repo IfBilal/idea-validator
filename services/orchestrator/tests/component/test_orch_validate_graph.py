@@ -869,7 +869,8 @@ async def test_a_voi_failure_does_not_block_the_run() -> None:
 async def steps_of_a_clean_run() -> int:
     h = Harness()
     await run(h)
-    return (await h.ledger.spent()).steps
+    steps: int = (await h.ledger.spent()).steps
+    return steps
 
 
 async def test_every_step_is_charged_to_the_budget() -> None:

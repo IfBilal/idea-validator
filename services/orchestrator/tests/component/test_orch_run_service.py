@@ -193,7 +193,7 @@ async def test_a_low_answer_gives_go() -> None:
     run_id = await service.start(start_body())
     await service.wait(run_id)
     await service.answer(run_id, "q_estimated_effort_hours", 60)
-    assert (await finished(service, run_id)).result["verdict"] == "GO"  # type: ignore[index]
+    assert (await finished(service, run_id)).result["verdict"] == "GO"
     await service.aclose()
 
 

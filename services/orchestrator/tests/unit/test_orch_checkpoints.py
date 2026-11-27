@@ -1,5 +1,7 @@
 """Postgres checkpointer wiring: URL handling (unit) and crash-safe resume (integration)."""
 
+import uuid
+
 import pytest
 
 from svc_orchestrator.repositories.checkpoints import conninfo_for, postgres_saver, psycopg_url
@@ -47,7 +49,7 @@ async def test_a_run_paused_on_a_question_survives_a_restart(postgres_url: str) 
     world.verdict_fn = lambda req: fake_verdict(
         req, "NO-GO" if req["gate_inputs"]["estimated_effort_hours"] > 150 else "GO"
     )
-    run_id = "run_pg_restart"
+    run_id = f"run_pg_{uuid.uuid4().hex[:8]}"
     first = Harness(world, run_id=run_id)
     async with postgres_saver(postgres_url) as saver:
         first.graph = build_validate_graph(first.ctx, saver)
