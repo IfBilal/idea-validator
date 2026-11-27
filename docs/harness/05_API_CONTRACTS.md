@@ -47,6 +47,17 @@ All bodies are JSON validated against `schemas/*.schema.json` (Pydantic mirrors 
 Result for discover: `{"ideas":[{"idea_id","version","title","summary","niche","verdict","stability","score","reason","gap_evidence_ids":[]}], "dropped":[{"title","defeated_by_evidence_ids":[],"round"}]}` sorted by verdict rank then score.
 Result for validate: the **Verdict card** = M11 verdict JSON + `claims[]` + `challenge_log[]` + `cache_hit` + `evidence{id: EvidenceItem}` (for links).
 
+**The verdict can be `null`.** M3 only shows a verdict M11 produced and the challenge settled. Otherwise the card is partial:
+`verdict: null`, `partial: true`, none of the M11-derived fields (`stability`, `score`, `confidence`, `gates`, `weights`,
+`thresholds`, `what_would_make_go`, `sensitivity`, `weakest_dimension`, `reasons`, `versions`), plus `notes[]`, `degraded`,
+`needs_input[]` and, when relevant, `missing[]`, `stop_reason` (budget stop), `error` (failure) and the `scores` computed so far.
+Causes: run `failed` or `budget_stopped` (including a stop between verdict and claim check, or a failed claim check or
+recompute), or a required input the system refuses to guess (`needs_input: ["estimated_effort_hours"]`, run state `succeeded`).
+**A card with `partial: true` has no verdict even when the run state is `succeeded`.** No `verdict` run event is emitted for it.
+Rendering rule for the gateway/UI: if `verdict` is null, never show GO / PIVOT / NO-GO or a score. Show "needs your input"
+(listing `needs_input`) or "stopped" (with `stop_reason` / `error` and the partial `scores`). The question run event and
+`pending_question` carry `field`, `required` and `range` so the form can be rendered and validated client-side.
+
 ### Ideas
 | `GET /ideas` | `?limit&cursor` | list `{idea_id,title,source,latest_version,latest_verdict,score,updated_at}` |
 | `GET /ideas/{id}/versions` | — | list `{version,text,change_note,verdict,score,stability,created_at}` |
