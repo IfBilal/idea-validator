@@ -1,10 +1,11 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { ApprovalDialog, QuestionCard } from "@/components/Prompts";
 import { RunPanel } from "@/components/RunPanel";
+import { VerdictCard } from "@/components/VerdictCard";
 import { Button } from "@/components/ui/button";
 import { Alert, Field, Input } from "@/components/ui/form";
-import { startValidate } from "@/lib/endpoints";
+import { getRunResult, startValidate } from "@/lib/endpoints";
 import { errorMessage } from "@/lib/errors";
 import { useRun } from "@/lib/useRun";
 
@@ -70,12 +71,16 @@ function RunView({ runId }: { runId: string }) {
       <RunPanel state={state} status={status} />
       {state.phase === "waiting_answer" && state.question && <QuestionCard key={state.question.questionId} runId={runId} question={state.question} />}
       {state.phase === "waiting_approval" && state.approval && <ApprovalDialog key={state.approval.approvalId} runId={runId} approval={state.approval} />}
-      {state.phase === "done" && (
-        <p role="status">
-          Finished. {state.verdictCard ? "Your result is ready." : "No result was produced."}
-          {/* the full verdict card is the next slice; the card is kept verbatim in the run state */}
-        </p>
-      )}
+      {state.phase === "done" && <FinalResult runId={runId} streamed={state.verdictCard} />}
     </section>
   );
+}
+
+/** The verdict event carries a settled card; a partial card (no verdict) only arrives in the run result. */
+function FinalResult({ runId, streamed }: { runId: string; streamed: unknown }) {
+  const result = useQuery({ queryKey: ["run-result", runId], queryFn: () => getRunResult(runId), enabled: streamed === undefined });
+  if (streamed !== undefined) return <VerdictCard raw={streamed} />;
+  if (result.isPending) return <p role="status">Loading your result…</p>;
+  if (result.isError) return <Alert>{errorMessage(result.error)}</Alert>;
+  return <VerdictCard raw={result.data} />;
 }

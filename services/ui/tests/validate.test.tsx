@@ -171,7 +171,7 @@ describe("validate page", () => {
     expect(screen.getByLabelText("Title")).toHaveValue("Notes exporter");
   });
 
-  it("never shows a verdict of its own: a finished run only says the result is ready", async () => {
+  it("renders the settled card from the verdict event, and never invents a verdict for a malformed one", async () => {
     server.use(
       http.post(`${API}/validate`, () => HttpResponse.json({ run_id: "run1", idea_id: "i", version: 1 }, { status: 202 })),
       http.get(`${API}/runs/run1/events`, () =>
@@ -180,7 +180,23 @@ describe("validate page", () => {
     );
     renderValidate();
     await submitIdea();
-    expect(await screen.findByText(/your result is ready/i)).toBeInTheDocument();
+    // a verdict payload that is not a full card is not shown as GO
+    expect(await screen.findByRole("alert", { name: "" })).toHaveTextContent(/could not be displayed/i);
     expect(screen.queryByText("GO")).not.toBeInTheDocument();
+  });
+
+  it("loads a partial result from the run when no verdict event was sent and shows no verdict", async () => {
+    server.use(
+      http.post(`${API}/validate`, () => HttpResponse.json({ run_id: "run1", idea_id: "i", version: 1 }, { status: 202 })),
+      http.get(`${API}/runs/run1/events`, () => sse(frame(1, "run_started", {}), frame(2, "run_completed", {}))),
+      http.get(`${API}/runs/run1`, () =>
+        HttpResponse.json({ state: "succeeded", result: { verdict: null, partial: true, needs_input: ["estimated_effort_hours"] } }),
+      ),
+    );
+    renderValidate();
+    await submitIdea();
+    expect(await screen.findByRole("heading", { name: /needs your input/i })).toBeInTheDocument();
+    expect(screen.getByText("estimated effort hours")).toBeInTheDocument();
+    expect(screen.queryByText(/^(GO|PIVOT|NO-GO)$/)).not.toBeInTheDocument();
   });
 });
