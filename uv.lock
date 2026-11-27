@@ -725,12 +725,14 @@ version = "0.1.0"
 source = { editable = "services/tools" }
 dependencies = [
     { name = "idea-validator-common" },
+    { name = "redis" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 
