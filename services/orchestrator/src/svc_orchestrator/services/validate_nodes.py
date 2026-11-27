@@ -681,6 +681,7 @@ class ValidateNodes:
         new_scores, removed = builders.apply_claim_results(scores, out.value)
         update: Update = {
             "claim_results": out.value,
+            "claim_defs": claims,
             "removed_claims": removed,
             "verdict_final": not removed,  # claims were removed: M11 must recompute first
             "memo": out.memo_update,
@@ -834,11 +835,15 @@ class ValidateNodes:
         cited = {e for s in state.scores for e in s.get("evidence_ids", [])}
         evidence = {e["evidence_id"]: e for e in state.evidence if e["evidence_id"] in cited}
         removed = set(state.removed_claims)
+        defs = {c["claim_id"]: c for c in state.claim_defs}
         settled = state.verdict is not None and state.verdict_final and not state.stopped
         card: dict[str, Any] = {
             **(state.verdict if settled and state.verdict else {"verdict": None}),
             "run_id": self.ctx.run_id,
-            "claims": [{**r, "removed": r["claim_id"] in removed} for r in state.claim_results],
+            "claims": [
+                {**defs.get(r["claim_id"], {}), **r, "removed": r["claim_id"] in removed}
+                for r in state.claim_results
+            ],
             "challenge_log": [
                 {"claim_id": r["claim_id"], "outcome": "removed", "reason": r["reason"]}
                 for r in state.claim_results

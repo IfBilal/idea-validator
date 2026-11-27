@@ -434,3 +434,17 @@ async def test_the_whatif_verdict_still_comes_from_m11() -> None:
     state = await run(Harness(world), idea_version=2, whatif=WHATIF)
     assert state.card is not None and state.card["verdict"] == "NO-GO"
     assert state.card["diff"]["verdict_to"] == "NO-GO"
+
+
+async def test_card_claims_carry_the_claim_text_evidence_and_dimension() -> None:
+    world = FakeWorld()
+    state = await run(Harness(world))
+    assert state.card is not None
+    sent = {c["claim_id"]: c for c in world.bodies("critic", "POST /check")[0]["claims"]}
+    assert len(state.card["claims"]) == 6
+    for claim in state.card["claims"]:
+        original = sent[claim["claim_id"]]
+        assert claim["text"] == original["text"]
+        assert claim["evidence_ids"] == original["evidence_ids"]
+        assert claim["dimension"] == original["dimension"]
+        assert claim["supported"] is True and claim["removed"] is False

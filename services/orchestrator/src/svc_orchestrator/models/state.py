@@ -85,6 +85,7 @@ class ValidateState(BaseModel):
     # --- verdict / claims / card --------------------------------------------------------------
     verdict: dict[str, Any] | None = None
     claim_results: list[dict[str, Any]] = Field(default_factory=list)
+    claim_defs: list[dict[str, Any]] = Field(default_factory=list)  # what was sent to M12
     removed_claims: list[str] = Field(default_factory=list)
     recomputed: bool = False
     skeptic_done: bool = False

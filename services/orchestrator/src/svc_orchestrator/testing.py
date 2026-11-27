@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from .models.challenge_state import ChallengeState
 from .models.discover_state import DiscoverState
 from .models.state import ValidateState
 
@@ -145,6 +146,13 @@ _DEFAULT_LIMITS: dict[str, dict[str, Any]] = {
         "max_steps": 80,
         "max_cost_usd": 0.05,
         "approval_threshold_usd": 0.05,
+    },
+    "challenge": {
+        "max_tokens": 10000,
+        "max_pages": 0,
+        "max_steps": 20,
+        "max_cost_usd": 0.01,
+        "approval_threshold_usd": 0.01,
     },
     "discover": {
         "max_tokens": 250000,
@@ -603,3 +611,40 @@ class DiscoverHarness:
 
     def events(self, type_: str) -> list[Any]:
         return [e for e in self.publisher.events_of(self.run_id) if e.type == type_]
+
+
+class ChallengeHarness:
+    """Runs the Challenge graph directly against a ``FakeWorld``."""
+
+    def __init__(
+        self, world: FakeWorld | None = None, *, run_id: str = "run_1", **rig_options: Any
+    ) -> None:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        from .services.challenge import build_challenge_graph
+        from .services.validate_graph import graph_config
+
+        self.rig = Rig(world, kind="challenge", **rig_options)
+        self.world = self.rig.world
+        self.run_id = run_id
+        self.publisher = self.rig.publisher
+        self.records = self.rig.records
+        self.ctx = self.rig.context(run_id)
+        self.graph = build_challenge_graph(self.ctx, MemorySaver())
+        self._config = graph_config(run_id)
+
+    async def start(self, **over: Any) -> ChallengeState:
+        base: dict[str, Any] = {
+            "run_id": self.run_id,
+            "user_id": "u1",
+            "idea_id": "idea_1",
+            "version": 1,
+            "claim_id": "cl_risk",
+        }
+        state = ChallengeState.model_validate({**base, **over})
+        await self.graph.ainvoke(state, self._config)
+        snap = await self.graph.aget_state(self._config)
+        return ChallengeState.model_validate(snap.values)
+
+    def event_types(self) -> list[str]:
+        return [e.type for e in self.publisher.events_of(self.run_id)]
