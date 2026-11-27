@@ -13,7 +13,7 @@ from langgraph.types import interrupt
 from pydantic import ValidationError
 
 from common.budget import Spend
-from common.errors import BudgetExceeded, DomainError
+from common.errors import BudgetExceeded, DomainError, UpstreamError
 from common.schemas import DimensionScore, EvidenceItem, Verdict
 from svc_orchestrator.models.api import UnknownSpec
 
@@ -106,11 +106,14 @@ class ValidateNodes:
             "rubrics": cfg["rubrics"],
             "profile_weights": cfg["weights"],
         }
+        profile_version = p.value.get("version")
+        if not isinstance(profile_version, int) or profile_version < 1:
+            raise UpstreamError("M2 returned a profile without a version; refusing to guess one")
         key = verdict_cache_key(
             idea_id=state.idea_id,
             idea_version=state.idea_version,
             idea_text=state.idea_text,
-            profile_version=p.value.get("version") or 1,
+            profile_version=profile_version,
             rubrics_version=cfg["rubrics"],
             weights_version=cfg["weights"],
             engine_version=cfg["engine"],
@@ -143,7 +146,7 @@ class ValidateNodes:
         except DomainError as exc:  # the cache is an optimisation: a miss is always safe
             return {"notes": [f"verdict cache unavailable: {exc.message}"]}
         card = out.value
-        if not _valid_cached_card(card):
+        if not _valid_cached_card(card) or _key_mismatch(card, state) is not None:
             return {"memo": out.memo_update}
         self.ctx.runner.decision("cache_hit", {"key": key}, {"to": "card"})
         return {"cache_hit": True, "cached_card": card, "memo": out.memo_update}
@@ -427,9 +430,6 @@ class ValidateNodes:
             "memo": out.memo_update,
             "notes": notes,
         }
-        if builders.effort_is_unknown(extra, state.overrides, state.answers):
-            update["degraded"] = True
-            notes.append("estimated effort unknown: assumed 0 hours (result not cached)")
         return update
 
     # ---- CLARIFY -----------------------------------------------------------------------------
@@ -451,6 +451,8 @@ class ValidateNodes:
         )
 
     async def clarify_check(self, state: ValidateState) -> Update:
+        if builders.effort_is_unknown(state.scorer_extra, state.overrides, state.answers):
+            return await self._ask_for_effort(state)
         specs = builders.pending_unknowns(
             state.scorer_extra, state.overrides, state.unknowns, state.asked, state.vetted
         )
@@ -510,6 +512,31 @@ class ValidateNodes:
             )
         return {"pending_question": None, "vetted": vetted, "notes": notes, "memo": memo}
 
+    async def _ask_for_effort(self, state: ValidateState) -> Update:
+        """M11 requires the build hours. Ask once (within the cap); never send a made-up value."""
+        field = "estimated_effort_hours"
+        if field in state.asked or len(state.asked) >= builders.MAX_QUESTIONS:
+            self.ctx.runner.decision(
+                "missing_input", {"field": field}, {"verdict": None, "to": "card"}
+            )
+            return {
+                "missing_inputs": [field],
+                "notes": [f"no {field}: finished without a verdict instead of guessing one"],
+            }
+        question = builders.effort_question()
+        self.ctx.runner.decision(
+            "ask_question",
+            {"field": field},
+            {"asked": True, "why": question["why_it_matters"], "to": "await_answer"},
+        )
+        await self.ctx.emitter.emit(
+            "question",
+            question_id=question["question_id"],
+            text=question["text"],
+            why_it_matters=question["why_it_matters"],
+        )
+        return {"pending_question": question, "asked": [field]}
+
     async def await_answer(self, state: ValidateState) -> Update:
         question = state.pending_question or {}
         answer = interrupt({"type": "question", **question})
@@ -543,14 +570,19 @@ class ValidateNodes:
         out = await self._step(
             state, step, tool="m11.verdict", inputs=request, call=call, timeout_s=self.t.verdict
         )
-        return {"verdict": out.value, "recomputed": recomputed, "memo": out.memo_update}
+        return {
+            "verdict": out.value,
+            "recomputed": recomputed,
+            "verdict_final": recomputed,  # a fresh verdict after removed claims is settled
+            "memo": out.memo_update,
+        }
 
     # ---- CHALLENGE (claim check) -----------------------------------------------------------------
     async def claims_check(self, state: ValidateState) -> Update:
         scores = _scores(state)
         claims = builders.build_claims(scores)
         if not claims:
-            return {"claim_results": []}
+            return {"claim_results": [], "verdict_final": True}  # nothing to challenge
 
         async def call() -> Any:
             response = await self.ctx.clients.critic.check(self.ctx.run_id, claims)
@@ -568,6 +600,7 @@ class ValidateNodes:
         update: Update = {
             "claim_results": out.value,
             "removed_claims": removed,
+            "verdict_final": not removed,  # claims were removed: M11 must recompute first
             "memo": out.memo_update,
         }
         if removed:
@@ -598,8 +631,9 @@ class ValidateNodes:
         cited = {e for s in state.scores for e in s.get("evidence_ids", [])}
         evidence = {e["evidence_id"]: e for e in state.evidence if e["evidence_id"] in cited}
         removed = set(state.removed_claims)
+        settled = state.verdict is not None and state.verdict_final
         card: dict[str, Any] = {
-            **(state.verdict or {"verdict": None}),
+            **(state.verdict if settled and state.verdict else {"verdict": None}),
             "run_id": self.ctx.run_id,
             "claims": [{**r, "removed": r["claim_id"] in removed} for r in state.claim_results],
             "challenge_log": [
@@ -611,15 +645,23 @@ class ValidateNodes:
             "evidence": evidence,
             "notes": list(state.notes),
             "degraded": state.degraded,
-            "partial": state.verdict is None or state.stopped,
+            "partial": not settled or state.stopped,
         }
+        if state.missing_inputs:
+            card["missing"] = list(state.missing_inputs)
         if state.stopped:
             card["stop_reason"] = state.stop_reason
             card["error"] = state.error
             card["scores"] = state.scores
+        extra: Update = {}
         if status is RunStatus.SUCCEEDED and not state.degraded and not state.overrides:
-            await self._store_in_cache(state, card)
-        return await self._finish(state, card, status)
+            if (reason := _key_mismatch(card, state)) is not None and settled:
+                note = f"verdict not cached: {reason}"
+                card["notes"].append(note)
+                extra["notes"] = [note]
+            else:
+                await self._store_in_cache(state, card)
+        return {**await self._finish(state, card, status), **extra}
 
     async def _store_in_cache(self, state: ValidateState, card: dict[str, Any]) -> None:
         answered = any(v is not None for v in state.answers.values())
@@ -666,6 +708,17 @@ def _valid_cached_card(card: Any) -> bool:
     except ValidationError:
         return False
     return True
+
+
+def _key_mismatch(card: dict[str, Any], state: ValidateState) -> str | None:
+    """Why a card may not be stored under / served for this run's cache key, or ``None``."""
+    if card.get("idea_id") != state.idea_id:
+        return "idea_id differs from the cache key"
+    if card.get("version") != state.idea_version:
+        return "idea version differs from the cache key"
+    if card.get("versions") != state.versions:
+        return "engine/rubric/weights versions differ from the cache key"
+    return None
 
 
 __all__ = ["Node", "UnknownSpec", "ValidateNodes"]

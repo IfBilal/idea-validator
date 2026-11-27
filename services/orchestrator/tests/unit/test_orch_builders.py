@@ -6,7 +6,7 @@ import pytest
 
 from common.schemas import DimensionScore, EvidenceItem
 from common.schemas.types import DIMENSIONS
-from svc_orchestrator.models.api import UnknownSpec
+from svc_orchestrator.models.api import EFFORT_CAP, UnknownSpec
 from svc_orchestrator.services import builders
 
 RUBRICS = {d: f"{d}@v1" for d in DIMENSIONS}
@@ -264,23 +264,37 @@ def test_profile_answers_change_the_profile_block() -> None:
     assert body["profile"]["hours_per_week"] == 25.0
 
 
-def test_score_answers_replace_that_dimensions_score() -> None:
+def test_answers_never_replace_a_score() -> None:
     body = request(answers={"competition": 4.5})
-    assert {s["dimension"]: s["score"] for s in body["scores"]}["competition"] == 4.5
+    assert {s["dimension"]: s["score"] for s in body["scores"]}["competition"] == 3.0
 
 
-def test_missing_effort_defaults_to_zero_and_is_flagged() -> None:
-    body = request(extra={})
-    assert body["gate_inputs"]["estimated_effort_hours"] == 0
+def test_missing_effort_is_never_fabricated() -> None:
+    with pytest.raises(ValueError, match="estimated_effort_hours"):
+        request(extra={})
     assert builders.effort_is_unknown({}, {}, {}) is True
     assert builders.effort_is_unknown({"estimated_effort_hours": 5}, {}, {}) is False
     assert builders.effort_is_unknown({}, {"estimated_effort_hours": 5}, {}) is False
     assert builders.effort_is_unknown({}, {}, {"estimated_effort_hours": 5.0}) is False
+    assert builders.effort_is_unknown({}, {}, {"estimated_effort_hours": None}) is True
+
+
+@pytest.mark.parametrize(
+    "bad", ["lots", -5, -0.1, True, float("nan"), float("inf"), EFFORT_CAP + 1, None, []]
+)
+def test_unusable_scorer_effort_counts_as_unknown(bad: Any) -> None:
+    assert builders.effort_is_unknown({"estimated_effort_hours": bad}, {}, {}) is True
+
+
+@pytest.mark.parametrize("ok", [0, 0.0, 1, EFFORT_CAP])
+def test_boundary_scorer_effort_is_known(ok: float) -> None:
+    assert builders.effort_is_unknown({"estimated_effort_hours": ok}, {}, {}) is False
+    body = request(extra={"estimated_effort_hours": ok})
+    assert body["gate_inputs"]["estimated_effort_hours"] == ok
 
 
 def test_extra_with_wrong_types_is_ignored_not_trusted() -> None:
-    body = request(extra={"estimated_effort_hours": "lots", "risk_blocker": 5, "duplicate_of": []})
-    assert body["gate_inputs"]["estimated_effort_hours"] == 0
+    body = request(extra={"estimated_effort_hours": 7, "risk_blocker": 5, "duplicate_of": []})
     assert body["gate_inputs"]["risk_blocker"] is None
     assert body["gate_inputs"]["duplicate_of"] is None
 
@@ -295,12 +309,6 @@ def test_risk_blocker_and_duplicate_are_forwarded_as_strings() -> None:
     )
     assert body["gate_inputs"]["risk_blocker"] == "needs a licence"
     assert body["gate_inputs"]["duplicate_of"] == "card_1"
-
-
-def test_negative_effort_from_a_scorer_is_clamped_by_ignoring_it() -> None:
-    assert (
-        request(extra={"estimated_effort_hours": -5})["gate_inputs"]["estimated_effort_hours"] == 0
-    )
 
 
 def test_objections_are_forwarded() -> None:
@@ -357,10 +365,10 @@ def test_caller_declared_unknowns_come_after_the_default_and_skip_overridden_one
     custom = UnknownSpec(
         scope="profile", field="hours_per_week", range=(5, 20), question="How many hours?"
     )
-    covered = UnknownSpec(scope="gate_input", field="n_sources", range=(1, 9))
+    covered = UnknownSpec(scope="profile", field="team_size", range=(1, 9))
     got = builders.pending_unknowns(
         {"estimated_effort_hours": 100},
-        {"n_sources": 3},
+        {"team_size": 3},
         [custom.model_dump(), covered.model_dump()],
         [],
     )
@@ -386,9 +394,45 @@ def test_unknown_spec_validates_scope_field_and_range() -> None:
         UnknownSpec(scope="gate_input", field="vibes", range=(1, 2))
     with pytest.raises(ValueError):
         UnknownSpec(scope="profile", field="team_size", range=(5, 1))
+
+
+@pytest.mark.parametrize(
+    ("scope", "field"),
+    [("score", "risk"), ("gate_input", "n_sources"), ("gate_input", "n_platforms")],
+)
+def test_scores_and_evidence_facts_are_not_unknowns(scope: str, field: str) -> None:
     with pytest.raises(ValueError):
-        UnknownSpec(scope="score", field="risk", range=(0, 9))
-    UnknownSpec(scope="score", field="risk", range=(0, 5))
+        UnknownSpec(scope=scope, field=field, range=(0, 1))
+
+
+@pytest.mark.parametrize(
+    ("scope", "field", "low", "high"),
+    [
+        ("profile", "hours_per_week", 0, 80),
+        ("profile", "weeks_available", 1, 52),
+        ("profile", "team_size", 1, 10),
+        ("gate_input", "estimated_effort_hours", 0, EFFORT_CAP),
+    ],
+)
+def test_unknown_ranges_must_lie_within_the_field_bounds(
+    scope: str, field: str, low: float, high: float
+) -> None:
+    UnknownSpec(scope=scope, field=field, range=(low, high))
+    with pytest.raises(ValueError):
+        UnknownSpec(scope=scope, field=field, range=(low - 1, high))
+    with pytest.raises(ValueError):
+        UnknownSpec(scope=scope, field=field, range=(low, high + 1))
+    with pytest.raises(ValueError):
+        UnknownSpec(scope=scope, field=field, range=(low, float("nan")))
+
+
+def test_effort_question_is_mandatory_text_with_the_full_range() -> None:
+    q = builders.effort_question()
+    assert q["question_id"] == "q_estimated_effort_hours"
+    assert q["field"] == "estimated_effort_hours"
+    assert q["range"] == [0, EFFORT_CAP]
+    assert q["required"] is True
+    assert "verdict" in q["why_it_matters"]
 
 
 def test_voi_request_wraps_the_verdict_request_range_and_unknown() -> None:

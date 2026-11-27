@@ -182,11 +182,14 @@ class FakeWorld:
         queue = self.faults.get((service, route))
         if queue:
             fault = queue.pop(0)
-            if fault == "timeout":
+            if fault == "pass":
+                pass  # one clean call, then the remaining faults apply
+            elif fault == "timeout":
                 raise httpx.ReadTimeout("fake timeout", request=request)
-            if fault == "garbage":
+            elif fault == "garbage":
                 return httpx.Response(200, content=b"<html>not json</html>")
-            return httpx.Response(int(fault), json={"error": {"code": "UPSTREAM_ERROR"}})
+            else:
+                return httpx.Response(int(fault), json={"error": {"code": "UPSTREAM_ERROR"}})
         if (service, route) in self.hang:
             raise httpx.ReadTimeout("fake hang", request=request)
         status, payload = self._answer(route, request.url.path, body)

@@ -4,6 +4,7 @@ They shape evidence, parse scorer output under the *evidence or abstain* rule, b
 for M11 and decide which questions are worth asking. None of them decides a verdict.
 """
 
+import math
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -12,7 +13,7 @@ from pydantic import ValidationError
 from common.schemas import DimensionScore, EvidenceItem
 from common.schemas.types import DIMENSIONS
 
-from ..models.api import GATE_FIELDS, PROFILE_FIELDS, UnknownSpec
+from ..models.api import EFFORT_CAP, FIELD_RANGES, GATE_FIELDS, PROFILE_FIELDS, UnknownSpec
 
 MAX_QUESTIONS = 3
 MIN_SOURCES = 3
@@ -116,9 +117,10 @@ def profile_for_verdict(profile: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+    """A usable effort: finite, non-bool, within 0..EFFORT_CAP. Anything else is unknown."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
         return None
-    return value
+    return value if 0 <= value <= EFFORT_CAP else None
 
 
 def _text(value: Any) -> str | None:
@@ -128,10 +130,10 @@ def _text(value: Any) -> str | None:
 def effort_is_unknown(
     extra: Mapping[str, Any], overrides: Mapping[str, float], answers: Mapping[str, float | None]
 ) -> bool:
-    return not (
-        answers.get("estimated_effort_hours") is not None
-        or "estimated_effort_hours" in overrides
-        or _number(extra.get("estimated_effort_hours")) is not None
+    return (
+        answers.get("estimated_effort_hours") is None
+        and "estimated_effort_hours" not in overrides
+        and _number(extra.get("estimated_effort_hours")) is None
     )
 
 
@@ -149,16 +151,22 @@ def build_verdict_request(
     answers: Mapping[str, float | None],
     objections: list[dict[str, str]],
 ) -> dict[str, Any]:
-    """Body of ``POST M11 /verdict``. Precedence: scorer estimate < user override < user answer."""
+    """Body of ``POST M11 /verdict``. Precedence: scorer estimate < user override < user answer.
+
+    Raises ``ValueError`` when the effort is unknown: a made-up number must never reach M11.
+    """
+    if effort_is_unknown(extra, overrides, answers):
+        raise ValueError("estimated_effort_hours is unknown; ask the user instead of guessing")
     values: dict[str, float] = {}
     base_effort = _number(extra.get("estimated_effort_hours"))
-    values["estimated_effort_hours"] = base_effort if base_effort is not None else 0
+    if base_effort is not None:
+        values["estimated_effort_hours"] = base_effort
     values.update(overrides)
     values.update({k: v for k, v in answers.items() if v is not None})
 
     gate: dict[str, Any] = {
-        "n_sources": int(values.get("n_sources", n_sources)),
-        "n_platforms": int(values.get("n_platforms", n_platforms)),
+        "n_sources": n_sources,
+        "n_platforms": n_platforms,
         "estimated_effort_hours": values["estimated_effort_hours"],
         "risk_blocker": _text(extra.get("risk_blocker")),
         "duplicate_of": _text(extra.get("duplicate_of")),
@@ -167,12 +175,7 @@ def build_verdict_request(
     for field in PROFILE_FIELDS:
         if field in values:
             profile_out[field] = values[field]
-    score_dicts: list[dict[str, Any]] = []
-    for s in scores:
-        dumped = s.model_dump(mode="json")
-        if s.dimension in values and s.score is not None:
-            dumped["score"] = values[s.dimension]
-        score_dicts.append(dumped)
+    score_dicts = [s.model_dump(mode="json") for s in scores]
     return {
         "idea_id": idea_id,
         "version": version,
@@ -202,7 +205,7 @@ def pending_unknowns(
             UnknownSpec(
                 scope="gate_input",
                 field="estimated_effort_hours",
-                range=(round(effort * 0.5), round(effort * 2)),
+                range=(round(effort * 0.5), min(EFFORT_CAP, round(effort * 2))),
                 question="About how many hours will building this take you?",
             )
         )
@@ -215,6 +218,22 @@ def pending_unknowns(
         seen.add(spec.field)
         pending.append(spec)
     return pending[: MAX_QUESTIONS - len(asked)]
+
+
+def effort_question() -> dict[str, Any]:
+    """Mandatory question: M11 needs the build hours and the scorers gave no usable estimate."""
+    return {
+        "question_id": "q_estimated_effort_hours",
+        "field": "estimated_effort_hours",
+        "scope": "gate_input",
+        "text": "About how many hours will building this take you?",
+        "range": [0, EFFORT_CAP],
+        "required": True,
+        "why_it_matters": (
+            "No verdict can be given without an effort estimate; "
+            "the scorers could not provide one and we will not guess."
+        ),
+    }
 
 
 def voi_request(verdict_request: dict[str, Any], spec: UnknownSpec) -> dict[str, Any]:
@@ -233,7 +252,7 @@ def question_payload(
         "field": spec.field,
         "scope": spec.scope,
         "text": spec.question or f"What is the value of {spec.field}?",
-        "range": [spec.range[0], spec.range[1]],
+        "range": list(FIELD_RANGES[spec.field]),  # what the user may answer, not the VOI probe
         "why_it_matters": (
             f"The verdict is {low[0]} if {spec.field} is {low[1]:g} "
             f"but {high[0]} if it is {high[1]:g}."

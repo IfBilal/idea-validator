@@ -20,10 +20,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from common.errors import Conflict, NotFound
+from common.errors import Conflict, NotFound, ValidationFailed
 from common.logging import get_logger
 
-from ..models.api import RunView, StartRun
+from ..models.api import RunView, StartRun, check_in_range
 from ..models.state import TERMINAL, RunStatus, ValidateState
 from .run_config import RunConfig
 from .run_context import RunContext
@@ -104,8 +104,20 @@ class RunService:
             raise Conflict("the run is not waiting for an answer", {"state": run.status.value})
         if question["question_id"] != question_id:
             raise Conflict("that is not the open question", {"expected": question["question_id"]})
+        self._check_answer(question, answer)
         self._resume(run, answer)
         await self._persist(run)
+
+    @staticmethod
+    def _check_answer(question: dict[str, Any], answer: float) -> None:
+        """Reject out-of-range answers before they can reach M11; the run keeps waiting."""
+        try:
+            check_in_range(str(question["field"]), answer)
+            low, high = question["range"]
+            if not low <= answer <= high:
+                raise ValueError(f"the answer must be between {low:g} and {high:g}")
+        except ValueError as exc:
+            raise ValidationFailed(str(exc), {"question_id": question["question_id"]}) from exc
 
     async def approve(self, run_id: str, approval_id: str, decision: str) -> None:
         run = self._get(run_id)

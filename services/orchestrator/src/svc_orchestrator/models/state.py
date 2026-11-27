@@ -81,6 +81,8 @@ class ValidateState(BaseModel):
     claim_results: list[dict[str, Any]] = Field(default_factory=list)
     removed_claims: list[str] = Field(default_factory=list)
     recomputed: bool = False
+    verdict_final: bool = False  # True only once the challenge settled the M11 verdict
+    missing_inputs: list[str] = Field(default_factory=list)  # inputs we refuse to guess
     card: dict[str, Any] | None = None
 
     @property

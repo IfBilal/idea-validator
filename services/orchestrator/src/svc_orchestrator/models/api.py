@@ -1,21 +1,37 @@
 """Request/response models of the internal M3 endpoints (docs/harness/05 §3)."""
 
-from typing import Annotated, Any, Literal, Self, get_args
+import math
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, StringConstraints, model_validator
 
 from common.schemas.base import Message
-from common.schemas.types import DIMENSIONS
 
-GATE_FIELDS = ("n_sources", "n_platforms", "estimated_effort_hours")
-PROFILE_FIELDS = ("hours_per_week", "weeks_available", "team_size")
-Scope = Literal["score", "gate_input", "profile"]
-_ALLOWED: dict[str, tuple[str, ...]] = {
-    "score": DIMENSIONS,
-    "gate_input": GATE_FIELDS,
-    "profile": PROFILE_FIELDS,
+EFFORT_CAP = 10_000  # hours: a sane upper bound for one idea
+FIELD_RANGES: dict[str, tuple[float, float]] = {
+    "estimated_effort_hours": (0, EFFORT_CAP),
+    "hours_per_week": (0, 80),
+    "weeks_available": (1, 52),
+    "team_size": (1, 10),
 }
-ALL_UNKNOWN_FIELDS = frozenset(DIMENSIONS) | set(GATE_FIELDS) | set(PROFILE_FIELDS)
+GATE_FIELDS = ("estimated_effort_hours",)  # n_sources / n_platforms are evidence facts
+PROFILE_FIELDS = ("hours_per_week", "weeks_available", "team_size")
+Scope = Literal["gate_input", "profile"]  # scores are never user-set: what-if goes via M11 /whatif
+_ALLOWED: dict[str, tuple[str, ...]] = {"gate_input": GATE_FIELDS, "profile": PROFILE_FIELDS}
+ALL_UNKNOWN_FIELDS = frozenset(FIELD_RANGES)
+StrictFloat = Annotated[float, Field(strict=True, allow_inf_nan=False)]
+
+
+def check_in_range(field: str, value: Any) -> float:
+    """A finite, non-bool number inside the field's documented range, else ``ValueError``."""
+    if field not in FIELD_RANGES:
+        raise ValueError(f"{field!r} cannot be set by the user")
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        raise ValueError(f"{field} must be a finite number")
+    low, high = FIELD_RANGES[field]
+    if not low <= value <= high:
+        raise ValueError(f"{field} must be between {low:g} and {high:g}")
+    return value
 
 
 class UnknownSpec(Message):
@@ -30,10 +46,10 @@ class UnknownSpec(Message):
     def _valid(self) -> Self:
         if self.field not in _ALLOWED[self.scope]:
             raise ValueError(f"{self.field!r} is not a valid {self.scope} field")
+        for end in self.range:
+            check_in_range(self.field, end)
         if self.range[0] > self.range[1]:
             raise ValueError("range must be [low, high] with low <= high")
-        if self.scope == "score" and not (self.range[0] >= 0 and self.range[1] <= 5):
-            raise ValueError("a score range must lie within 0..5")
         return self
 
 
@@ -42,13 +58,13 @@ class ValidateInput(Message):
     idea_id: str = Field(min_length=1)
     version: int = Field(ge=1)
     title: str | None = Field(default=None, max_length=200)
-    overrides: dict[str, float] = Field(default_factory=dict)
+    overrides: dict[str, StrictFloat] = Field(default_factory=dict)
     unknowns: list[UnknownSpec] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def _known_override_fields(self) -> Self:
-        if unknown := sorted(set(self.overrides) - ALL_UNKNOWN_FIELDS):
-            raise ValueError(f"unknown override fields: {unknown}")
+        for field, value in self.overrides.items():
+            check_in_range(field, value)
         return self
 
 
@@ -64,7 +80,7 @@ class RunStarted(Message):
 
 class AnswerBody(Message):
     question_id: str
-    answer: float
+    answer: StrictFloat
 
 
 class ApproveBody(Message):
@@ -88,6 +104,3 @@ class RunView(Message):
     pending_approval: dict[str, Any] | None
     result: dict[str, Any] | None
     error: str | None = None
-
-
-assert set(get_args(Scope)) == set(_ALLOWED)  # keep the literal and the table in step

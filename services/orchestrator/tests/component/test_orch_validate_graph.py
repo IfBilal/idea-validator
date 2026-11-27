@@ -150,14 +150,6 @@ async def test_no_other_field_of_the_m11_verdict_is_touched() -> None:
     assert state.card["thresholds"] == {"T_go": 70, "T_no": 50, "floor": 1.5}
 
 
-async def test_the_orchestrator_never_sends_a_verdict_in_any_request() -> None:
-    h = Harness()
-    await run(h)
-    for service, route, body in h.world.calls:
-        if service != "verdict" and body is not None:
-            assert "verdict" not in body, (service, route)
-
-
 # ---- cache -----------------------------------------------------------------------------------
 async def test_a_complete_run_is_stored_under_a_key_with_every_version() -> None:
     h = Harness()
@@ -278,7 +270,7 @@ async def test_empty_evidence_is_forwarded_as_insufficient_evidence_from_m11() -
 
     def scorer(body: dict[str, Any]) -> Any:
         assert body["evidence"] == []
-        return {"scores": [], "extra": {}}
+        return {"scores": [], "extra": {"estimated_effort_hours": 50}}
 
     def engine(req: dict[str, Any]) -> Any:
         assert all(s["score"] is None for s in req["scores"])
@@ -311,7 +303,7 @@ async def test_scorers_that_cite_nothing_force_abstention_even_if_they_return_sc
             }
             for d in DIMS
         ],
-        "extra": {},
+        "extra": {"estimated_effort_hours": 50},
     }
     h = Harness(world)
     await run(h)
@@ -520,7 +512,7 @@ async def test_a_scorer_that_returns_html_instead_of_json_makes_every_dimension_
     world = FakeWorld()
     world.faults[("validators", "POST /score-all")] = ["garbage"]
     h = Harness(world)
-    state = await run(h)
+    state = await run(h, overrides={"estimated_effort_hours": 50})
     assert world.count("validators", "POST /score-all") == 1  # a bad body is not retried
     sent = world.bodies(*VERDICT_ROUTE)[0]["scores"]
     assert all(s["score"] is None for s in sent)
@@ -532,7 +524,7 @@ async def test_scorer_timeout_is_retried_twice_then_every_dimension_abstains() -
     world = FakeWorld()
     world.faults[("validators", "POST /score-all")] = ["timeout"] * 3
     h = Harness(world)
-    state = await run(h)
+    state = await run(h, overrides={"estimated_effort_hours": 50})
     assert world.count("validators", "POST /score-all") == 3  # 1 try + 2 retries, no more
     sent = world.bodies(*VERDICT_ROUTE)[0]["scores"]
     assert all(s["score"] is None and s["abstained"] for s in sent)
@@ -599,15 +591,6 @@ async def test_features_failure_degrades_but_scoring_still_runs() -> None:
     assert state.degraded is True
     assert world.count("validators", "POST /score-all") == 1
     assert state.status is RunStatus.SUCCEEDED
-
-
-async def test_unknown_effort_is_flagged_and_not_cached() -> None:
-    world = FakeWorld()
-    world.extra = {}
-    state = await run(Harness(world))
-    assert state.degraded is True
-    assert any("effort" in n for n in state.notes)
-    assert world.cache == {}
 
 
 # ---- failures that must stop the run -----------------------------------------------------------

@@ -43,6 +43,11 @@ TABLE: list[tuple[Route, dict[str, object], str]] = [
     (routing.after_scorers, {}, "clarify_check"),
     (routing.after_clarify_check, {}, "verdict"),
     (routing.after_clarify_check, {"pending_question": {"question_id": "q1"}}, "await_answer"),
+    (
+        routing.after_clarify_check,
+        {"missing_inputs": ["estimated_effort_hours"]},
+        "card",
+    ),
     (routing.after_await_answer, {}, "clarify_check"),
     (routing.after_verdict, {}, "claims_check"),
     (routing.after_claims_check, {}, "stability"),

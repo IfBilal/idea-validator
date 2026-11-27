@@ -388,3 +388,40 @@ async def test_progress_reports_the_step_while_waiting() -> None:
     view = await finished(service, run_id)
     assert view.progress["step"] == "WAIT_ANSWER"
     await service.aclose()
+
+
+async def test_the_run_mirror_carries_the_m11_card_unchanged() -> None:
+    world = FakeWorld()
+    sent: list[dict[str, Any]] = []
+
+    def engine(req: dict[str, Any]) -> Any:
+        sent.append(fake_verdict(req, "PIVOT", score=61.25, confidence=0.66))
+        return sent[-1]
+
+    world.verdict_fn = engine
+    service, _ = make(world)
+    run_id = await service.start(start_body())
+    await service.wait(run_id)
+    result = world.runs[run_id]["result"]
+    for key in ("verdict", "stability", "score", "confidence", "gates", "thresholds", "versions"):
+        assert result[key] == sent[-1][key]
+    await service.aclose()
+
+
+async def test_an_answer_arriving_as_the_timeout_fires_resumes_only_once() -> None:
+    service, _ = make(asking_world(), question_timeout_s=30)
+    run_id = await service.start(start_body())
+    await service.wait(run_id)
+    run = service._runs[run_id]
+    question = run.pending_question
+    assert question is not None
+    await service.answer(run_id, "q_estimated_effort_hours", 300)
+    # the expiry task fires a moment later for the question that was just answered
+    await service._expire(run, question, 0, "__no_answer__")
+    await service.wait(run_id)
+    view = await service.get(run_id)
+    assert view.state == "succeeded"
+    assert view.result is not None
+    assert view.result["verdict"] == "NO-GO"  # the answer won; the late expiry changed nothing
+    assert not any("no answer" in n for n in view.result["notes"])
+    await service.aclose()

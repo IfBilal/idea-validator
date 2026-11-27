@@ -56,8 +56,8 @@ def after_scorers(state: ValidateState) -> str:
 
 
 def after_clarify_check(state: ValidateState) -> str:
-    if state.stopped:
-        return "card"
+    if state.stopped or state.missing_inputs:
+        return "card"  # missing inputs: finish without a verdict rather than guess
     return "await_answer" if state.pending_question else "verdict"
 
 
