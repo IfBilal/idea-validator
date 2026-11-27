@@ -653,13 +653,19 @@ name = "idea-validator-gateway"
 version = "0.1.0"
 source = { editable = "services/gateway" }
 dependencies = [
+    { name = "email-validator" },
     { name = "idea-validator-common" },
+    { name = "pyjwt" },
+    { name = "redis" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "email-validator", specifier = ">=2.2" },
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "pyjwt", specifier = ">=2.10" },
+    { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 
@@ -750,13 +756,21 @@ name = "idea-validator-scorer"
 version = "0.1.0"
 source = { editable = "services/scorer" }
 dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "idea-validator-common" },
+    { name = "prometheus-client" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "prometheus-client", specifier = ">=0.21" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 
@@ -781,12 +795,14 @@ version = "0.1.0"
 source = { editable = "services/tools" }
 dependencies = [
     { name = "idea-validator-common" },
+    { name = "redis" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 
@@ -795,13 +811,21 @@ name = "idea-validator-validators"
 version = "0.1.0"
 source = { editable = "services/validators" }
 dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "idea-validator-common" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 

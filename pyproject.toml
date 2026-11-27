@@ -59,7 +59,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 # Layering (docs/harness/21 §2): api -> services -> repositories. Checked by `lint-imports`.
 [tool.importlinter]
-root_packages = ["svc_profile"]
+root_packages = ["svc_profile", "svc_gateway"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -80,3 +80,22 @@ allow_indirect_imports = true
 name = "profile: lower layers never import higher ones"
 type = "layers"
 layers = ["svc_profile.api", "svc_profile.services", "svc_profile.repositories"]
+
+[[tool.importlinter.contracts]]
+name = "gateway: routes never call the upstream client's transport directly"
+type = "forbidden"
+source_modules = ["svc_gateway.api"]
+forbidden_modules = ["httpx", "redis"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "gateway: services never import the web framework"
+type = "forbidden"
+source_modules = ["svc_gateway.services", "svc_gateway.clients"]
+forbidden_modules = ["fastapi", "starlette"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "gateway: lower layers never import higher ones"
+type = "layers"
+layers = ["svc_gateway.api", "svc_gateway.services", "svc_gateway.clients"]
