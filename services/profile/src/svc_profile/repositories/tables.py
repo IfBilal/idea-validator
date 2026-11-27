@@ -15,6 +15,7 @@ from sqlalchemy import (
     MetaData,
     Numeric,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -103,7 +104,12 @@ class Idea(Base):
 
 class IdeaVersion(Base):
     __tablename__ = "idea_versions"
-    __table_args__ = (CheckConstraint("version >= 1", name="version"),)
+    __table_args__ = (
+        CheckConstraint("version >= 1", name="version"),
+        UniqueConstraint(
+            "idea_id", "idempotency_key", name="uq_idea_versions_idea_idempotency_key"
+        ),
+    )
 
     idea_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey(f"{SCHEMA}.ideas.id", ondelete="CASCADE"), primary_key=True
@@ -114,6 +120,8 @@ class IdeaVersion(Base):
     change_note: Mapped[str | None] = mapped_column(Text)
     parent_version: Mapped[int | None] = mapped_column(Integer)
     clarifications: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    card: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    idempotency_key: Mapped[str | None] = mapped_column(Text)
 
 
 class VerdictRow(Base):

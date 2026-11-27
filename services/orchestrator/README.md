@@ -96,8 +96,9 @@ use LangGraph `interrupt()`.
 - The verdict cache key has no `user_id`. This is safe because idea ids are globally unique (M2 guarantees it).
 - `RunStatus` is not registered in LangGraph's msgpack allow-list; it round-trips through the default serializer today (tested with Postgres) but a stricter serializer setting would need it registered.
 - Cache key versions cover M11, the profile and the idea only (scorer/critic versions are not exposed yet).
-- Parallel fan-outs check the step budget per call and can overshoot `max_steps` by the fan-out width; the
-  atomic compare-and-reserve belongs in `common/budget.py` (owned by Dev A).
+- Step budget: `StepRunner` reserves each step with `BudgetLedger.reserve` (one atomic Lua check-and-charge), so
+  parallel fan-outs cannot overshoot `max_steps` (40 parallel reservations against a limit of 10 admit exactly 10).
+  M3 charges only steps; pages, tokens and cost are charged by M5 into the same hash.
 
 ## Discover, challenge and what-if (kinds of `POST /runs`)
 Bodies are validated strictly (see docs/harness/05 §3); ids are `[A-Za-z0-9_-]{1,64}`.

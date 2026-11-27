@@ -117,7 +117,7 @@ class ChallengeNodes:
             raise Conflict(f"claim {state.claim_id} has no valid dimension")
         base = {"text": out.value["text"], "base_card": card, "claim": claim}
         if claim.get("removed"):  # challenged before: answer with what happened then
-            entry = next(
+            entry: dict[str, Any] = next(
                 (e for e in card.get("challenge_log") or [] if e.get("claim_id") == state.claim_id),
                 {},
             )
