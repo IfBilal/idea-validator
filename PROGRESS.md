@@ -6,8 +6,8 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Phase 0/1/2 work is in review (PR #12); next up: M2 rest, then Phase 5** |
-| Current task | Waiting for Dev A to review and merge PR #12. Dev A next: P0-T06..T08, P1-T03..T10 |
+| Current phase | **Phase 0-2 foundation merged (PR #12); in progress: M2 rest + gateway, then Phase 5** |
+| Current task | Dev B: M2 rest (P2-T07, P2-T08), gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (PR #13 k8s_up in review) |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
@@ -48,7 +48,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 ## Completed tasks
 | Task | PR | Date | Notes |
 |---|---|---|---|
-| P0-T03 uv workspace, tooling, pre-commit | #12 (in review) | 2026-11-26 | Dev A's task, done early by Dev B to unblock |
+| P0-T03 uv workspace, tooling, pre-commit | #12 | 2026-11-26 | Dev A's task, done early by Dev B to unblock |
 | P0-T04 Pydantic schemas + drift test | #12 | 2026-11-26 | 12 models mirror `schemas/*.schema.json`; worked-example verdict is raw engine output (see 27) |
 | P0-T05 libs/common (config, logging, http, tracing, errors) | #12 | 2026-11-26 | |
 | P0-T09, P0-T10 README, AI log | #12 | 2026-11-26 | |
