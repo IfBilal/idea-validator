@@ -4,7 +4,7 @@ TAG ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo dev)
 NS  := idea-validator
 SERVICES := gateway profile orchestrator scouts tools kb analyst ideation validators scorer verdict critic agentops
 
-.PHONY: secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
+.PHONY: dev-env secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
@@ -19,14 +19,16 @@ test-verdict: ## M11 unit + golden vectors (P2)
 	uv run pytest services/verdict -q
 test-retrieval: ## retrieval quality gate (P3)
 	uv run pytest eval/retrieval -q
-up: ## docker compose dev stack (dev only)
-	docker compose up -d --build
-down:
+dev-env: ## create the missing dev credentials in the git-ignored .env (random, never committed)
+	uv run python scripts/create_secrets.py --dev-env
+up: dev-env ## dev stack (postgres, redis, qdrant via docker compose), waits until healthy
+	docker compose up -d --wait
+down: ## stop the dev stack; data volumes are kept (docker compose down -v deletes them)
 	docker compose down
-migrate: ## alembic upgrade (P2)
-	uv run --package profile alembic -c services/profile/alembic.ini upgrade head
-seed: ## restore card snapshot (P3)
-	uv run --package ingestion python -m ingestion restore data/snapshots/latest.jsonl.gz
+migrate: ## alembic upgrade on the compose Postgres (run `make up` first)
+	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head
+seed: ## restore the card snapshot into Postgres + Qdrant (needs M6 and ingestion, issue 30)
+	@echo "make seed needs the ingestion job (issue #30, P3-T09), which is not built yet" >&2; exit 1
 images: ## build and push every module image to the local registry, tagged TAG (default: commit SHA)
 	for s in $(SERVICES); do docker build -q -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) . && docker push -q localhost:5001/$$s:$(TAG); done
 	@if [ -f services/ui/package.json ]; then docker build -q -t localhost:5001/ui:$(TAG) services/ui && docker push -q localhost:5001/ui:$(TAG); fi
@@ -45,7 +47,7 @@ smoke: ## smoke test through ingress (P1)
 	./scripts/smoke_test.sh
 netpol-test: ## non-M5 egress fails, M5 succeeds (P1)
 	./scripts/netpol_test.sh
-eval: ## evaluation job + compare with baseline (P9)
-	kubectl apply -f k8s/base/eval/eval-job.yaml -n $(NS) && ./scripts/check_eval.sh
-replay: ## replay a stored run: make replay RUN=run_90 (P9)
-	uv run --package agentops python -m agentops.replay $(RUN)
+eval: ## compare the newest eval result with the stored baseline (needs eval/results, P10-T02)
+	./scripts/check_eval.sh
+replay: ## replay a stored run: make replay RUN=run_90 (needs M13 trace store, P9-T02)
+	@echo "make replay needs the M13 trace store and replay command (P9-T01/T02), not built yet" >&2; exit 1

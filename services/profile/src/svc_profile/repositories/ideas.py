@@ -61,6 +61,8 @@ class IdeaRepository:
         change_note: str | None,
         parent_version: int | None,
         clarifications: dict[str, Any] | None,
+        card: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> IdeaVersion:
         row = IdeaVersion(
             idea_id=idea_id,
@@ -69,6 +71,8 @@ class IdeaRepository:
             change_note=change_note,
             parent_version=parent_version,
             clarifications=clarifications,
+            card=card,
+            idempotency_key=idempotency_key,
         )
         self._session.add(row)
         await self._session.flush()
@@ -76,6 +80,12 @@ class IdeaRepository:
 
     async def version(self, idea_id: uuid.UUID, version: int) -> IdeaVersion | None:
         return await self._session.get(IdeaVersion, (idea_id, version))
+
+    async def by_key(self, idea_id: uuid.UUID, key: str) -> IdeaVersion | None:
+        stmt = select(IdeaVersion).where(
+            IdeaVersion.idea_id == idea_id, IdeaVersion.idempotency_key == key
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
 
     async def versions(self, idea_id: uuid.UUID) -> list[IdeaVersion]:
         stmt = (

@@ -1,0 +1,11 @@
+# ADR-009: M7 clusters with deterministic agglomeration on TF-IDF, and keeps niches in memory
+- **Status:** Accepted for the first slice; revisit when M6 has real cards (Phase 4 gate).
+- **Context:** docs/10 section 8 describes UMAP + HDBSCAN on dense chunk embeddings and Postgres tables (`niches`, `niche_stats`, `gaps`). M6 and its embeddings do not exist yet, and CLAUDE.md rules require deterministic, unit-tested features with no model download in M7.
+- **Options:** (1) HDBSCAN on dense embeddings now; (2) deterministic agglomerative clustering on TF-IDF behind an `Embedder` seam; (3) tag grouping only.
+- **Decision:** (2). Centroid-linkage agglomeration, merge cosine 0.15, minimum size 3, attach threshold 0.05, candidate pairs from an inverted term index (top-30 terms per cluster, 12 best candidates each), so 1,500 cards take about 0.2 s and growth is near linear. Niche ids are kept across runs by centroid cosine >= 0.85 (doc 10). `as_of` always comes from the caller (KB snapshot date, or `AS_OF`), never from the data. Niches, stats and gaps live behind a `NicheStore` Protocol with an in-memory implementation only.
+- **Why:** it is dependency-free, fast, byte-reproducible and testable on fixtures today; the `Embedder` Protocol lets M6's dense vectors replace TF-IDF without touching callers.
+- **Known limits (D4, D6):**
+  - D4: this is not HDBSCAN, and the thresholds (0.15 merge, 0.05 attach versus the spec's 0.5 noise rule) were tuned on synthetic fixtures. There is no ground truth yet, so cluster quality on real data is unmeasured. Action: once M6 has >= 1,500 real cards, label a sample, compare against HDBSCAN, and retune or switch.
+  - D6: no Postgres `NicheStore`. State is lost on restart and each replica recomputes alone. The intended production shape is a recompute Job (CronJob after ingestion) that writes the three tables, with the service only serving them; `POST /recompute` and the single-flight, off-loop recompute are the interim path.
+- **Cost:** approximate candidate search (clusters sharing only very common terms are not compared); revisiting this ADR is a Phase 4 gate item.
+- **AI use:** Drafted with AI; to be reviewed by both members.

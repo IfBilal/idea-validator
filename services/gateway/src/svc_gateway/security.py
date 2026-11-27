@@ -27,6 +27,11 @@ def issue_token(secret: str, user_id: str, ttl_s: int, now: datetime | None = No
 
 def verify_token(secret: str, token: str) -> str:
     """Return the user id. Anything wrong (signature, algorithm, expiry, missing claim) is a 401."""
+    return verify_claims(secret, token)[0]
+
+
+def verify_claims(secret: str, token: str) -> tuple[str, float]:
+    """Return ``(user id, expiry as a Unix timestamp)``; any problem is a 401."""
     try:
         claims = jwt.decode(
             token,
@@ -42,6 +47,6 @@ def verify_token(secret: str, token: str) -> str:
     try:  # the subject goes into an internal URL path: it must be a UUID, nothing else
         if not isinstance(subject, str):
             raise ValueError("subject is not a string")
-        return str(uuid.UUID(subject))
-    except ValueError as exc:
+        return str(uuid.UUID(subject)), float(claims["exp"])
+    except (ValueError, TypeError) as exc:
         raise Unauthorized("invalid or expired token") from exc

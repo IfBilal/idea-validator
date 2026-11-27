@@ -70,7 +70,7 @@ id TEXT PK ('card_' + 8 hex of sha1(canonical_url)), name, one_liner (= summary)
 ➕ tsv TSVECTOR (generated, for keyword search), ➕ first_seen_at, last_seen_at
 
 -- card_sources   (one card can be seen on several platforms → independence counting)
-card_id FK, platform TEXT ('hackernews'|'github'|'reddit'|'producthunt'|'yc'), url TEXT, fetched_at
+card_id FK, platform TEXT ('hackernews'|'github'|'lobsters'|'stackexchange'|'reddit'|'producthunt'|'yc'; ADR-009: the first four need no credential), url TEXT, fetched_at
 PK (card_id, url)
 
 -- niches

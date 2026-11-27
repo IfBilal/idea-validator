@@ -43,15 +43,26 @@ Keys (LLM provider, GitHub, Reddit / Product Hunt) go in a local `.env` copied f
 
 ## Quick start (fill in as the system is built; must stay ≤ ~10 commands)
 ```bash
-cp .env.example .env            # fill values locally
+cp .env.example .env            # add LLM_API_KEY / GROQ_API_KEY locally (never committed)
 make setup                      # uv + npm deps, pre-commit
 make k8s-up                     # kind + Calico + registry + ingress + metrics-server
-./scripts/create_secrets.sh     # K8s Secrets from .env
-make images TAG=$(git rev-parse --short=7 HEAD) && make deploy TAG=$(git rev-parse --short=7 HEAD)
-make seed                       # restore card snapshot (no internet needed)
-make smoke                      # health + a validate run
-open http://localhost/          # UI through the Ingress
+make images TAG=dev             # build and push the 13 images to localhost:5001
+make deploy TAG=dev             # secrets from .env, manifests, datastores, migrate Job, all Deployments
+make smoke                      # register, login, save a profile, read it back, through the Ingress
+make netpol-test                # only the tool layer reaches the internet; closed edges stay closed
+make seed                       # restore card snapshot (needs the ingestion job, issue #30)
 ```
+
+### Dev databases without Kubernetes (docker compose)
+Postgres, Redis and Qdrant for running services or tests on the host:
+```bash
+make up        # creates missing POSTGRES_* / DATABASE_URL / REDIS_URL in .env, starts the stack, waits until healthy
+make migrate   # Alembic migrations on that Postgres
+make down      # stop it (volumes are kept; `docker compose down -v` deletes the data)
+```
+If a host port is taken, set `POSTGRES_PORT`, `REDIS_PORT` or `QDRANT_PORT` in `.env`. Tests use testcontainers (Docker) or
+`TEST_DATABASE_URL` / `TEST_REDIS_URL`, so they do not need this stack. Cluster scripts pin their own kubeconfig
+(`~/.kube/idea-validator.kubeconfig`) and refuse any other context.
 
 ## Team
 | Member | Roll no. | Role |

@@ -12,7 +12,7 @@ def test_health_identifies_the_service() -> None:
 def test_not_ready_without_redis_and_the_profile_service() -> None:
     response = TestClient(build_app(Settings())).get("/ready")
     assert response.status_code == 503
-    assert response.json()["checks"] == {"redis": False, "profile": False}
+    assert response.json()["checks"] == {"redis": False, "profile": False, "orchestrator": False}
 
 
 def test_metrics_are_exposed() -> None:
