@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, Field, Input } from "@/components/ui/form";
 import { getRunResult, startValidate } from "@/lib/endpoints";
 import { errorMessage } from "@/lib/errors";
+import { isTerminal } from "@/lib/runState";
 import { useRun } from "@/lib/useRun";
 
 const MAX_IDEA = 4000;
@@ -71,16 +72,25 @@ function RunView({ runId }: { runId: string }) {
       <RunPanel state={state} status={status} />
       {state.phase === "waiting_answer" && state.question && <QuestionCard key={state.question.questionId} runId={runId} question={state.question} />}
       {state.phase === "waiting_approval" && state.approval && <ApprovalDialog key={state.approval.approvalId} runId={runId} approval={state.approval} />}
-      {state.phase === "done" && <FinalResult runId={runId} streamed={state.verdictCard} />}
+      {isTerminal(state.phase) && <FinalResult runId={runId} streamed={state.verdictCard} reason={state.reason} />}
     </section>
   );
 }
 
-/** The verdict event carries a settled card; a partial card (no verdict) only arrives in the run result. */
-function FinalResult({ runId, streamed }: { runId: string; streamed: unknown }) {
+/**
+ * The verdict event carries a settled card; a partial card (no verdict) only arrives in the run result.
+ * Failed and stopped runs show it too. If the stored result is unavailable, a failed or stopped run
+ * shows a no-verdict card built from the stop reason (never a verdict).
+ */
+function FinalResult({ runId, streamed, reason }: { runId: string; streamed: unknown; reason?: string }) {
   const result = useQuery({ queryKey: ["run-result", runId], queryFn: () => getRunResult(runId), enabled: streamed === undefined });
   if (streamed !== undefined) return <VerdictCard raw={streamed} />;
   if (result.isPending) return <p role="status">Loading your result…</p>;
+  const unavailable = result.isError || result.data === null || result.data === undefined;
+  if (unavailable && reason !== undefined) {
+    return <VerdictCard raw={{ verdict: null, partial: true, needs_input: [], stop_reason: reason }} />;
+  }
   if (result.isError) return <Alert>{errorMessage(result.error)}</Alert>;
+  if (unavailable) return <Alert>No result was produced for this run.</Alert>;
   return <VerdictCard raw={result.data} />;
 }
