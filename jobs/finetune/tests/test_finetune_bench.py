@@ -56,3 +56,19 @@ def test_summarise_reports_percentiles_and_rss() -> None:
     assert s["rss_mb_max"] == 1100.0
     assert s["prompt_tokens_mean"] == 1100
     assert s["threads"] == 4
+
+
+def test_quantcheck_diff_reports_agreement() -> None:
+    from finetune.quantcheck import diff
+
+    def side(scores: list[float | None]) -> dict[str, object]:
+        outs = [
+            json.dumps({"score": s, "confidence": 0.5, "evidence_ids": [], "reason": "r"})
+            for s in scores
+        ]
+        return {"outputs": outs, "metrics": {"mae": 0.1, "valid_json_rate": 1.0}}
+
+    d = diff(side([3.0, 4.0, None]), side([3.0, 3.5, 2.0]))
+    assert d["both_scored"] == 2
+    assert d["identical_score_rate"] == 0.5
+    assert d["mean_abs_score_diff"] == 0.25

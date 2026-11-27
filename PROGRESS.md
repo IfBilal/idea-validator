@@ -13,7 +13,7 @@
 | Last Jenkins deploy | none yet |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
 | Retrieval baseline (Recall@5 / MRR) | not measured |
-| Fine-tune examples (total / hand-checked) | 0 / 0 |
+| Fine-tune examples (total / hand-checked) | 0 / 0 (pipeline ready, waits for the KB snapshot) |
 | Labelled verdict set | candidates only (docs/labelled-candidates); 0 hand-labelled |
 
 ## Team
@@ -79,8 +79,10 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | ADR-009 sources in the schemas: lobsters and stackexchange added to Source, both JSON schemas and the data model | this PR | 2026-11-27 | a test pins the same set in every place; prerequisite for #29 and #30 |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
+| P8 Phase A (M10t): pipeline pieces, QLoRA train script, export, CPU serving benchmark | this PR | 2026-11-27 | gpu-session. RTX 3060 Ti 8 GB, Windows 11. Smoke (synthetic): 50 steps 382 s, peak VRAM 4.24 GB, 1118 tok/s; Q4_K_M 935 MiB, CPU p50 3.6 s / p95 5.5 s (570-token prompt, 4 threads), peak RSS 1.86 GB; quantisation damage 0.1 mean abs score diff. Real data and hand-checks still missing (see Blocked) |
 
 ## Blocked / Needs human
+- [ ] gpu-session (P8-T03): >= 60 human-reviewed examples via `python -m finetune.review` (Taimoor and Bilal); never simulated. Until then the test set cannot be called hand-checked.
 - [x] GitHub repo + branch protection (done 2026-11-26; add required status checks once CI works)
 - [x] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
 - [ ] LLM provider API key → local `.env` (never commit)
