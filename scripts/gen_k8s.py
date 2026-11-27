@@ -101,10 +101,13 @@ JOBS: dict[str, dict[str, Any]] = {
     "seed": {
         "image": "ingestion",
         "command": ["python", "-m", "ingestion", "restore", "/app/data/snapshots"],
-        "secrets": [],
+        "secrets": ["INGEST_TOKEN"],  # same Secret key as the kb entry in SERVICES
         "token": True,
         "calls": ["kb"],
         "manual": True,
+        "backoff_limit": 2,
+        # exit 2 bad config, 3 bad/missing snapshot, 4 rows dropped: a retry cannot fix these
+        "fail_fast_codes": [2, 3, 4],
     },
 }
 IMAGE_TAG = "unset"  # the overlay / deploy script sets the commit SHA; never "latest"
@@ -415,19 +418,21 @@ def _job(name: str) -> str:
         },
         "volumeMounts": [{"name": "tmp", "mountPath": TMP_MOUNT}],
     }
-    job = {
+    if spec.get("manual"):  # built locally per commit: scripts/seed.sh pins SHA tags
+        container["imagePullPolicy"] = "Always"
+    job: dict[str, Any] = {
         "apiVersion": "batch/v1",
         "kind": "Job",
         "metadata": _meta(name),
         "spec": {
-            "backoffLimit": 6,
+            "backoffLimit": spec.get("backoff_limit", 6),
             "ttlSecondsAfterFinished": 3600,
             "template": {
                 "metadata": {"labels": {"app": name}},
                 "spec": {
                     "serviceAccountName": "app",
                     "automountServiceAccountToken": False,
-                    "restartPolicy": "OnFailure",
+                    "restartPolicy": "Never" if spec.get("fail_fast_codes") else "OnFailure",
                     "securityContext": {
                         "runAsNonRoot": True,
                         "runAsUser": 10001,
@@ -440,6 +445,19 @@ def _job(name: str) -> str:
             },
         },
     }
+    if spec.get("fail_fast_codes"):
+        job["spec"]["podFailurePolicy"] = {
+            "rules": [
+                {
+                    "action": "FailJob",
+                    "onExitCodes": {
+                        "containerName": name,
+                        "operator": "In",
+                        "values": spec["fail_fast_codes"],
+                    },
+                }
+            ]
+        }
     return _dump(job)
 
 

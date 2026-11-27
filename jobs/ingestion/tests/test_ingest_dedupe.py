@@ -145,7 +145,7 @@ def test_unrelated_cards_are_not_merged_even_when_the_threshold_is_low() -> None
             draft("https://a.com/1", "Invoicing tool for freelancers", "Send invoices fast."),
             draft("https://b.com/2", "Recipe sharing app for families", "Share family meals."),
         ],
-        DedupeConfig(threshold=0.3),
+        DedupeConfig(threshold=0.3, bands=64),
     )
     assert len(plan.cards) == 2
 

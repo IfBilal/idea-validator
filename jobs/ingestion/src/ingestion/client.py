@@ -21,11 +21,13 @@ class HttpKbClient:
         base_url: str,
         *,
         internal_token: str | None,
+        ingest_token: str | None = None,
         timeout_s: float = 30.0,
         max_retries: int = MAX_RETRIES,
         backoff_s: float = 0.5,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        self._ingest_token = ingest_token
         self._http = ServiceClient(
             base_url,
             timeout_s=timeout_s,
@@ -36,7 +38,9 @@ class HttpKbClient:
         )
 
     async def ingest(self, cards: list[dict[str, Any]]) -> list[IngestOutcome]:
-        body = await self._http.post_json("/ingest", {"cards": cards})
+        # the write endpoints of M6 also need X-Ingest-Token; it is never logged or echoed
+        headers = {"X-Ingest-Token": self._ingest_token} if self._ingest_token else None
+        body = await self._http.post_json("/ingest", {"cards": cards}, headers=headers)
         return [IngestOutcome.model_validate(r) for r in body["results"]]
 
     async def list_cards(self, *, limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:

@@ -22,10 +22,10 @@ from typing import Any
 
 import structlog
 
-from common.errors import DomainError, ValidationFailed
+from common.errors import DomainError, Forbidden, Unauthorized, ValidationFailed
 from ingestion.config import MAX_BATCH
 from ingestion.dedupe import DedupeConfig, dedupe
-from ingestion.mappers import Rejected, map_item
+from ingestion.mappers import Rejected, map_item, url_label
 from ingestion.models import CardDraft, KbClient, RawItem, Rejection
 from ingestion.sources import RawSource
 from ingestion.state import Cursor, RunRecord, StateStore
@@ -133,6 +133,8 @@ async def run_ingestion(
             pos += len(batch)
             report.posted = pos - start
             state.save(Cursor(digest=digest, done=pos, total=len(wire)))
+    except (Forbidden, Unauthorized):
+        raise  # wrong credentials are a configuration error, not something a resume can fix
     except DomainError as exc:
         report.status = "failed"
         report.error = f"{type(exc).__name__}: {exc.message}"[:300]
@@ -189,4 +191,4 @@ async def post_batch(kb: KbClient, batch: list[dict[str, Any]], report: RunRepor
 
 def _drop(report: RunReport, card: dict[str, Any]) -> None:
     report.dropped += 1
-    log.warning("card_rejected_by_kb", url=card["url"][:200])
+    log.warning("card_rejected_by_kb", url=url_label(card["url"]))

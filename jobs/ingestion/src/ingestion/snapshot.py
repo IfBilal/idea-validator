@@ -18,6 +18,7 @@ import json
 import os
 import re
 import tempfile
+import zlib
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -28,7 +29,8 @@ import structlog
 from pydantic import ValidationError
 
 from ingestion.config import MAX_BATCH
-from ingestion.mappers import content_hash_of
+from ingestion.lines import InputTooLarge, iter_lines
+from ingestion.mappers import Rejected, content_hash_of, scrub_card, url_label
 from ingestion.models import CardDraft, KbClient, Rejection
 from ingestion.pipeline import RunReport, post_batch, reject
 
@@ -110,7 +112,7 @@ async def write_snapshot(
     ordered = [rows[i] for i in sorted(rows)]
     for row in ordered:
         row["platforms"] = sorted(row["platforms"] or [row["source"]])
-    payload = "".join(json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n" for r in ordered)
+    payload = "".join(json.dumps(r, sort_keys=True, ensure_ascii=True) + "\n" for r in ordered)
     blob = gzip.compress(payload.encode("utf-8"), mtime=0)
     stem = f"cards-{day:%Y%m%d}"
     path = out_dir / f"{stem}.jsonl.gz"
@@ -143,29 +145,55 @@ def latest_snapshot(location: Path) -> Path:
     raise SnapshotError(f"no snapshot found at {location}")
 
 
-def _read_rows(path: Path) -> list[str]:
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise SnapshotError(f"cannot read {path}: {exc.strerror}") from exc
+def _load_manifest(path: Path, *, required: bool) -> dict[str, Any] | None:
+    """The manifest next to ``path``, after checking the archive's checksum and name."""
     manifest = _manifest_path(path)
-    if manifest.exists():
-        try:
-            expected = json.loads(manifest.read_text())["sha256"]
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            raise SnapshotError(f"unreadable manifest {manifest.name}") from exc
-        if hashlib.sha256(raw).hexdigest() != expected:
-            raise SnapshotError(f"checksum mismatch for {path.name}: the file is not the snapshot")
+    if not manifest.exists():
+        if required:
+            raise SnapshotError(
+                f"no manifest {manifest.name}: refusing an unverified snapshot "
+                "(use --allow-unverified for development only)"
+            )
+        return None
     try:
-        return gzip.decompress(raw).decode("utf-8", errors="replace").splitlines()
-    except (OSError, EOFError, gzip.BadGzipFile) as exc:
+        data = json.loads(manifest.read_text())
+        expected = str(data["sha256"])
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while block := handle.read(1 << 20):
+                digest.update(block)
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
+        raise SnapshotError(f"unreadable manifest or archive for {path.name}") from exc
+    if not isinstance(data, dict) or data.get("file", path.name) != path.name:
+        raise SnapshotError(f"manifest {manifest.name} describes another file")
+    if digest.hexdigest() != expected:
+        raise SnapshotError(f"checksum mismatch for {path.name}: the file is not the snapshot")
+    return data
+
+
+def _check_counts(manifest: dict[str, Any], rows: int, by_source: Counter[str], name: str) -> None:
+    if manifest.get("total") != rows or manifest.get("by_source") != dict(
+        sorted(by_source.items())
+    ):
+        raise SnapshotError(
+            f"{name} does not match its manifest (total/by_source): rows were added, removed "
+            "or rejected"
+        )
+
+
+def _read_rows(path: Path) -> list[bytes | None]:
+    try:
+        return list(iter_lines(path))
+    except InputTooLarge as exc:
+        raise SnapshotError(f"{path.name}: {exc}") from exc
+    except (OSError, EOFError, gzip.BadGzipFile, zlib.error) as exc:
         raise SnapshotError(f"{path.name} is not a readable gzip archive") from exc
 
 
 def _row_to_wire(index: int, line: str) -> tuple[CardDraft, str, list[str]] | Rejection:
     try:
         data = json.loads(line)
-    except ValueError:
+    except (ValueError, RecursionError):
         return Rejection(index=index, reason="line is not valid JSON")
     if not isinstance(data, dict):
         return Rejection(index=index, reason="row is not a JSON object")
@@ -176,28 +204,45 @@ def _row_to_wire(index: int, line: str) -> tuple[CardDraft, str, list[str]] | Re
     except ValidationError as exc:
         return Rejection(index=index, reason=f"invalid card: {exc.errors()[0]['msg']}"[:200])
     if content_hash_of(card.text) != card.content_hash:
-        return Rejection(index=index, reason="text does not match its content hash", url=card.url)
+        return Rejection(
+            index=index, reason="text does not match its content hash", url=url_label(card.url)
+        )
+    try:
+        card = scrub_card(card)  # a snapshot is not trusted: same scrubbing as a fresh item
+    except (Rejected, ValueError) as exc:
+        reason = exc.reason if isinstance(exc, Rejected) else "bad url"
+        return Rejection(index=index, reason=reason, url=url_label(card.url))
     return card, card_id, platforms
 
 
-async def restore_snapshot(kb: KbClient, path: Path, *, batch_size: int = MAX_BATCH) -> RunReport:
+async def restore_snapshot(
+    kb: KbClient, path: Path, *, batch_size: int = MAX_BATCH, allow_unverified: bool = False
+) -> RunReport:
     if not 1 <= batch_size <= MAX_BATCH:
         raise ValueError(f"batch_size must be between 1 and {MAX_BATCH}, got {batch_size}")
+    manifest = await asyncio.to_thread(_load_manifest, path, required=not allow_unverified)
     lines = await asyncio.to_thread(_read_rows, path)
     report = RunReport(run_id="restore")
     cards: list[CardDraft] = []
     ids: list[str] = []
     sightings: list[dict[str, Any]] = []
-    for index, line in enumerate(lines):
-        if not line.strip():
+    raw_sources: Counter[str] = Counter()
+    for index, raw in enumerate(lines):
+        if raw is not None and not raw.strip():
             continue
         report.read += 1
+        if raw is None:
+            reject(report, Rejection(index=index, reason="line is longer than the allowed maximum"))
+            report.dropped += 1
+            continue
+        line = raw.decode("utf-8", errors="replace")
         parsed = _row_to_wire(index, line)
         if isinstance(parsed, Rejection):
             reject(report, parsed)
             report.dropped += 1
             continue
         card, card_id, platforms = parsed
+        raw_sources[card.source] += 1
         cards.append(card)
         ids.append(card_id)
         sightings += [
@@ -208,6 +253,8 @@ async def restore_snapshot(kb: KbClient, path: Path, *, batch_size: int = MAX_BA
     if not cards:
         raise SnapshotError(f"no cards in {path.name}")
     report.rejected = 0  # rows are counted once, as dropped
+    if manifest is not None:
+        _check_counts(manifest, report.read, raw_sources, path.name)
     wire = [c.wire() for c in cards] + sightings
     for pos in range(0, len(wire), batch_size):
         batch = wire[pos : pos + batch_size]

@@ -183,3 +183,33 @@ def test_cursor_roundtrip_and_rejects_nonsense(tmp_path: Path) -> None:
     assert store.load() is None
     store.clear()
     store.clear()  # clearing twice is fine
+
+
+def test_scouts_raw_pages_row_with_a_jsonb_dict_body() -> None:
+    from datetime import UTC, datetime
+
+    row = {
+        "id": 7,
+        "source": "hackernews",
+        "url": "https://news.ycombinator.com/item?id=1",
+        "fetched_at": datetime(2026, 2, 1, tzinfo=UTC),
+        "status_code": 200,
+        "content_hash": "abc",
+        "processed": False,
+        "body": {"title": "Show HN: X", "text": "hello", "score": 12, "metadata": {"a": 1}},
+    }
+    item = row_to_item(0, row)
+    assert isinstance(item, RawItem)
+    assert (item.title, item.score, item.source) == ("Show HN: X", 12, "hackernews")
+    assert item.fetched_at is not None
+
+
+def test_raw_pages_queries_are_schema_qualified_and_the_schema_is_validated() -> None:
+    from ingestion.sources import queries
+
+    read, mark = queries("scouts")
+    assert "FROM scouts.raw_pages" in read and "NOT processed" in read
+    assert "UPDATE scouts.raw_pages" in mark
+    for bad in ("scouts; drop table x", "Scouts", "a.b", ""):
+        with pytest.raises(ValueError):
+            queries(bad)

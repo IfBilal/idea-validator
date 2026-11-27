@@ -18,6 +18,8 @@ from itertools import pairwise
 from ingestion.minhash import MinHasher, jaccard
 from ingestion.models import CardDraft, PlannedCard
 
+# under this many shingles a name+summary is too short to call anything a near-duplicate
+MIN_SHINGLES = 4
 _WORD = re.compile(r"\w+", re.UNICODE)
 
 
@@ -43,6 +45,14 @@ class DedupeConfig:
             raise ValueError(f"threshold must be in (0, 1], got {self.threshold}")
         if self.bands < 1 or self.num_perm < 1 or self.num_perm % self.bands:
             raise ValueError(f"bands ({self.bands}) must divide num_perm ({self.num_perm})")
+        rows = self.num_perm // self.bands
+        if (1 / self.bands) ** (1 / rows) > self.threshold:
+            # banded LSH finds a pair with probability ~50% at (1/bands)^(1/rows); a threshold
+            # below that would silently miss many true near-duplicates
+            raise ValueError(
+                f"bands={self.bands} with num_perm={self.num_perm} cannot reach "
+                f"threshold {self.threshold}: use more bands"
+            )
 
 
 @dataclass(frozen=True)
@@ -51,8 +61,15 @@ class DedupePlan:
     duplicates: int  # raw items folded into another card
 
 
-def _order(card: CardDraft) -> tuple[date, str, str, str]:
-    return (card.published_at or date.max, card.url, card.source, card.content_hash)
+def _order(card: CardDraft) -> tuple[date, str, str, date, str, str]:
+    return (
+        card.published_at or date.max,
+        card.url,
+        card.source,
+        card.fetched_at,
+        card.name,
+        card.content_hash,
+    )
 
 
 def dedupe(cards: Sequence[CardDraft], config: DedupeConfig) -> DedupePlan:
@@ -76,7 +93,7 @@ def dedupe(cards: Sequence[CardDraft], config: DedupeConfig) -> DedupePlan:
             target = by_hash.get(card.content_hash)
         words = shingles(card.name + " " + card.summary)
         keys: list[tuple[int, tuple[int, ...]]] = []
-        if target is None and words:
+        if target is None and len(words) >= MIN_SHINGLES:
             sig = hasher.signature(words)
             keys = [(b, sig[b * rows : (b + 1) * rows]) for b in range(config.bands)]
             candidates = sorted({i for k in keys for i in buckets.get(k, ())})

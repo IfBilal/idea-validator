@@ -13,6 +13,7 @@ from ingestion.client import HttpKbClient
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("KB_URL", "http://kb:8000")
     monkeypatch.setenv("INTERNAL_TOKEN", "t")
+    monkeypatch.setenv("INGEST_TOKEN", "i")
     monkeypatch.setenv("INGESTION_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.delenv("DATABASE_URL", raising=False)
 

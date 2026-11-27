@@ -50,7 +50,7 @@ class StateStore:
         try:
             data = json.loads(self._cursor.read_text())
             cursor = Cursor(str(data["digest"]), int(data["done"]), int(data["total"]))
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):
             return None
         if not 0 <= cursor.done <= cursor.total:
             return None
@@ -75,7 +75,7 @@ class StateStore:
             return []
         out: list[dict[str, Any]] = []
         for line in lines:
-            with contextlib.suppress(ValueError):
+            with contextlib.suppress(ValueError, RecursionError):
                 out.append(json.loads(line))
         return out
 

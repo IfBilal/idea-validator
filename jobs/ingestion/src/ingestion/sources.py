@@ -5,8 +5,8 @@ counted and skipped instead of stopping the run.
 """
 
 import asyncio
-import gzip
 import json
+import re
 from collections.abc import Iterator, Mapping
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from ingestion.lines import iter_lines
 from ingestion.models import RawItem, Rejection
 
 Row = RawItem | Rejection
@@ -50,17 +51,19 @@ class JsonlSource:
         self._path = path
 
     def read(self) -> Iterator[Row]:
-        opener = gzip.open if self._path.suffix == ".gz" else open
-        with opener(self._path, "rt", encoding="utf-8", errors="replace") as handle:
-            for index, line in enumerate(handle):
-                if not line.strip():
-                    continue
-                try:
-                    data = json.loads(line)
-                except ValueError:
-                    yield Rejection(index=index, reason="line is not valid JSON")
-                    continue
-                yield parse_row(index, data)
+        for index, raw in enumerate(iter_lines(self._path)):
+            if raw is None:
+                yield Rejection(index=index, reason="line is longer than the allowed maximum")
+                continue
+            line = raw.decode("utf-8", errors="replace")
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+            except (ValueError, RecursionError):
+                yield Rejection(index=index, reason="line is not valid JSON")
+                continue
+            yield parse_row(index, data)
 
     def commit(self) -> None:
         return None
@@ -75,7 +78,7 @@ def row_to_item(index: int, row: Mapping[str, Any]) -> Row:
     if isinstance(body, str):
         try:
             decoded = json.loads(body)
-        except ValueError:
+        except (ValueError, RecursionError):
             decoded = {"text": body}
         body = decoded if isinstance(decoded, dict) else {"text": body}
     if not isinstance(body, dict):
@@ -91,20 +94,33 @@ def row_to_item(index: int, row: Mapping[str, Any]) -> Row:
     return parse_row(index, merged)
 
 
-_QUERY = "SELECT id, source, url, fetched_at, body FROM raw_pages WHERE NOT processed ORDER BY id"
-_MARK = "UPDATE raw_pages SET processed = true WHERE id = ANY($1::bigint[])"
+_IDENT = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+
+
+def queries(schema: str) -> tuple[str, str]:
+    """The read and mark statements for ``<schema>.raw_pages`` (validated, never quoted)."""
+    if not _IDENT.match(schema):
+        raise ValueError(f"not a valid schema name: {schema[:40]!r}")
+    return (
+        f"SELECT id, source, url, fetched_at, body FROM {schema}.raw_pages "  # noqa: S608
+        "WHERE NOT processed ORDER BY id",
+        f"UPDATE {schema}.raw_pages SET processed = true WHERE id = ANY($1)",  # noqa: S608
+    )
 
 
 class PostgresRawPages:
-    """Unprocessed rows of the scouts' ``raw_pages`` table (docs/harness/04).
+    """Unprocessed rows of ``scouts.raw_pages``.
 
-    The table is owned by M4; this reads it and, after a fully successful run, marks the rows it
-    read as processed. Not exercised against a real database in unit tests: ``row_to_item`` is.
+    Columns: id, source, url, fetched_at, status_code, body jsonb, content_hash, processed; unique
+    on (source, url). The scouts reset ``processed`` when a page's text changes and never set it
+    true. This reads the table and, after a fully successful run, marks the rows it read as
+    processed. Not exercised against a real database in unit tests: ``row_to_item`` is.
     """
 
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, *, schema: str = "scouts") -> None:
         self._dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")
-        self._ids: list[int] = []
+        self._read_sql, self._mark_sql = queries(schema)
+        self._ids: list[Any] = []
 
     def read(self) -> Iterator[Row]:
         import asyncpg  # type: ignore[import-untyped]  # only this reader needs a database
@@ -112,12 +128,12 @@ class PostgresRawPages:
         async def fetch() -> list[Mapping[str, Any]]:
             conn = await asyncpg.connect(self._dsn, timeout=10)
             try:
-                return [dict(r) for r in await conn.fetch(_QUERY, timeout=60)]
+                return [dict(r) for r in await conn.fetch(self._read_sql, timeout=60)]
             finally:
                 await conn.close()
 
         rows = asyncio.run(fetch())
-        self._ids = [int(r["id"]) for r in rows]
+        self._ids = [r["id"] for r in rows]
         for index, row in enumerate(rows):
             yield row_to_item(index, row)
 
@@ -129,7 +145,7 @@ class PostgresRawPages:
         async def mark() -> None:
             conn = await asyncpg.connect(self._dsn, timeout=10)
             try:
-                await conn.execute(_MARK, self._ids, timeout=60)
+                await conn.execute(self._mark_sql, self._ids, timeout=60)
             finally:
                 await conn.close()
 

@@ -1,23 +1,25 @@
 """``python -m ingestion run|snapshot|restore``.
 
 Exit codes: 0 done, 1 the run failed part-way (re-run to resume), 2 bad usage or configuration,
-3 the snapshot is missing, empty or untrustworthy. Every command prints one JSON line (the
-report) as its last line of stdout, after the JSON log lines.
+3 the snapshot is missing, empty or untrustworthy, 4 restore dropped rows or ids differ.
+Every command prints one JSON line (the report) as its last stdout line, after the JSON logs.
 """
 
 import argparse
 import asyncio
 import json
 import sys
+import zlib
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from common.errors import DomainError
+from common.errors import DomainError, Forbidden, Unauthorized
 from common.logging import configure_logging
 from ingestion.client import HttpKbClient
 from ingestion.config import Settings
+from ingestion.lines import InputTooLarge
 from ingestion.models import KbClient
 from ingestion.pipeline import RunReport, run_ingestion
 from ingestion.snapshot import SnapshotError, latest_snapshot, restore_snapshot, write_snapshot
@@ -39,6 +41,7 @@ def make_kb(settings: Settings) -> KbClient:
     return HttpKbClient(
         settings.kb_url,
         internal_token=token,
+        ingest_token=settings.ingest_token.get_secret_value() if settings.ingest_token else None,
         timeout_s=settings.ingestion_timeout_s,
         max_retries=settings.ingestion_max_retries,
     )
@@ -56,6 +59,11 @@ def _parser() -> argparse.ArgumentParser:
     snap.add_argument("--date", help="snapshot date (default: today, UTC)")
     restore = sub.add_parser("restore", help="load a snapshot back through M6 /ingest")
     restore.add_argument("path", nargs="?", type=Path, default=DEFAULT_SNAPSHOT_DIR)
+    restore.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="development only: restore a snapshot that has no manifest",
+    )
     return parser
 
 
@@ -74,7 +82,9 @@ def _source(args: argparse.Namespace, settings: Settings) -> RawSource:
             raise UsageError(f"input file not found: {args.input}")
         return JsonlSource(args.input)
     if settings.database_url is not None:
-        return PostgresRawPages(settings.database_url.get_secret_value())
+        return PostgresRawPages(
+            settings.database_url.get_secret_value(), schema=settings.ingestion_raw_pages_schema
+        )
     raise UsageError("give --input FILE, or set DATABASE_URL to read the scouts' raw_pages")
 
 
@@ -105,10 +115,14 @@ async def _snapshot(args: argparse.Namespace, kb: KbClient) -> int:
 
 async def _restore(args: argparse.Namespace, settings: Settings, kb: KbClient) -> int:
     report = await restore_snapshot(
-        kb, latest_snapshot(args.path), batch_size=settings.ingestion_batch_size
+        kb,
+        latest_snapshot(args.path),
+        batch_size=settings.ingestion_batch_size,
+        allow_unverified=args.allow_unverified,
     )
     _emit(report)
-    return 0
+    # a seed that dropped rows or got other ids than the snapshot names is not a clean seed
+    return 4 if report.dropped or report.id_mismatches else 0
 
 
 def main(argv: list[str] | None = None, *, kb_factory: KbFactory = make_kb) -> int:
@@ -122,6 +136,8 @@ def main(argv: list[str] | None = None, *, kb_factory: KbFactory = make_kb) -> i
     try:
         settings = Settings()
         configure_logging(settings.service_name, settings.log_level)
+        if args.command in ("run", "restore") and settings.ingest_token is None:
+            raise UsageError("INGEST_TOKEN is not set: M6 refuses writes without X-Ingest-Token")
         kb = kb_factory(settings)
         runners: dict[str, Any] = {
             "run": lambda: _run(args, settings, kb),
@@ -132,6 +148,19 @@ def main(argv: list[str] | None = None, *, kb_factory: KbFactory = make_kb) -> i
         return code
     except UsageError as exc:
         print(f"usage error: {exc}", file=sys.stderr)
+        return 2
+    except (Forbidden, Unauthorized) as exc:
+        print(
+            f"usage error: the knowledge base refused the credentials ({exc.message}); "
+            "check INTERNAL_TOKEN and INGEST_TOKEN",
+            file=sys.stderr,
+        )
+        return 2
+    except InputTooLarge as exc:
+        print(f"usage error: {exc}", file=sys.stderr)
+        return 2
+    except (EOFError, OSError, zlib.error) as exc:
+        print(f"usage error: unreadable input: {exc}", file=sys.stderr)
         return 2
     except SnapshotError as exc:
         print(f"snapshot error: {exc}", file=sys.stderr)

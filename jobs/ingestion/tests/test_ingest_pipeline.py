@@ -8,6 +8,7 @@ import pytest
 from ingest_fakes import FakeKb
 from synthetic import synthetic_items, write_jsonl
 
+from common.errors import Unauthorized
 from ingestion.dedupe import DedupeConfig
 from ingestion.pipeline import RunReport, run_ingestion
 from ingestion.sources import JsonlSource
@@ -145,7 +146,7 @@ async def test_unicode_and_huge_text_go_through(tmp_path: Path) -> None:
             "source": "reddit",
             "url": "https://a.com/日本",
             "title": "日本語のアプリ \U0001f680",
-            "text": "word " * 300_000,
+            "text": "word " * 150_000,
         }
     ]
     kb = FakeKb()
@@ -223,13 +224,13 @@ async def test_one_card_the_kb_refuses_is_dropped_and_the_rest_stored(
     assert len(kb.cards) == 9
 
 
-async def test_a_bad_token_fails_at_once_without_retrying_the_batches(
+async def test_a_bad_token_raises_at_once_without_retrying_the_batches(
     raw: Path, tmp_path: Path
 ) -> None:
     kb = FakeKb()
     kb.unauthorized = True
-    report = await run(raw, kb, tmp_path / "st")
-    assert report.status == "failed"
+    with pytest.raises(Unauthorized):
+        await run(raw, kb, tmp_path / "st")
     assert len(kb.calls) == 1
 
 

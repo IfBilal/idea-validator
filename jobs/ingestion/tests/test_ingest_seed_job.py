@@ -20,7 +20,8 @@ def test_the_seed_job_is_hardened_calls_only_m6_and_is_not_in_the_base_kustomiza
     assert container["command"][:3] == ["python", "-m", "ingestion"]
     env = {e["name"]: e for e in container["env"]}
     assert env["KB_URL"]["value"] == "http://kb:8000"
-    assert "secretKeyRef" in env["INTERNAL_TOKEN"]["valueFrom"]  # the token is never a literal
+    for name in ("INTERNAL_TOKEN", "INGEST_TOKEN"):
+        assert "secretKeyRef" in env[name]["valueFrom"]  # tokens are never literals
     base = (ROOT / "k8s" / "base" / "kustomization.yaml").read_text()
     assert "jobs/seed.yaml" not in base
 

@@ -29,7 +29,7 @@ its `card_id`) and indexes it, so the job sends cards, not chunks.
 ## Commands
 
 ```bash
-export KB_URL=http://localhost:8000 INTERNAL_TOKEN=...          # M6 address and token (never in git)
+export KB_URL=http://localhost:8000 INTERNAL_TOKEN=... INGEST_TOKEN=...   # M6 address and tokens (never in git)
 uv run --package idea-validator-ingestion python -m ingestion run --input raw.jsonl     # ingest
 uv run --package idea-validator-ingestion python -m ingestion run                       # from raw_pages (DATABASE_URL)
 uv run --package idea-validator-ingestion python -m ingestion snapshot                  # data/snapshots/cards-YYYYMMDD.jsonl.gz + manifest
@@ -39,22 +39,24 @@ make seed                                                       # kind cluster: 
 ```
 
 Exit codes: 0 done, 1 the run failed part-way (run again to resume), 2 bad usage or configuration, 3 snapshot
-missing, empty or corrupt. The last stdout line is the JSON report (`added`, `updated`, `unchanged`, `dropped`,
+missing, empty, corrupt or too large, 4 restore dropped rows or got other ids than the snapshot names. The last stdout line is the JSON report (`added`, `updated`, `unchanged`, `dropped`,
 `duplicates`, ...).
 
 ## Configuration (environment)
 
-`KB_URL`, `INTERNAL_TOKEN` (Secret), `DATABASE_URL` (Secret, only for `raw_pages`), `INGESTION_BATCH_SIZE` (1-50),
+`KB_URL`, `INTERNAL_TOKEN` and `INGEST_TOKEN` (Secrets; M6 write endpoints need both, `run` and `restore` exit 2 without `INGEST_TOKEN`, `snapshot` does not), `DATABASE_URL` (Secret, only for `raw_pages`), `INGESTION_BATCH_SIZE` (1-50),
 `INGESTION_MAX_RETRIES` (0-2), `INGESTION_TIMEOUT_S`, `INGESTION_MINHASH_THRESHOLD|NUM_PERM|BANDS|SEED`,
-`INGESTION_STATE_DIR` (default `/tmp/ingestion`), `LOG_LEVEL`.
+`INGESTION_RAW_PAGES_SCHEMA` (default `scouts`), `INGESTION_STATE_DIR` (default `/tmp/ingestion`), `LOG_LEVEL`.
 
 ## Snapshots
 
 `cards-YYYYMMDD.jsonl.gz` (one card per line, sorted by id, gzip with a zero timestamp so identical corpora give
 identical bytes) and `cards-YYYYMMDD.manifest.json` (total, counts per source / platform / kind, sha256). Only
 public card fields are written. An empty knowledge base is refused, so a failed seed can never overwrite a good
-snapshot. `restore` checks the manifest checksum, skips malformed rows and rows whose text no longer matches its
-hash, and is idempotent. Large snapshots go to a release asset (see `data/snapshots/README.md`).
+snapshot. `restore` requires the manifest (`--allow-unverified` is for development only) and checks its file name, sha256,
+total and per-source counts; reads at most 256 MB decompressed and 1 MB per line, splitting on `\n` only; drops
+malformed rows and rows whose text does not match its hash; re-applies the mapper scrubbing (whitespace is
+normalised, so exotic separators become spaces); and is idempotent. Large snapshots go to a release asset (see `data/snapshots/README.md`).
 
 ## Tests
 
@@ -65,3 +67,8 @@ the `synthetic` topic) for tests only; it is never an input to a snapshot and is
 
 `docker build -f jobs/ingestion/Dockerfile -t ingestion:$(git rev-parse --short=7 HEAD) .` (multi-stage, UID 10001,
 pinned base). It carries `data/snapshots`, and its default command restores the newest one.
+
+## Residual risk
+
+Masking is pattern based: e-mails, `u/name`, `/user/name` and `@handle` are masked, but a name written in prose
+is not. Public card text is the only data kept; author fields are never read. `@word` in code samples is masked too.

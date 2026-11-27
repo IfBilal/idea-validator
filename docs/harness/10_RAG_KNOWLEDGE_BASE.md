@@ -75,7 +75,7 @@ run freshness + coverage check → M13 drift report
 embedding and indexing, so the job sends *cards* to `POST /ingest` (batches of at most 50, token, 2 retries, resume
 cursor) instead of chunks to Qdrant. Platforms are recorded by re-posting the same content once per extra platform
 (M6 adds a `card_sources` row). `ingestion_runs` is a JSONL file in the job's state dir until M13 wants a table, and
-`index_version` is not bumped by the job (M6 invalidates its own cache on ingest). `make seed` builds the ingestion
+there is no `index_version` or retrieval cache in M6 yet (`services/kb` has neither), so the job bumps nothing; that is tracked separately. `make seed` builds the ingestion
 image, which carries `data/snapshots`, and runs the generated `seed` Job (`k8s/jobs/seed.yaml`, not in the base kustomization).
 
 **Repeatable without duplicates** (M6i-02): running the job twice on the same raw pages leaves counts unchanged

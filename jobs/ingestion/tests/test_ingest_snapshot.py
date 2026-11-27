@@ -121,7 +121,7 @@ async def test_restore_skips_malformed_and_tampered_rows_and_reports_them(tmp_pa
     tampered["text"] = "changed after the hash was taken"
     bad = [json.dumps(tampered), "{broken", "[]", json.dumps({"name": "x"}), "", *lines[1:]]
     fresh = FakeKb()
-    report = await restore_snapshot(fresh, rewrite(path, bad))
+    report = await restore_snapshot(fresh, rewrite(path, bad), allow_unverified=True)
     assert report.added == 7 and report.dropped == 4
     assert len(fresh.cards) == 7
 
@@ -150,7 +150,7 @@ async def test_restore_of_a_missing_or_empty_file_fails_loudly(tmp_path: Path) -
     empty = tmp_path / "e.jsonl.gz"
     empty.write_bytes(gzip.compress(b""))
     with pytest.raises(SnapshotError, match="no cards"):
-        await restore_snapshot(FakeKb(), empty)
+        await restore_snapshot(FakeKb(), empty, allow_unverified=True)
 
 
 def test_latest_snapshot_picks_the_newest_dated_file(tmp_path: Path) -> None:

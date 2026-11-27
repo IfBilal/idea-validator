@@ -10,6 +10,7 @@ import hashlib
 import re
 from datetime import UTC, date, datetime
 from typing import Any, get_args
+from urllib.parse import urlsplit
 
 from common.schemas.types import Kind
 from ingestion.models import MAX_TEXT_CHARS, CardDraft, RawItem, Stage
@@ -20,11 +21,15 @@ MAX_SUMMARY = 300
 MAX_PROBLEM = 600
 MAX_TAGS = 20
 MAX_TAG_LEN = 60
-_MAX_INPUT = 400_000  # cut before any regex runs: a hostile body costs almost nothing
+_MAX_INPUT = MAX_TEXT_CHARS  # cut before any regex runs: a hostile body costs almost nothing
 
 _HIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f​-‏‪-‮⁠-⁤﻿]")
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-_HANDLE = re.compile(r"(?<![\w])/?(?:u|user)/[A-Za-z0-9_-]{2,40}")
+# every pattern below is linear: bounded repeats, no nested quantifiers, anchored by a lookbehind
+_LOCAL_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.+-")
+_DOMAIN = re.compile(r"[A-Za-z0-9_-]{1,63}(?:\.[A-Za-z0-9_-]{1,63}){1,8}")
+_MAX_LOCAL = 64
+_HANDLE = re.compile(r"(?<![\w/])/?(?:u|user)/[A-Za-z0-9_-]{2,40}")
+_AT_HANDLE = re.compile(r"(?<![\w@.])@[A-Za-z0-9_]{2,40}")
 _SPACES = re.compile(r"[^\S\n]+")
 _BLANKS = re.compile(r"\n{3,}")
 _HN_PREFIX = re.compile(r"^\s*(?:show|ask|launch|tell)\s+hn\s*[:\-\u2013\u2014]\s*", re.IGNORECASE)
@@ -60,12 +65,46 @@ class Rejected(Exception):
         self.url = url
 
 
+def _mask_emails(text: str) -> str:
+    """Replace e-mail addresses in linear time: find each '@', then expand a bounded distance."""
+    out: list[str] = []
+    last = 0
+    at = text.find("@")
+    while at != -1:
+        start = at
+        floor = max(last, at - _MAX_LOCAL)
+        while start > floor and text[start - 1] in _LOCAL_CHARS:
+            start -= 1
+        domain = _DOMAIN.match(text, at + 1) if start < at else None
+        if domain is not None:
+            out.append(text[last:start])
+            out.append("[email removed]")
+            last = domain.end()
+            at = text.find("@", last)
+        else:
+            at = text.find("@", at + 1)
+    out.append(text[last:])
+    return "".join(out)
+
+
 def _clean(text: str) -> str:
     text = _HIDDEN.sub("", text[:_MAX_INPUT])
-    text = _EMAIL.sub("[email removed]", text)
+    text = _mask_emails(text)
     text = _HANDLE.sub("[user removed]", text)
-    text = "\n".join(_SPACES.sub(" ", line).strip() for line in text.splitlines())
+    text = _AT_HANDLE.sub("[user removed]", text)
+    text = "\n".join(_SPACES.sub(" ", line).strip() for line in text.split("\n"))
     return _BLANKS.sub("\n\n", text).strip()
+
+
+def url_label(raw: str) -> str:
+    """What a log or report may say about a URL: host and a hash of the path, never the query."""
+    try:
+        parts = urlsplit(raw.strip())
+        host = (parts.hostname or "")[:100]
+    except ValueError:
+        host = ""
+    digest = hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:8]
+    return f"{host or 'unparseable'}#{digest}"
 
 
 def _cut(text: str, limit: int) -> str:
@@ -125,12 +164,42 @@ def content_hash_of(text: str) -> str:
     return hashlib.sha256(" ".join(text.split()).lower().encode()).hexdigest()
 
 
+def _refuse_profile(url: str) -> None:
+    if urlsplit(url).path.lower().startswith(("/user/", "/u/")):
+        raise Rejected("profile url: a person's page is not a card", url_label(url))
+
+
+def scrub_card(card: CardDraft) -> CardDraft:
+    """Re-apply the mapper's scrubbing to a stored card (restore never trusts a snapshot)."""
+    url = normalise_url(card.url)
+    _refuse_profile(url)
+    name = _cut(" ".join(_clean(card.name).split()), MAX_NAME)
+    text = _clean(card.text)[:MAX_TEXT_CHARS]
+    if not name or not text:
+        raise Rejected("empty after scrubbing", url_label(url))
+    summary = _cut(" ".join(_clean(card.summary).split()), MAX_SUMMARY)
+    problem = _clean(card.problem) if card.problem else None
+    customer = _clean(card.customer) if card.customer else None
+    return card.model_copy(
+        update={
+            "url": url,
+            "name": name,
+            "summary": summary,
+            "text": text,
+            "problem": problem or None,
+            "customer": customer or None,
+            "content_hash": content_hash_of(text),
+        }
+    )
+
+
 def map_item(item: RawItem, *, fetched_on: date) -> CardDraft:
     """Build the card for one raw item, or raise ``Rejected`` with the reason."""
     try:
         url = normalise_url(item.url)
-    except ValueError as exc:
-        raise Rejected(f"bad url: {exc}", item.url[:200]) from None
+    except ValueError:
+        raise Rejected("bad url: not an http(s) page", url_label(item.url)) from None
+    _refuse_profile(url)
     title = _HN_PREFIX.sub("", _clean(item.title)).strip()
     body = _clean(item.text)
     if not title and not body:

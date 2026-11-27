@@ -13,6 +13,7 @@ MAX_BATCH = 50  # M6 refuses more than 50 cards per POST /ingest
 class Settings(ServiceSettings):
     service_name: str = "ingestion"
     kb_url: str | None = None
+    ingest_token: SecretStr | None = None  # M6 write endpoints (Secret INGEST_TOKEN)
     database_url: SecretStr | None = None  # the scouts' raw_pages table (read only)
     ingestion_batch_size: int = Field(default=MAX_BATCH, ge=1, le=MAX_BATCH)
     ingestion_max_retries: int = Field(default=2, ge=0, le=2)
@@ -21,6 +22,7 @@ class Settings(ServiceSettings):
     ingestion_minhash_num_perm: int = Field(default=128, ge=1)
     ingestion_minhash_bands: int = Field(default=32, ge=1)
     ingestion_minhash_seed: int = 1
+    ingestion_raw_pages_schema: str = "scouts"
     ingestion_state_dir: Path = Path("/tmp/ingestion")  # noqa: S108 (the Job's emptyDir)
 
     def dedupe_config(self) -> DedupeConfig:
