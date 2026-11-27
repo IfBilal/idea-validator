@@ -1,19 +1,24 @@
 # M5 LLM proxy: model aliases. Provider hosts MUST be on the allow-list in sources.yaml (checked at start-up).
 # API keys are read from the environment variable named in api_key_env (a K8s Secret), never from this file.
 # Prices are USD per million tokens and drive the per-run cost accounting (config/budgets.yaml caps spend).
-version: "l1"
+# Model ids are the provider's: a retired id turns every /llm call into a 502. Verified live on 2026-11-27 with
+# services/tools/tests/live (llama-3.3-70b-versatile and llama-3.1-8b-instant were gone, 404). Re-run that test
+# before a demo or release. Prices are from 2026 public listings, not Groq's own page: re-check them there.
+# Both models are reasoning models: their thinking tokens count against max_tokens, so callers must ask for at
+# least 400 (the scorer uses 800); at 120 the 120b model got cut off and Groq answered 400 json_validate_failed.
+version: "l2"
 aliases:
   hosted-default:
     provider: groq
     base_url: https://api.groq.com/openai/v1
-    model: llama-3.3-70b-versatile
+    model: openai/gpt-oss-120b
     api_key_env: GROQ_API_KEY
-    price_in_per_mtok: 0.59
-    price_out_per_mtok: 0.79
+    price_in_per_mtok: 0.15
+    price_out_per_mtok: 0.60
   hosted-cheap:
     provider: groq
     base_url: https://api.groq.com/openai/v1
-    model: llama-3.1-8b-instant
+    model: openai/gpt-oss-20b
     api_key_env: GROQ_API_KEY
-    price_in_per_mtok: 0.05
-    price_out_per_mtok: 0.08
+    price_in_per_mtok: 0.075
+    price_out_per_mtok: 0.30
