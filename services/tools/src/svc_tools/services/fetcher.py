@@ -63,7 +63,35 @@ class PinnedHttpxFetcher:
                 "upstream did not answer in time", {"host": checked.host}
             ) from exc
 
+    async def post(
+        self,
+        checked: CheckedUrl,
+        headers: dict[str, str],
+        body: bytes,
+        timeout_s: float,
+        max_bytes: int,
+    ) -> RawResponse:
+        """POST JSON to the checked address (the LLM proxy). Same pinning, limits and deadline."""
+        try:
+            async with asyncio.timeout(self._deadline):
+                return await self._send("POST", checked, timeout_s, max_bytes, headers, body)
+        except TimeoutError as exc:
+            raise UpstreamTimeout(
+                "upstream did not answer in time", {"host": checked.host}
+            ) from exc
+
     async def _get(self, checked: CheckedUrl, timeout_s: float, max_bytes: int) -> RawResponse:
+        return await self._send("GET", checked, timeout_s, max_bytes, {}, None)
+
+    async def _send(
+        self,
+        method: str,
+        checked: CheckedUrl,
+        timeout_s: float,
+        max_bytes: int,
+        extra_headers: dict[str, str],
+        body_in: bytes | None,
+    ) -> RawResponse:
         last: Exception | None = None
         for address in checked.addresses:
             literal = f"[{address}]" if ":" in address else address
@@ -73,6 +101,7 @@ class PinnedHttpxFetcher:
                 "User-Agent": self._user_agent,
                 "Accept": "application/json, text/html;q=0.8, text/plain;q=0.7",
                 "Accept-Encoding": "identity",
+                **extra_headers,
             }
             try:
                 async with (
@@ -83,7 +112,11 @@ class PinnedHttpxFetcher:
                         trust_env=False,
                     ) as client,
                     client.stream(
-                        "GET", url, headers=headers, extensions={"sni_hostname": checked.host}
+                        method,
+                        url,
+                        headers=headers,
+                        content=body_in,
+                        extensions={"sni_hostname": checked.host},
                     ) as response,
                 ):
                     encoding = response.headers.get("content-encoding", "").strip().lower()
