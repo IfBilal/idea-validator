@@ -45,7 +45,7 @@ known-first-party = ["common"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["libs", "services"]
+files = ["libs", "services", "jobs"]
 exclude = ["services/profile/tests/integration/conftest.py"]  # same module name as the verdict one
 strict = true
 plugins = ["pydantic.mypy"]
