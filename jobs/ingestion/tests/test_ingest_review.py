@@ -27,6 +27,11 @@ TODAY = date(2026, 3, 1)
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.fixture(autouse=True)
+def _tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INGEST_TOKEN", "i")
+
+
 def item(**kw: Any) -> RawItem:
     base = {"source": "hackernews", "url": "https://example.com/p", "title": "T", "text": "body"}
     return RawItem.model_validate(base | kw)
