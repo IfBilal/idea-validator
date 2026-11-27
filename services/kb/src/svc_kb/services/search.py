@@ -6,6 +6,7 @@ cited; a point id is a UUID derived from the evidence id, so re-indexing a card 
 """
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Literal, Protocol
@@ -42,13 +43,14 @@ class IndexedCard:
     niche_tags: list[str]
     published_at: date | None
     chunks: list[Chunk]
+    card_name: str = ""
 
 
 @dataclass(frozen=True)
 class SearchFilters:
-    sources: list[str] | None = None
-    kinds: list[str] | None = None
-    niches: list[str] | None = None
+    sources: Sequence[str] | None = None
+    kinds: Sequence[str] | None = None
+    niches: Sequence[str] | None = None
     published_after: date | None = None
     published_before: date | None = None
 
@@ -63,6 +65,8 @@ class Hit:
     kind: str
     url: str
     published_at: date | None
+    card_name: str = ""
+    niche: str | None = None
 
 
 def _point_id(evidence_id: str) -> str:
@@ -120,6 +124,9 @@ class ChunkIndex:
             self._collection, "published_ts", models.PayloadSchemaType.INTEGER
         )
 
+    async def ready(self) -> bool:
+        return await self._c.collection_exists(self._collection)
+
     async def count(self) -> int:
         return (await self._c.count(self._collection, exact=True)).count
 
@@ -156,6 +163,7 @@ class ChunkIndex:
                     "card_id": card.card_id,
                     "text": c.text,
                     "url": card.url,
+                    "card_name": card.card_name,
                     "source": card.source,
                     "kind": card.kind,
                     "niche_tags": card.niche_tags,
@@ -239,4 +247,6 @@ def _hit(p: models.ScoredPoint) -> Hit:
         kind=pl["kind"],
         url=pl["url"],
         published_at=date.fromisoformat(published) if published else None,
+        card_name=pl.get("card_name", ""),
+        niche=(pl.get("niche_tags") or [None])[0],
     )
