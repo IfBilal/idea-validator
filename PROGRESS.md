@@ -53,6 +53,7 @@ _(agent writes a 3–10 line plan here before starting a task: files to touch, t
 - [ ] Create GitHub repo + branch protection (owner action) (P0-T01)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
+- [ ] **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
 - [ ] Decide which laptop hosts kind + Jenkins (≥ 16 GB RAM)
 - [ ] Colab / Kaggle account for fine-tuning
 - [ ] Ask instructor the open questions in `docs/harness/27_ASSUMPTIONS_AND_OPEN_QUESTIONS.md` §B
