@@ -85,3 +85,9 @@ class UpstreamTimeout(DomainError):
 
 class UpstreamError(DomainError):
     code, status_code = ErrorCode.UPSTREAM_ERROR, 502
+
+
+class Unavailable(DomainError):
+    """A dependency this service cannot work without is down (fail closed, answer 503)."""
+
+    code, status_code = ErrorCode.UPSTREAM_ERROR, 503

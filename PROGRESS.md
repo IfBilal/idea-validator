@@ -54,6 +54,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P0-T09, P0-T10 README, AI log | #12 | 2026-11-26 | |
 | P1-T01 service template + app factory | #12 | 2026-11-26 | Podman and Docker 29 builds verified |
 | P1-T02 13 stub services | #12 | 2026-11-26 | all 13 images build |
+| P2-T09 (rest) gateway: register/login/JWT, /profile, rate limits, CORS, security headers, 32 KiB body limit | in review | 2026-11-27 | 117 tests; limiter shared through Redis |
 | P2-T01..T05 M11 verdict engine | #12 | 2026-11-26 | 24 golden vectors, 99% coverage, verdict-guardian reviewed twice |
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
 | P0-T07 pr-checks workflow repaired | #16 | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
