@@ -6,9 +6,9 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Phases 0-2 done; Phases 4-6 built on the Dev B side and merged (M3 Validate + Discover + challenge + what-if, M7, M8, M9, M12, gateway runs/SSE, M2 versions, M13 eval + tuning); K8s base deployed on kind (Dev A); M6 KB service in progress (Dev A)** |
-| Current task | Dev B: behaviour tests across modules (P5-T09, P9-T07), orchestrator restart recovery, then Phase 10 tuning on real labelled data, Phase 11/12 (report, screenshots checklist, fresh-clone README test). Dev A: KB search/API (#56), scouts + ingestion, UI, Jenkins, fine-tuning |
-| Not built yet | M6 KB HTTP API, M4 scouts + M6i ingestion (so no real cards), M1 UI, Jenkins, M10t fine-tuning; no run has gone through real evidence end to end |
+| Current phase | **Phases 0-2 done; Phases 4-6 built on the Dev B side and merged (M3 Validate + Discover + challenge + what-if, M7, M8, M9, M12, gateway runs/SSE, M2 versions, M13 eval + tuning); K8s base deployed on kind (Dev A); M6 KB storage (#55), hybrid search (#56) and HTTP API (this PR) built (Dev A)** |
+| Current task | Dev B: behaviour tests across modules (P5-T09, P9-T07), orchestrator restart recovery, then Phase 10 tuning on real labelled data, Phase 11/12 (report, screenshots checklist, fresh-clone README test). Dev A: KB seed + retrieval eval (#29 last slices), scouts + ingestion, UI, Jenkins, fine-tuning |
+| Not built yet | M6 seed data + retrieval eval, M4 scouts + M6i ingestion (so no real cards), M1 UI, Jenkins, M10t fine-tuning; no run has gone through real evidence end to end |
 | Last green main commit | merge of #55 (all PR checks green) |
 | Last Jenkins deploy | none yet |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
