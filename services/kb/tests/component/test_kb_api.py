@@ -16,7 +16,9 @@ from svc_kb.services.search import ChunkIndex, IndexedCard
 from svc_kb.testing import DIM, FakeModels, InMemoryStore
 
 TOKEN = "t0ken"
+INGEST = "1ngest"
 AUTH = {"X-Internal-Token": TOKEN}
+WRITE = AUTH | {"X-Ingest-Token": INGEST}
 NOW = datetime(2026, 11, 27, 12, 0, tzinfo=None)
 
 DOCS = {
@@ -91,9 +93,10 @@ async def client():  # type: ignore[no-untyped-def]
             )
         )
     store = InMemoryStore([_card(c) for c in DOCS], chunks)
-    app = build_app(Settings(internal_token=SecretStr(TOKEN)), store=store, index=index)
+    settings = Settings(internal_token=SecretStr(TOKEN), ingest_token=SecretStr(INGEST))
+    app = build_app(settings, store=store, index=index)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://t", headers=AUTH
+        transport=httpx.ASGITransport(app=app), base_url="http://t", headers=WRITE
     ) as c:
         yield c
 
@@ -308,3 +311,34 @@ async def test_reindex_rebuilds_the_search_index_from_the_store(client: httpx.As
     assert r.status_code == 200 and r.json() == {"cards": 3, "chunks": 3}
     hits = (await client.post("/search", json={"query": "stripe invoice"})).json()["items"]
     assert hits[0]["card_id"] == "card_00000002"
+
+
+async def test_writes_need_the_ingest_token_on_top_of_the_internal_one(
+    client: httpx.AsyncClient,
+) -> None:
+    client.headers.pop("X-Ingest-Token")
+    assert (await client.post("/ingest", json={"cards": [_new()]})).status_code == 401
+    assert (await client.post("/reindex")).status_code == 401
+    client.headers["X-Ingest-Token"] = "wrong"
+    assert (await client.post("/ingest", json={"cards": [_new()]})).status_code == 401
+    assert (await client.get("/stats")).status_code == 200, "reads only need the internal token"
+    assert (await client.get("/cards", params={"limit": 1})).json()["total"] == 3
+
+
+async def test_writes_are_off_when_no_ingest_token_is_configured() -> None:
+    app = build_app(
+        Settings(internal_token=SecretStr(TOKEN)),
+        store=InMemoryStore([], {}),
+        index=ChunkIndex(AsyncQdrantClient(":memory:"), FakeModels(), collection="x", dim=DIM),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t", headers=WRITE
+    ) as c:
+        assert (await c.post("/ingest", json={"cards": [_new()]})).status_code == 403
+
+
+async def test_a_client_supplied_content_hash_is_ignored(client: httpx.AsyncClient) -> None:
+    await client.post("/ingest", json={"cards": [_new()]})
+    forged = _new(text="Entirely different words about quantum widgets.", content_hash="a" * 64)
+    res = (await client.post("/ingest", json={"cards": [forged]})).json()["results"][0]
+    assert res["changed"], "the server recomputed the hash from the text"
