@@ -13,7 +13,7 @@ from langgraph.types import interrupt
 from pydantic import ValidationError
 
 from common.budget import Spend
-from common.errors import BudgetExceeded, DomainError, NotFound, UpstreamError
+from common.errors import BudgetExceeded, Conflict, DomainError, NotFound, UpstreamError
 from common.schemas import DimensionScore, EvidenceItem, Verdict
 from svc_orchestrator.models.api import UnknownSpec
 
@@ -71,7 +71,9 @@ class ValidateNodes:
         profile = self.ctx.clients.profile
 
         async def load() -> Any:
-            found = await profile.get_idea_version(state.idea_id, int(spec["base_version"]))
+            found = await profile.get_idea_version(
+                state.user_id, state.idea_id, int(spec["base_version"])
+            )
             return {"text": found.text, "card": found.card}
 
         base = await self._step(
@@ -107,23 +109,9 @@ class ValidateNodes:
             timeout_s=self.t.llm,
         )
 
-        async def save() -> Any:
-            return await profile.create_idea_version(
-                state.idea_id, written.value["new_text"], written.value["change_note"]
-            )
-
-        saved = await self._step(
-            state,
-            "whatif_save",
-            tool="m2.create_idea_version",
-            inputs={"idea_id": state.idea_id, "text": written.value["new_text"]},
-            call=save,
-            timeout_s=self.t.profile,
-            memoise=False,
-        )
         return {
             "idea_text": written.value["new_text"],
-            "idea_version": saved.value,
+            "idea_version": int(spec["base_version"]) + 1,  # saved with the card, once, at the end
             "change_note": written.value["change_note"],
             "base_card": base.value["card"],
             "memo": written.memo_update,
@@ -879,6 +867,8 @@ class ValidateNodes:
             card["error"] = state.error
             card["scores"] = state.scores
         extra: Update = {}
+        if state.whatif is not None and settled and status is RunStatus.SUCCEEDED:
+            await self._save_version(state, card)  # no card is shown unless it is stored
         if status is RunStatus.SUCCEEDED and not state.degraded and not state.overrides:
             if (reason := _key_mismatch(card, state)) is not None and settled:
                 note = f"verdict not cached: {reason}"
@@ -887,6 +877,40 @@ class ValidateNodes:
             else:
                 await self._store_in_cache(state, card)
         return {**await self._finish(state, card, status), **extra}
+
+    async def _save_version(self, state: ValidateState, card: dict[str, Any]) -> None:
+        """What-if: write text, note and card as the next version in ONE idempotent M2 call."""
+        spec = state.whatif or {}
+        profile = self.ctx.clients.profile
+
+        async def call() -> Any:
+            try:
+                created = await profile.put_idea_version(
+                    user_id=state.user_id,
+                    idea_id=state.idea_id,
+                    version=state.idea_version,
+                    text=state.idea_text,
+                    change_note=state.change_note or "",
+                    card=card,
+                    idempotency_key=self.ctx.run_id,
+                    base_version=int(spec["base_version"]),
+                )
+            except Conflict as exc:
+                raise Conflict(
+                    f"{state.idea_id} has a newer version than v{spec['base_version']}, "
+                    "or another change is already in progress"
+                ) from exc
+            return {"created": created}
+
+        await self._step(
+            state,
+            "whatif_save",
+            tool="m2.put_idea_version",
+            inputs={"idea_id": state.idea_id, "version": state.idea_version},
+            call=call,
+            timeout_s=self.t.profile,
+            memoise=False,
+        )
 
     async def _store_in_cache(self, state: ValidateState, card: dict[str, Any]) -> None:
         answered = any(v is not None for v in state.answers.values())

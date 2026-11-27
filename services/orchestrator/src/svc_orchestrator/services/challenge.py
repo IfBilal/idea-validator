@@ -1,8 +1,11 @@
-"""The Challenge run (docs/harness/06 §4): load, check, new version, recompute, finish.
+"""The Challenge run (docs/harness/06 §4): load, check, recompute, save, finish.
 
 The claim is re-checked against its evidence by M12. Supported means defended and nothing changes.
-Unsupported means the claim is removed: its dimension abstains, M2 creates a new idea version,
-and M11 (never this code) recomputes the verdict for it.
+Unsupported means the claim is removed: its dimension abstains and M11 (never this code)
+recomputes the verdict for the provisional version ``base + 1``. Only then is the new version
+written to M2, in ONE idempotent call that carries the card (key = run id). A retry or a resumed
+run therefore creates exactly one version, and no failure leaves a version without a card.
+M2 answers 409 when ``base`` is not the latest version or another run already took ``base + 1``.
 """
 
 from collections.abc import Callable
@@ -14,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from common.errors import Conflict, NotFound, UpstreamError
 from common.schemas import DimensionScore
+from common.schemas.types import DIMENSIONS
 
 from ..models.challenge_state import ChallengeState
 from ..models.state import RunStatus
@@ -27,34 +31,34 @@ Route = Callable[[ChallengeState], str]
 
 # ---- pure routing ----
 def after_load(state: ChallengeState) -> str:
-    return "finish" if state.stopped else "check"
+    return "finish" if state.stopped or state.outcome else "check"  # outcome: already removed
 
 
 def after_check(state: ChallengeState) -> str:
     if state.stopped or state.outcome != "removed":
         return "finish"
-    return "version"
-
-
-def after_version(state: ChallengeState) -> str:
-    return "finish" if state.stopped else "recompute"
+    return "recompute"
 
 
 def after_recompute(state: ChallengeState) -> str:
+    return "finish" if state.stopped else "save"
+
+
+def after_save(state: ChallengeState) -> str:
     return "finish"
 
 
 EDGES: dict[str, tuple[Route, list[str]]] = {
     "load": (after_load, ["check", "finish"]),
-    "check": (after_check, ["version", "finish"]),
-    "version": (after_version, ["recompute", "finish"]),
-    "recompute": (after_recompute, ["finish"]),
+    "check": (after_check, ["recompute", "finish"]),
+    "recompute": (after_recompute, ["save", "finish"]),
+    "save": (after_save, ["finish"]),
 }
 STEP_NAMES = {
     "load": "LOAD",
     "check": "CHECK",
-    "version": "NEW_VERSION",
     "recompute": "RECOMPUTE",
+    "save": "SAVE_VERSION",
     "finish": "FINISH",
 }
 
@@ -62,8 +66,10 @@ STEP_NAMES = {
 def removal_request(
     verdict_input: dict[str, Any], dimension: str, *, version: int, run_id: str
 ) -> dict[str, Any]:
-    """The recorded M11 input with one dimension abstained and the new version number."""
+    """The recorded M11 input with one dimension abstained and the provisional version number."""
     scores = [DimensionScore.model_validate(s) for s in verdict_input["scores"]]
+    if not any(s.dimension == dimension and s.score is not None for s in scores):
+        raise Conflict(f"the claim's dimension {dimension} already abstains: nothing to remove")
     results = [
         {"claim_id": f"cl_{s.dimension}", "supported": s.dimension != dimension} for s in scores
     ]
@@ -88,7 +94,7 @@ class ChallengeNodes:
         profile = self.ctx.clients.profile
 
         async def call() -> Any:
-            found = await profile.get_idea_version(state.idea_id, state.version)
+            found = await profile.get_idea_version(state.user_id, state.idea_id, state.version)
             return {"text": found.text, "card": found.card}
 
         out = await self._step(
@@ -103,14 +109,28 @@ class ChallengeNodes:
         card = out.value["card"]
         if card.get("partial") or card.get("verdict") is None:
             raise Conflict("only a settled verdict card can be challenged")
-        claim = next(
-            (c for c in card.get("claims") or [] if c.get("claim_id") == state.claim_id), None
-        )
+        claims = card.get("claims") or []
+        claim = next((c for c in claims if c.get("claim_id") == state.claim_id), None)
         if claim is None:
             raise NotFound(f"claim {state.claim_id} is not on this card")
-        if claim.get("removed"):
-            raise Conflict(f"claim {state.claim_id} was already removed")
-        return {"text": out.value["text"], "base_card": card, "claim": claim}
+        if claim.get("dimension") not in DIMENSIONS:  # fail closed: we cannot tell what to abstain
+            raise Conflict(f"claim {state.claim_id} has no valid dimension")
+        base = {"text": out.value["text"], "base_card": card, "claim": claim}
+        if claim.get("removed"):  # challenged before: answer with what happened then
+            entry = next(
+                (e for e in card.get("challenge_log") or [] if e.get("claim_id") == state.claim_id),
+                {},
+            )
+            return {
+                **base,
+                "outcome": "removed",
+                "reason": entry.get("reason") or "the claim was already removed",
+                "already_removed": True,
+                "new_version": state.version,  # the card that records the removal is this one
+                "new_card": card,
+                "saved": True,
+            }
+        return base
 
     async def check(self, state: ChallengeState) -> Update:
         claim = state.claim or {}
@@ -145,37 +165,14 @@ class ChallengeNodes:
         reason = result["reason"] if result else "the critic returned no result for this claim"
         return {"outcome": "removed", "reason": reason, "memo": out.memo_update}
 
-    async def version(self, state: ChallengeState) -> Update:
-        card = state.base_card or {}
-        if not isinstance(card.get("verdict_input"), dict):
-            raise Conflict("the card has no recorded M11 inputs, so it cannot be recomputed")
-        profile = self.ctx.clients.profile
-        note = f"challenge removed {state.claim_id}"
-
-        async def call() -> Any:
-            return await profile.create_idea_version(state.idea_id, state.text or "", note)
-
-        out = await self._step(
-            state,
-            "challenge_version",
-            tool="m2.create_idea_version",
-            inputs={"idea_id": state.idea_id, "note": note},
-            call=call,
-            timeout_s=self.t.profile,
-            memoise=False,
-        )
-        return {"new_version": out.value}
-
     async def recompute(self, state: ChallengeState) -> Update:
         base = state.base_card or {}
         claim = state.claim or {}
-        if state.new_version is None:
-            raise Conflict("no new version was created")
+        if not isinstance(base.get("verdict_input"), dict):
+            raise Conflict("the card has no recorded M11 inputs, so it cannot be recomputed")
+        version = state.version + 1  # provisional: M2 confirms it when the card is saved
         request = removal_request(
-            base["verdict_input"],
-            str(claim["dimension"]),
-            version=state.new_version,
-            run_id=self.ctx.run_id,
+            base["verdict_input"], str(claim["dimension"]), version=version, run_id=self.ctx.run_id
         )
 
         async def call() -> Any:
@@ -191,33 +188,68 @@ class ChallengeNodes:
             timeout_s=self.t.verdict,
         )
         verdict = out.value
-        if verdict.get("idea_id") != state.idea_id or verdict.get("version") != state.new_version:
+        if verdict.get("idea_id") != state.idea_id or verdict.get("version") != version:
             raise UpstreamError("M11 returned a verdict for a different idea or version")
+        note = f"challenge removed {state.claim_id}"
         claims = [
             {**c, "removed": c.get("removed", False) or c.get("claim_id") == state.claim_id}
             for c in base.get("claims") or []
-        ]
-        log = [
-            *(base.get("challenge_log") or []),
-            {"claim_id": state.claim_id, "outcome": "removed", "reason": state.reason},
         ]
         card = {
             **verdict,
             "run_id": self.ctx.run_id,
             "claims": claims,
-            "challenge_log": log,
+            "challenge_log": [
+                *(base.get("challenge_log") or []),
+                {"claim_id": state.claim_id, "outcome": "removed", "reason": state.reason},
+            ],
             "cache_hit": False,
             "evidence": base.get("evidence") or {},
-            "notes": [f"challenge removed {state.claim_id}"],
+            "notes": [note],
             "degraded": False,
             "partial": False,
             "needs_input": [],
             "changes": [],
             "verdict_input": request,
-            "change_note": f"challenge removed {state.claim_id}",
+            "change_note": note,
             "base_version": state.version,
         }
-        return {"new_card": card, "memo": out.memo_update}
+        return {"new_version": version, "new_card": card, "memo": out.memo_update}
+
+    async def save(self, state: ChallengeState) -> Update:
+        """One idempotent write of text, note and card (key = run id); 409 means we lost a race."""
+        profile = self.ctx.clients.profile
+        version = state.new_version or state.version + 1
+
+        async def call() -> Any:
+            try:
+                created = await profile.put_idea_version(
+                    user_id=state.user_id,
+                    idea_id=state.idea_id,
+                    version=version,
+                    text=state.text or "",
+                    change_note=f"challenge removed {state.claim_id}",
+                    card=state.new_card or {},
+                    idempotency_key=self.ctx.run_id,
+                    base_version=state.version,
+                )
+            except Conflict as exc:
+                raise Conflict(
+                    f"{state.idea_id} has a newer version than v{state.version}, "
+                    "or another change is already in progress"
+                ) from exc
+            return {"created": created}
+
+        await self._step(
+            state,
+            "challenge_save",
+            tool="m2.put_idea_version",
+            inputs={"idea_id": state.idea_id, "version": version},
+            call=call,
+            timeout_s=self.t.profile,
+            memoise=False,
+        )
+        return {"saved": True}
 
     async def finish(self, state: ChallengeState) -> Update:
         status = state.status if state.stopped else RunStatus.SUCCEEDED
@@ -233,15 +265,17 @@ class ChallengeNodes:
             )
         if state.outcome == "defended":
             result["supporting_quote"] = state.supporting_quote
-        if state.outcome == "removed":
+        if state.outcome == "removed" and state.saved:  # a card is shown only once it is saved
             result["new_version"] = state.new_version
             result["card"] = state.new_card
+            if state.already_removed:
+                result["already_removed"] = True
         if status is not RunStatus.SUCCEEDED:
             result["partial"] = True
             result["stop_reason"] = state.stop_reason
             result["error"] = state.error
         if status is RunStatus.SUCCEEDED:
-            if state.new_card is not None:
+            if state.saved and not state.already_removed and state.new_card is not None:
                 await self.ctx.emitter.emit("verdict", card=state.new_card)
             await self.ctx.emitter.emit("run_completed", status="succeeded")
         elif status is RunStatus.BUDGET_STOPPED:

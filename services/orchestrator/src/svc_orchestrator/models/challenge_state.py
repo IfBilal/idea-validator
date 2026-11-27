@@ -30,6 +30,8 @@ class ChallengeState(BaseModel):
     supporting_quote: str | None = None
     new_version: int | None = None
     new_card: dict[str, Any] | None = None
+    saved: bool = False  # the new version (or the existing one) is stored in M2
+    already_removed: bool = False
     card: dict[str, Any] | None = None  # the run result
 
     @property

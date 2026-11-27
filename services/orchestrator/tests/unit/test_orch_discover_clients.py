@@ -281,43 +281,159 @@ async def test_filter_with_garbage_is_an_upstream_error() -> None:
         await CriticClient(http(Rec({"accepted": "x"}))).filter_objections("r", [OBJ])
 
 
-# ---- M2 idea versions (assumed contract, see README) -------------------------------------------
-async def test_get_version_returns_text_and_card() -> None:
-    rec = Rec({"idea_id": "idea_1", "version": 2, "text": "the idea", "card": {"verdict": "GO"}})
-    out = await ProfileClient(http(rec), http(rec)).get_idea_version("idea_1", 2)
+# ---- M2 idea versions: GET and idempotent PUT --------------------------------------------------
+UID = "5f1d2c3e-0000-4000-8000-000000000001"
+
+
+def m2(rec: Rec) -> ProfileClient:
+    return ProfileClient(http(rec), http(rec))
+
+
+async def test_get_version_sends_the_owner_and_returns_text_card_and_note() -> None:
+    body = {
+        "idea_id": "idea_1",
+        "version": 2,
+        "text": "the idea",
+        "card": {"verdict": "GO"},
+        "change_note": "n",
+    }
+    rec = Rec(body)
+    out = await m2(rec).get_idea_version(UID, "idea_1", 2)
     assert rec.requests[0].url.path == "/internal/ideas/idea_1/versions/2"
-    assert (out.text, out.card) == ("the idea", {"verdict": "GO"})
+    assert dict(rec.requests[0].url.params) == {"user_id": UID}
+    assert (out.text, out.card, out.change_note) == ("the idea", {"verdict": "GO"}, "n")
+
+
+async def test_get_version_with_a_null_card_gives_an_empty_card() -> None:
+    out = await m2(Rec({"text": "t", "card": None})).get_idea_version(UID, "idea_1", 1)
+    assert out.card == {}
+
+
+async def test_get_version_falls_back_to_the_verdict_payload_field() -> None:
+    rec = Rec({"text": "t", "verdict_payload": {"verdict": "PIVOT"}})
+    out = await m2(rec).get_idea_version(UID, "idea_1", 1)
+    assert out.card == {"verdict": "PIVOT"}
 
 
 async def test_get_version_without_text_is_an_upstream_error() -> None:
-    rec = Rec({"version": 2, "card": {}})
     with pytest.raises(UpstreamError):
-        await ProfileClient(http(rec), http(rec)).get_idea_version("idea_1", 2)
+        await m2(Rec({"version": 2, "card": {}})).get_idea_version(UID, "idea_1", 2)
 
 
 async def test_missing_version_is_not_found() -> None:
-    rec = Rec({}, status=404)
     with pytest.raises(NotFound):
-        await ProfileClient(http(rec), http(rec)).get_idea_version("idea_1", 9)
+        await m2(Rec({}, status=404)).get_idea_version(UID, "idea_1", 9)
 
 
-async def test_create_version_sends_text_and_change_note_and_returns_the_number() -> None:
-    rec = Rec({"version": 3})
-    n = await ProfileClient(http(rec), http(rec)).create_idea_version(
-        "idea_1", "new text", "challenge removed cl_7"
+async def test_a_user_id_with_url_characters_is_encoded() -> None:
+    rec = Rec({"text": "t", "card": {}})
+    await m2(rec).get_idea_version("a&b=c/d", "idea_1", 1)
+    assert dict(rec.requests[0].url.params) == {"user_id": "a&b=c/d"}
+
+
+async def test_put_version_sends_the_documented_body_and_returns_created() -> None:
+    rec = Rec({"idea_id": "idea_1", "version": 3, "created": True})
+    created = await m2(rec).put_idea_version(
+        user_id=UID,
+        idea_id="idea_1",
+        version=3,
+        text="new text",
+        change_note="challenge removed cl_risk",
+        card={"verdict": "GO"},
+        idempotency_key="run_1",
+        base_version=2,
     )
-    assert rec.requests[0].method == "POST"
-    assert rec.requests[0].url.path == "/internal/ideas/idea_1/versions"
-    assert rec.sent == {"text": "new text", "change_note": "challenge removed cl_7"}
-    assert n == 3
+    assert created is True
+    assert rec.requests[0].method == "PUT"
+    assert rec.requests[0].url.path == "/internal/ideas/idea_1/versions/3"
+    assert dict(rec.requests[0].url.params) == {}
+    assert rec.sent == {
+        "user_id": UID,
+        "text": "new text",
+        "change_note": "challenge removed cl_risk",
+        "card": {"verdict": "GO"},
+        "idempotency_key": "run_1",
+        "base_version": 2,
+    }
 
 
-@pytest.mark.parametrize("body", [{}, {"version": 0}, {"version": "3"}, {"version": True}])
-async def test_create_version_with_a_bad_number_is_an_upstream_error(body: dict[str, Any]) -> None:
+async def test_put_version_replay_reports_created_false() -> None:
+    rec = Rec({"idea_id": "idea_1", "version": 3, "created": False})
+    assert await put(m2(rec)) is False
+
+
+def put(client: ProfileClient, **over: Any) -> Any:
+    args: dict[str, Any] = {
+        "user_id": UID,
+        "idea_id": "idea_1",
+        "version": 3,
+        "text": "t",
+        "change_note": "n",
+        "card": {},
+        "idempotency_key": "run_1",
+        "base_version": 2,
+    }
+    return client.put_idea_version(**{**args, **over})
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"idea_id": "idea_1", "version": 3},
+        {"idea_id": "idea_1", "version": 3, "created": "yes"},
+        {"idea_id": "other", "version": 3, "created": True},
+        {"idea_id": "idea_1", "version": 4, "created": True},
+        [],
+    ],
+)
+async def test_put_version_with_a_bad_reply_is_an_upstream_error(body: Any) -> None:
     with pytest.raises(UpstreamError):
-        await ProfileClient(http(Rec(body)), http(Rec(body))).create_idea_version("i", "t", "n")
+        await put(m2(Rec(body)))
 
 
-async def test_create_version_rejects_422() -> None:
+async def test_put_version_409_is_a_conflict_and_is_never_retried() -> None:
+    from common.errors import Conflict
+
+    rec = Rec({}, 409)
+    with pytest.raises(Conflict):
+        await put(m2(rec))
+    assert len(rec.requests) == 1
+
+
+async def test_put_version_422_is_a_validation_error() -> None:
     with pytest.raises(ValidationFailed):
-        await ProfileClient(http(Rec({}, 422)), http(Rec({}))).create_idea_version("i", "t", "n")
+        await put(m2(Rec({}, 422)))
+
+
+async def test_put_version_is_retried_on_503_with_the_same_key() -> None:
+    calls: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        if len(calls) < 3:
+            return httpx.Response(503, json={})
+        return httpx.Response(200, json={"idea_id": "idea_1", "version": 3, "created": True})
+
+    client = ProfileClient(http(handler), http(handler))
+    assert await put(client) is True
+    assert [c["idempotency_key"] for c in calls] == ["run_1"] * 3
+
+
+# ---- M8 views reject refs that are unsafe in paths and keys ------------------------------------------
+@pytest.mark.parametrize("bad", ["a/b", "../x", "", "x" * 65, "a b", "idea\n1"])
+async def test_an_idea_with_an_unsafe_ref_is_skipped(bad: str) -> None:
+    rec = Rec({"ideas": [{**IDEA, "idea_ref": bad}, IDEA], "round": 1})
+    out = await IdeationClient(http(rec)).ideate(
+        run_id="r", profile=PROFILE, niches=[], gaps=[], round_=1, previous_objections=[], count=5
+    )
+    assert [i.idea_ref for i in out.ideas] == ["idea_abc"]
+    assert out.skipped == 1
+
+
+@pytest.mark.parametrize("field", ["objection_id", "idea_ref"])
+@pytest.mark.parametrize("bad", ["a/b", "../x", "", "x" * 65])
+async def test_an_objection_with_an_unsafe_id_is_skipped(field: str, bad: str) -> None:
+    rec = Rec({"objections": [{**OBJ, field: bad}, OBJ]})
+    out = await IdeationClient(http(rec)).skeptic("run_1", [IDEA])
+    assert len(out) == 1

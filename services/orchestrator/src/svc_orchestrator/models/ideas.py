@@ -4,13 +4,15 @@ M3 cannot import M8, so these mirror only what the orchestrator reads. They igno
 validate everything they accept, so a misbehaving upstream cannot smuggle fields into a card.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from common.schemas.types import Dimension, EvidenceId
 
 Severity = Literal["fatal", "major", "minor"]
+# Model-written refs end up in thread ids, cache keys and objection ids: keep them boring.
+SafeRef = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 Scope = Literal["S", "M", "L"]
 
 
@@ -24,7 +26,7 @@ class Finding(_View):
 
 
 class Idea(_View):
-    idea_ref: str
+    idea_ref: SafeRef
     title: str
     summary: str
     target_user: str
@@ -39,8 +41,8 @@ class Idea(_View):
 
 
 class Objection(_View):
-    objection_id: str
-    idea_ref: str
+    objection_id: SafeRef
+    idea_ref: SafeRef
     dimension: Dimension
     claim: str
     severity: Severity

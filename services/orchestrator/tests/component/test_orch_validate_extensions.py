@@ -326,6 +326,7 @@ def base_world(*, with_change: bool = True) -> FakeWorld:
     world.versions[("idea_1", 1)] = {
         "idea_id": "idea_1",
         "version": 1,
+        "user_id": "u1",
         "text": "A CLI that lints Dockerfiles",
         "card": card,
     }
@@ -345,6 +346,7 @@ async def test_a_proposed_change_is_rewritten_saved_as_a_new_version_and_rescore
         "change_text": "Differentiate with offline mode",
     }
     assert world.versions[("idea_1", 2)]["text"].startswith("A CLI that lints Dockerfiles (revised")
+    assert world.versions[("idea_1", 2)]["card"]["version"] == 2
     assert state.idea_version == 2
     sent = world.bodies(*VERDICT)[0]
     assert sent["version"] == 2
@@ -395,12 +397,78 @@ async def test_a_failing_rewrite_fails_the_run_without_creating_a_version() -> N
     assert ("idea_1", 2) not in world.versions
 
 
-async def test_m2_assigns_the_new_version_number_and_it_is_used_everywhere() -> None:
+async def test_the_new_version_is_saved_once_with_its_card_after_m11_has_answered() -> None:
     world = base_world()
-    world.versions[("idea_1", 2)] = {"idea_id": "idea_1", "version": 2, "text": "x", "card": {}}
+    await run(Harness(world), idea_version=2, whatif=WHATIF)
+    puts = [r for _, r, _ in world.calls if r.startswith("PUT /internal/ideas/")]
+    assert puts == ["PUT /internal/ideas/idea_1/versions/2"]
+    order = [r for _, r, _ in world.calls]
+    assert order.index("POST /verdict") < order.index(puts[0])
+    saved = world.versions[("idea_1", 2)]
+    assert saved["idempotency_key"] == "run_1"
+    assert saved["card"]["verdict"] == "GO" and saved["card"]["diff"]
+    assert saved["change_note"] and saved["user_id"] == "u1"
+    assert world.creates == [("idea_1", 2)]
+
+
+async def test_a_newer_version_makes_the_whatif_fail_without_showing_a_verdict() -> None:
+    world = base_world()
+    world.versions[("idea_1", 2)] = {
+        "idea_id": "idea_1",
+        "version": 2,
+        "user_id": "u1",
+        "text": "someone else was faster",
+        "card": {},
+        "idempotency_key": "other-run",
+    }
+    h = Harness(world)
+    state = await run(h, idea_version=2, whatif=WHATIF)
+    assert state.status is RunStatus.FAILED
+    assert "newer version" in (state.error or "")
+    assert "verdict" not in h.event_types()
+    assert world.cache == {}
+    assert world.creates == []
+
+
+async def test_a_retried_save_creates_one_version() -> None:
+    world = base_world()
+    world.faults[("profile", "PUT /internal/ideas/idea_1/versions/2")] = [503, 503]
     state = await run(Harness(world), idea_version=2, whatif=WHATIF)
-    assert state.idea_version == 3  # M2 said 3: the run follows M2, not its own guess
-    assert world.bodies(*VERDICT)[0]["version"] == 3
+    assert state.status is RunStatus.SUCCEEDED
+    assert world.creates == [("idea_1", 2)]
+
+
+async def test_the_same_whatif_run_submitted_twice_creates_one_version() -> None:
+    world = base_world()
+    await run(Harness(world, run_id="run_9"), idea_version=2, whatif=WHATIF)
+    second = await run(Harness(world, run_id="run_9"), idea_version=2, whatif=WHATIF)
+    assert second.status is RunStatus.SUCCEEDED
+    assert world.creates == [("idea_1", 2)]
+
+
+async def test_a_failed_whatif_scoring_writes_no_version() -> None:
+    world = base_world()
+    world.faults[VERDICT] = [503, 503, 503]
+    state = await run(Harness(world), idea_version=2, whatif=WHATIF)
+    assert state.status is RunStatus.FAILED
+    assert world.creates == []
+
+
+async def test_a_whatif_without_a_settled_verdict_writes_no_version() -> None:
+    world = base_world()
+    world.extra = {}  # no effort: the run finishes without a verdict
+    state = await run(Harness(world), idea_version=2, whatif=WHATIF, interactive=False)
+    assert state.card is not None and state.card["verdict"] is None
+    assert world.creates == []
+
+
+async def test_another_users_base_version_is_not_found_and_the_owner_is_sent() -> None:
+    world = base_world()
+    state = await run(Harness(world), idea_version=2, whatif=WHATIF, user_id="someone-else")
+    assert state.status is RunStatus.FAILED
+    gets = [q for route, q in world.queries if route.startswith("GET /internal/ideas/")]
+    assert gets == [{"user_id": "someone-else"}]
+    assert world.count("ideation", "POST /rewrite") == 0
 
 
 async def test_the_card_has_a_diff_against_the_base_card() -> None:

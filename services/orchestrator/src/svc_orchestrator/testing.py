@@ -242,6 +242,11 @@ class FakeWorld:
         self.niches_fn: Any = None
         self.gaps_fn: Any = None
         self.versions: dict[tuple[str, int], dict[str, Any]] = {}  # M2 idea versions
+        self.creates: list[tuple[str, int]] = []  # versions M2 actually created (not replays)
+        self.last_query: dict[str, str] = {}
+        self.queries: list[tuple[str, dict[str, str]]] = []
+        self.weights_version = "w1"
+        self.engine_version = "m11@v1"
 
     # -- helpers -----------------------------------------------------------------------------
     def count(self, service: str, route: str) -> int:
@@ -257,6 +262,8 @@ class FakeWorld:
         service = _HOSTS[request.url.host]
         route = f"{request.method} {request.url.path}"
         body = json.loads(request.content) if request.content else None
+        self.last_query = dict(request.url.params)
+        self.queries.append((route, self.last_query))
         self.calls.append((service, route, body))
         queue = self.faults.get((service, route))
         if queue:
@@ -302,7 +309,11 @@ class FakeWorld:
         if route == "GET /config":
             return 200, {
                 "rules": {"rubric_versions": {d: f"{d}@v1" for d in DIMS}},
-                "versions": {"engine": "m11@v1", "rubrics": "r1", "profile_weights": "w1"},
+                "versions": {
+                    "engine": self.engine_version,
+                    "rubrics": "r1",
+                    "profile_weights": self.weights_version,
+                },
             }
         if route == "POST /verdict":
             if self.verdict_fn:
@@ -322,6 +333,36 @@ class FakeWorld:
         if route == "POST /approval/evaluate":
             return 200, {"needs_approval": self.needs_approval, "spent": 0.04, "budget": 0.05}
         return self._discover_answer(route, path, body)
+
+    def _put_version(self, path: str, body: Any) -> tuple[int, Any]:
+        """M2's idempotent save: 409 on a stale base or an existing version under another key."""
+        parts = path.strip("/").split("/")
+        idea_id, version = parts[2], int(parts[4])
+        user = body.get("user_id")
+        existing = self.versions.get((idea_id, version))
+        if existing is not None:
+            if existing.get("idempotency_key") == body["idempotency_key"]:
+                return 200, {"idea_id": idea_id, "version": version, "created": False}
+            return 409, {"error": {"code": "CONFLICT"}}
+        base = self.versions.get((idea_id, body["base_version"]))
+        if base is not None and base.get("user_id") not in (None, user):
+            return 404, {"error": {"code": "NOT_FOUND"}}  # someone else's idea
+        if version != body["base_version"] + 1:
+            return 422, {"error": {"code": "VALIDATION_ERROR"}}
+        latest = max((v for (i, v) in self.versions if i == idea_id), default=0)
+        if body["base_version"] != latest:
+            return 409, {"error": {"code": "CONFLICT"}}
+        self.versions[(idea_id, version)] = {
+            "idea_id": idea_id,
+            "version": version,
+            "user_id": user,
+            "text": body["text"],
+            "card": body["card"],
+            "change_note": body["change_note"],
+            "idempotency_key": body["idempotency_key"],
+        }
+        self.creates.append((idea_id, version))
+        return 200, {"idea_id": idea_id, "version": version, "created": True}
 
     def _discover_answer(self, route: str, path: str, body: Any) -> tuple[int, Any]:
         if route == "POST /niches/match":
@@ -404,18 +445,12 @@ class FakeWorld:
         if route.startswith("GET /internal/ideas/"):
             parts = path.strip("/").split("/")  # internal/ideas/{id}/versions/{v}
             found = self.versions.get((parts[2], int(parts[4])))
-            return (200, found) if found else (404, {"error": {"code": "NOT_FOUND"}})
-        if route.startswith("POST /internal/ideas/"):
-            idea_id = path.strip("/").split("/")[2]
-            latest = max((v for (i, v) in self.versions if i == idea_id), default=0)
-            self.versions[(idea_id, latest + 1)] = {
-                "idea_id": idea_id,
-                "version": latest + 1,
-                "text": body["text"],
-                "card": {},
-                "change_note": body["change_note"],
-            }
-            return 200, {"version": latest + 1}
+            owner = found.get("user_id") if found else None
+            if not found or (owner is not None and owner != self.last_query.get("user_id")):
+                return 404, {"error": {"code": "NOT_FOUND"}}
+            return 200, found
+        if route.startswith("PUT /internal/ideas/"):
+            return self._put_version(path, body)
         return 404, {"error": {"code": "NOT_FOUND"}}
 
     def _scores(self, body: dict[str, Any]) -> list[dict[str, Any]]:
