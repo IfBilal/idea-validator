@@ -18,34 +18,9 @@ from common.budget import (
 )
 from common.config import ConfigError
 from common.errors import BudgetExceeded
+from common.testing import EmulatedRedis
 
-
-class FakeRedis:
-    """The few async Redis hash commands the ledger uses, in memory."""
-
-    def __init__(self) -> None:
-        self.hashes: dict[str, dict[str, float]] = {}
-        self.ttls: dict[str, int] = {}
-
-    async def hincrby(self, name: str, key: str, amount: int) -> int:
-        h = self.hashes.setdefault(name, {})
-        h[key] = int(h.get(key, 0)) + amount
-        return int(h[key])
-
-    async def hincrbyfloat(self, name: str, key: str, amount: float) -> float:
-        h = self.hashes.setdefault(name, {})
-        h[key] = float(h.get(key, 0.0)) + amount
-        return float(h[key])
-
-    async def hgetall(self, name: str) -> dict[bytes, bytes]:
-        return {k.encode(): str(v).encode() for k, v in self.hashes.get(name, {}).items()}
-
-    async def expire(self, name: str, seconds: int) -> bool:
-        self.ttls[name] = seconds
-        return name in self.hashes
-
-    async def ttl(self, name: str) -> int:
-        return self.ttls.get(name, -1)
+FakeRedis = EmulatedRedis  # the shared in-memory Redis (also implements the reserve script)
 
 
 LIMITS = BudgetLimits(max_tokens=100, max_pages=10, max_steps=5, max_cost_usd=0.05)
