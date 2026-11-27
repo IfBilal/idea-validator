@@ -8,13 +8,17 @@ from redis.asyncio import Redis
 
 from common.config import ConfigError
 from common.service import create_app
+from common.tracing import Tracer
 
 from .api.routes import make_router
 from .config import Settings
+from .config_llm import load_llm_config
 from .config_sources import load_sources
 from .services.cache import RedisCache
 from .services.fetch import FetchService, MemoryRunBudget
 from .services.fetcher import PinnedHttpxFetcher
+from .services.llm import LlmService, MemoryLlmBudget, ModelAlias
+from .services.llm_provider import LiteLlmProvider
 from .services.metrics import PrometheusFetchMetrics
 from .services.ratelimit import RedisTokenBucket
 from .services.robots import RobotsChecker
@@ -22,7 +26,9 @@ from .services.robots_source import PolicyRobotsSource
 from .services.url_policy import SystemResolver, UrlPolicy
 
 
-def build_app(settings: Settings, service: FetchService | None = None) -> FastAPI:
+def build_app(
+    settings: Settings, service: FetchService | None = None, llm: LlmService | None = None
+) -> FastAPI:
     """Wire M5. ``service`` can be injected (tests); otherwise it is built from the environment
     and ConfigMap at start-up, and missing configuration stops the service."""
 
@@ -57,7 +63,24 @@ def build_app(settings: Settings, service: FetchService | None = None) -> FastAP
                 sleep=asyncio.sleep,
                 clock=time.time,
             )
+        active_llm = llm
+        if active_llm is None and service is None:  # production: build from ConfigMap + Secret
+            if settings.llm_api_key is None:
+                raise ConfigError("LLM_API_KEY is not set")
+            llm_cfg = load_llm_config(settings.config_dir)
+            active_llm = LlmService(
+                provider=LiteLlmProvider(settings.llm_api_key.get_secret_value()),
+                budget=MemoryLlmBudget(settings.llm_run_max_tokens, settings.llm_run_max_cost_usd),
+                aliases={
+                    name: ModelAlias(a.model, a.host, a.fallback_usd_per_1k_tokens)
+                    for name, a in llm_cfg.aliases.items()
+                },
+                allowed_hosts=llm_cfg.allowed_hosts,
+                tracer=Tracer("tools"),
+                timeout_s=settings.llm_timeout_s,
+            )
         app.state.fetch = active
+        app.state.llm = active_llm
         app.state.redis = redis
         try:
             yield

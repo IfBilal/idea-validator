@@ -2,7 +2,7 @@
 
 The **only** way any module reads the internet (NetworkPolicy gives egress only to pods labelled
 `app: tools`). Scouts, agents and ingestion call `POST /fetch`; hosted-LLM calls will go through
-`POST /llm/v1/chat/completions` (next PR, LiteLLM).
+`POST /llm/v1/chat/completions` (LiteLLM, below).
 
 | | |
 |---|---|
@@ -32,12 +32,32 @@ Body per `schemas/fetch.schema.json`: `{url, source, purpose: scout|evidence|mod
 Refusals are 403 with `error.details.reason`: `DOMAIN_NOT_ALLOWED`, `INVALID_URL`, `BLOCKED_ADDRESS`,
 `ROBOTS_DISALLOWED`, `SOURCE_DISABLED`. Counters: `blocked_injections_total{source}`, `fetch_requests_total{source,outcome}`.
 
+## `POST /llm/v1/chat/completions`
+The only way any agent reaches a hosted model (ADR-003). Body: `{run_id, agent, model: "hosted-default",
+messages[1..20], max_tokens 1..4096, temperature 0..1 (default 0), response_format: "json"|"text"}`; unknown fields
+are 422. Response: `{content, tokens_in, tokens_out, cost_usd, latency_ms, provider, model}`. Order of every call:
+
+1. **Alias**: callers send an alias (`config/llm.yaml`), never a provider model name; unknown alias is 422.
+2. **Provider host allow-list**: the alias host must be in `allowed_hosts` (checked at start-up and per call): 403 `PROVIDER_NOT_ALLOWED`.
+3. **Budget, before any spend**: refuses with 402 `BUDGET_EXCEEDED` when the run's cost is used up or
+   `spent tokens + max_tokens + estimated input` would exceed the token budget. The provider is not called.
+4. **Call** (LiteLLM, `num_retries=0`, timeout 60 s): timeout is 504, any other provider failure is 502 with only the
+   exception class name (provider text can hold keys or prompts).
+5. **Charge** the real cost; when the provider cannot price the model, the alias `fallback_usd_per_1k_tokens` is charged, so no model is free.
+6. **Trace**: one `llm_call` record (tokens, cost, model, latency, error). Prompts are not stored in it.
+
+Known limits: the per-run ceiling is the largest budget (discover: 250k tokens, $0.25) until M3 opens runs with their
+own limits in the Redis ledger (P2-T13); the ledger is in memory per replica until then. Concurrent calls of one run can
+overshoot by (concurrency x one call), since a call's cost is only known afterwards. The image is about 700 MB (LiteLLM).
+
 ## Configuration
 | Variable | Meaning |
 |---|---|
 | `REDIS_URL` | Secret; cache, robots cache and token buckets. The service refuses to start without it |
 | `INTERNAL_TOKEN` | Secret shared with callers |
-| `CONFIG_DIR` | Directory with the mounted `sources.yaml` (default `/etc/idea-validator`) |
+| `LLM_API_KEY` | Secret; provider key for `/llm`. The service refuses to start without it |
+| `LLM_TIMEOUT_S`, `LLM_RUN_MAX_TOKENS`, `LLM_RUN_MAX_COST_USD` | provider timeout (60) and the per-run ceiling above |
+| `CONFIG_DIR` | Directory with the mounted `sources.yaml` and `llm.yaml` (default `/etc/idea-validator`) |
 | `RUN_MAX_PAGES`, `RUN_MAX_BYTES` | Per-run fetch budget (defaults 60 pages, 120 MB) |
 
 ## Known limits

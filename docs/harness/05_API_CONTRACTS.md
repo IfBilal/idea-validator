@@ -114,7 +114,7 @@ errors: 403 DOMAIN_NOT_ALLOWED | 403 ROBOTS_DISALLOWED | 429 RATE_LIMITED | 402 
 in:  {"run_id","agent","model":"hosted-default","messages":[...],"max_tokens":800,"temperature":0,"response_format":"json"}
 out: {"content","tokens_in","tokens_out","cost_usd","latency_ms","provider","model"}
 ```
-(applies allow-list of provider hosts, budget check against `budget:{run_id}`, logs cost.)
+(`model` is an alias from `config/llm.yaml`, never a provider model name; the alias host must be allow-listed (403 `PROVIDER_NOT_ALLOWED`); budget is checked before the call (402); cost is charged after it, at `fallback_usd_per_1k_tokens` when the provider cannot price the call; one `llm_call` trace per call. Errors: 402, 403, 422, 502, 504.)
 
 ### M6 Knowledge Base
 `POST /search`

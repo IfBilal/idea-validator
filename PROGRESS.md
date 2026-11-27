@@ -59,6 +59,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
 | P0-T07 pr-checks workflow repaired | this PR | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
 | P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
+| P2-T12 M5 /llm proxy | this PR | 2026-11-27 | real LiteLLM verified against a fake OpenAI server; per-run ledger in Redis is P2-T13 |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 | 2026-11-26 | layering enforced by import-linter |
 
 ## Blocked / Needs human

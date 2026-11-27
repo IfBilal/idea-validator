@@ -7,6 +7,7 @@ dependencies = [
     "idea-validator-common",
     "uvicorn>=0.32",
     "redis>=5.2",
+    "litellm>=1.50",
 ]
 
 [tool.uv.sources]

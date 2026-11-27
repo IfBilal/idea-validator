@@ -10,3 +10,9 @@ class Settings(ServiceSettings):
     redis_url: SecretStr | None = None
     run_max_pages: int = 60  # the largest per-run page budget in config/budgets.yaml
     run_max_bytes: int = 120_000_000
+    llm_api_key: SecretStr | None = None  # provider key, K8s Secret only
+    llm_timeout_s: float = 60.0  # config/budgets.yaml timeouts_s.llm
+    # Per-run ceiling until M3 opens runs with their own limits in the ledger (P2-T13): the largest
+    # budget in config/budgets.yaml (discover). M3 enforces the finer validate/whatif limits.
+    llm_run_max_tokens: int = 250_000
+    llm_run_max_cost_usd: float = 0.25

@@ -1,0 +1,12 @@
+# M5 /llm: which provider models agents may reach, and which provider hosts M5 may call (ConfigMap).
+# Agents never send a provider model name: they send an alias, M5 maps it. Every alias host must be
+# in allowed_hosts (checked at start-up and again per call). The provider API key is a Secret (LLM_API_KEY).
+# fallback_usd_per_1k_tokens is charged when the provider cannot price a call, so no model is ever free.
+version: "l1"
+allowed_hosts:
+  - api.anthropic.com
+aliases:
+  hosted-default:
+    model: anthropic/claude-haiku-5-5
+    host: api.anthropic.com
+    fallback_usd_per_1k_tokens: 0.005
