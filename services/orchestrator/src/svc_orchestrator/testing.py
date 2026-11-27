@@ -1,10 +1,12 @@
 """Test doubles shared by the orchestrator's unit and component tests (not used at runtime)."""
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
+from .models.discover_state import DiscoverState
 from .models.state import ValidateState
 
 
@@ -134,6 +136,24 @@ def voi_response(
         },
         "verdict_changes": changes,
     }
+
+
+_DEFAULT_LIMITS: dict[str, dict[str, Any]] = {
+    "validate": {
+        "max_tokens": 60000,
+        "max_pages": 30,
+        "max_steps": 80,
+        "max_cost_usd": 0.05,
+        "approval_threshold_usd": 0.05,
+    },
+    "discover": {
+        "max_tokens": 250000,
+        "max_pages": 60,
+        "max_steps": 400,
+        "max_cost_usd": 0.25,
+        "approval_threshold_usd": 0.25,
+    },
+}
 
 
 def make_idea(n: int, **over: Any) -> dict[str, Any]:
@@ -411,6 +431,9 @@ class Rig:
         timeouts: dict[str, float] | None = None,
         deep_search_pages: int = 20,
         approval_timeout_s: float = 600,
+        kind: str = "validate",
+        debate_max_rounds: int = 3,
+        children_concurrency: int = 3,
     ) -> None:
         from common.schemas import TraceRecord
 
@@ -425,21 +448,19 @@ class Rig:
         section: dict[str, Any] = {
             "max_retries": max_retries,
             "timeouts_s": {"scorer": 2, "kb_search": 1, "verdict": 1, **(timeouts or {})},
-            "max_tokens": 60000,
-            "max_pages": 30,
-            "max_steps": 80,
-            "max_cost_usd": 0.05,
-            "approval_threshold_usd": 0.05,
+            **_DEFAULT_LIMITS[kind],
+            "debate": {"max_rounds": debate_max_rounds},
+            "validate_children_concurrency": children_concurrency,
             "deep_search": {"max_pages": deep_search_pages, "est_cost_per_page_usd": 0.0008},
             **(limits or {}),
         }
         self.config = run_config_from(
             {
-                "validate": section,
+                kind: section,
                 "concurrency": {"scorers": 4},
                 "approval_timeout_s": approval_timeout_s,
             },
-            "validate",
+            kind,
         )
         self.clients = build_clients(
             URLS,
@@ -527,3 +548,58 @@ class Harness:
 
     def decisions(self) -> list[Any]:
         return [r for r in self.records if r.kind == "decision"]
+
+
+ChildHook = Callable[
+    [Callable[[ValidateState, str], Awaitable[ValidateState]], ValidateState, str],
+    Awaitable[ValidateState],
+]
+
+
+class DiscoverHarness:
+    """Runs the Discover graph directly against a ``FakeWorld`` (children included)."""
+
+    def __init__(
+        self,
+        world: FakeWorld | None = None,
+        *,
+        run_id: str = "run_1",
+        child_hook: ChildHook | None = None,
+        **rig_options: Any,
+    ) -> None:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        from .services.discover_graph import build_discover_graph, make_child_runner
+        from .services.validate_graph import graph_config
+
+        self.rig = Rig(world, kind="discover", **rig_options)
+        self.world = self.rig.world
+        self.run_id = run_id
+        self.redis = self.rig.redis
+        self.publisher = self.rig.publisher
+        self.records = self.rig.records
+        self.ctx = self.rig.context(run_id)
+        self.ledger = self.ctx.ledger
+        saver = MemorySaver()
+        base = make_child_runner(self.ctx, saver)
+
+        async def run_child(state: ValidateState, thread: str) -> ValidateState:
+            return (
+                await child_hook(base, state, thread) if child_hook else await base(state, thread)
+            )
+
+        self.graph = build_discover_graph(self.ctx, saver, run_child)
+        self._config = graph_config(run_id)
+
+    async def start(self, **over: Any) -> DiscoverState:
+        base: dict[str, Any] = {"run_id": self.run_id, "user_id": "u1", "count": 5}
+        state = DiscoverState.model_validate({**base, **over})
+        await self.graph.ainvoke(state, self._config)
+        snap = await self.graph.aget_state(self._config)
+        return DiscoverState.model_validate(snap.values)
+
+    def event_types(self) -> list[str]:
+        return [e.type for e in self.publisher.events_of(self.run_id)]
+
+    def events(self, type_: str) -> list[Any]:
+        return [e for e in self.publisher.events_of(self.run_id) if e.type == type_]

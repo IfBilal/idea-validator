@@ -7,7 +7,7 @@ round or override a verdict: the verdict in the card is exactly what M11 returne
 
 import asyncio
 from collections.abc import Awaitable
-from typing import Any, Protocol
+from typing import Any
 
 from langgraph.types import interrupt
 from pydantic import ValidationError
@@ -20,13 +20,10 @@ from svc_orchestrator.models.api import UnknownSpec
 from ..models.state import RunStatus, ValidateState
 from . import builders
 from .cache_keys import verdict_cache_key
+from .guard import Node, guard
 from .run_context import RunContext
 
 Update = dict[str, Any]
-
-
-class Node(Protocol):
-    def __call__(self, state: ValidateState) -> Awaitable[Update]: ...
 
 
 MAX_EVIDENCE = 30
@@ -49,25 +46,10 @@ class ValidateNodes:
         self.t = ctx.config.timeouts
 
     # ---- guard: map failures to run status, announce the transition --------------------------
-    def guarded(self, name: str, fn: Node, *, announce: bool = True) -> Node:
-        async def node(state: ValidateState) -> Update:
-            if announce:
-                await self.ctx.emitter.emit("state_changed", **{"from": state.step, "to": name})
-            try:
-                update = await fn(state)
-            except BudgetExceeded as exc:
-                self.ctx.runner.decision(
-                    "budget_stop", {"step": name}, {"reason": exc.message, "to": "card"}
-                )
-                update = {"status": RunStatus.BUDGET_STOPPED, "stop_reason": exc.message}
-            except DomainError as exc:
-                self.ctx.runner.decision(
-                    "failed", {"step": name}, {"reason": exc.message, "to": "card"}
-                )
-                update = {"status": RunStatus.FAILED, "error": f"{name}: {exc.message}"}
-            return {"step": name, **update}
-
-        return node
+    def guarded(
+        self, name: str, fn: Node[ValidateState], *, announce: bool = True
+    ) -> Node[ValidateState]:
+        return guard(self.ctx, name, fn, announce=announce)
 
     def _step(self, state: ValidateState, step: str, **kw: Any) -> Awaitable[Any]:
         return self.ctx.runner.run(state.memo, step, **kw)
@@ -716,7 +698,9 @@ class ValidateNodes:
         """Step 6: M8 objects, M12 keeps the evidence-backed ones, M11 recomputes with them."""
         idea = state.structured_idea or {}
         ref = str(idea.get("idea_ref", state.idea_id))
-        score_map = {ref: {s.dimension: s.score for s in scores if s.score is not None}}
+        score_map: dict[str, dict[str, float]] = {
+            ref: {str(s.dimension): s.score for s in scores if s.score is not None}
+        }
         update["skeptic_done"] = True
         update["notes"] = list(update.get("notes", []))
         try:
