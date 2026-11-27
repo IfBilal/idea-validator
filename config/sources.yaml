@@ -56,7 +56,7 @@ sources:
     max_requests_per_run: 40
     max_items_per_run: 3000
   lobsters:
-    enabled: true
+    enabled: false                  # robots.txt disallows all crawlers and says ai-train=no (checked 2026-11-27); M5 refuses it
     hosts: [lobste.rs]
     rate_limit_per_min: 20          # no published limit: stay polite
     cache_ttl_s: 21600

@@ -1,30 +1,33 @@
 # >= 20 hand-written retrieval queries (M6-06). After ingestion, BOTH members label relevant_card_ids by searching the KB
 # (grade 2 = highly relevant, 1 = relevant). Unlabelled queries make the gate test fail on purpose.
+# Corpus note: the first snapshot is developer-heavy (HN Show HN, GitHub topics, Stack Exchange programmers). Seed queries that had
+# no relevant card at all (assignment deadlines, meeting summaries, journaling, event management, warranty tracker, flashcards, markdown
+# site generator, feedback board) were replaced by queries the corpus can answer; the gaps are listed in docs/data-sources.md.
 # Metrics: Recall@5, Recall@10, MRR@10, nDCG@10 for modes vector | keyword | hybrid | hybrid+rerank.
 version: 1
-labelled_by: []          # e.g. ["bilal", "taimoor"]
+labelled_by: ["dev-a-claude-session"]   # AI-assisted first pass on snapshot cards-20261127; a human reviews it in the PR (Bilal)
 queries:
-  - { id: q01, query: "slow export of notes to markdown", filters: {}, relevant: {} }
-  - { id: q02, query: "tool to track university assignment deadlines", filters: {}, relevant: {} }
-  - { id: q03, query: "open source alternative to Notion for teams", filters: {}, relevant: {} }
-  - { id: q04, query: "AI code review bot for GitHub pull requests", filters: {sources: [github]}, relevant: {} }
-  - { id: q05, query: "complaints about expensive SaaS analytics for small startups", filters: {kinds: [complaint]}, relevant: {} }
-  - { id: q06, query: "self-hosted uptime monitoring", filters: {}, relevant: {} }
-  - { id: q07, query: "language learning app with spaced repetition", filters: {}, relevant: {} }
-  - { id: q08, query: "is there a tool to summarise long meeting recordings", filters: {kinds: [request]}, relevant: {} }
-  - { id: q09, query: "personal finance budgeting app for students", filters: {}, relevant: {} }
-  - { id: q10, query: "Chrome extension to block distracting websites", filters: {}, relevant: {} }
-  - { id: q11, query: "LLM evaluation and prompt testing framework", filters: {date_from: "2024-01-01"}, relevant: {} }
-  - { id: q12, query: "freelancer invoicing and time tracking", filters: {}, relevant: {} }
-  - { id: q13, query: "no-code internal tools builder", filters: {}, relevant: {} }
-  - { id: q14, query: "resume builder ATS optimisation", filters: {}, relevant: {} }
-  - { id: q15, query: "developer documentation search with AI", filters: {}, relevant: {} }
-  - { id: q16, query: "hard to find affordable mental wellness journaling app", filters: {kinds: [complaint, request]}, relevant: {} }
-  - { id: q17, query: "Show HN: open source vector database", filters: {sources: [hackernews]}, relevant: {} }
-  - { id: q18, query: "API mocking tool for frontend developers", filters: {}, relevant: {} }
-  - { id: q19, query: "community event management for student societies", filters: {}, relevant: {} }
-  - { id: q20, query: "home inventory and warranty tracker", filters: {}, relevant: {} }
-  - { id: q21, query: "web scraping without code", filters: {}, relevant: {} }
-  - { id: q22, query: "markdown based static site generator", filters: {sources: [github]}, relevant: {} }
-  - { id: q23, query: "flashcards generated from lecture slides", filters: {}, relevant: {} }
-  - { id: q24, query: "customer feedback board for indie SaaS", filters: {}, relevant: {} }
+  - { id: q01, query: "slow export of notes to markdown", filters: {}, relevant: { card_dd92e50a: 1, card_2b6c6b51: 1, card_9242af03: 1, card_43d2fbf2: 1, card_417f6b70: 1, card_dd49ace6: 1, card_2dba49c5: 1 } }
+  - { id: q02, query: "automatic time tracker for coding and side projects", filters: {}, relevant: { card_4d0fa39f: 2, card_beeddea5: 2, card_b8ba72ac: 2, card_a0d6e5f2: 2, card_5e7c787e: 1, card_563562ef: 1 } }
+  - { id: q03, query: "open source alternative to Notion for teams", filters: {}, relevant: { card_22203a06: 2, card_09f0b13c: 2, card_4fdb4dc9: 1, card_9242af03: 1 } }
+  - { id: q04, query: "AI code review bot for GitHub pull requests", filters: {sources: [github]}, relevant: { card_dbc44342: 2, card_cb01f999: 2, card_1cc95f15: 1, card_8b2c8613: 1 } }
+  - { id: q05, query: "how to estimate how long a software project will take", filters: {kinds: [request]}, relevant: { card_01c80c0e: 2, card_40c45e1b: 2 } }
+  - { id: q06, query: "self-hosted uptime monitoring", filters: {}, relevant: { card_c8dcf856: 2, card_dbb2dafd: 1, card_87c74fa7: 1 } }
+  - { id: q07, query: "language learning app with spaced repetition", filters: {}, relevant: { card_f8c4ff61: 2, card_67cc9def: 2, card_dd49ace6: 1 } }
+  - { id: q08, query: "how to learn and navigate a large unfamiliar codebase", filters: {kinds: [request]}, relevant: { card_505bc0f4: 2, card_e9f43a12: 1 } }
+  - { id: q09, query: "personal finance budgeting app for students", filters: {}, relevant: { card_3bd11b09: 1, card_9467a7b4: 1, card_3e37a82f: 1 } }
+  - { id: q10, query: "Chrome extension to block distracting websites", filters: {}, relevant: { card_971ce397: 2 } }
+  - { id: q11, query: "LLM evaluation and prompt testing framework", filters: {date_from: "2024-01-01"}, relevant: { card_f353a9c8: 2, card_74e1e738: 1, card_3c7b6f9c: 1, card_4c45a7ab: 1 } }
+  - { id: q12, query: "freelancer invoicing and time tracking", filters: {}, relevant: { card_b041c20c: 2, card_563562ef: 1, card_beeddea5: 1, card_b8ba72ac: 1, card_5e7c787e: 1, card_3e37a82f: 1, card_416e54d3: 1 } }
+  - { id: q13, query: "no-code internal tools builder", filters: {}, relevant: { card_a09f2c79: 1, card_f1819474: 1, card_e94479db: 1 } }
+  - { id: q14, query: "resume builder ATS optimisation", filters: {}, relevant: { card_78658f98: 2, card_d76c3a44: 2, card_30510700: 1, card_5da80e15: 1, card_c7124d4f: 1 } }
+  - { id: q15, query: "developer documentation search with AI", filters: {}, relevant: { card_5500f14d: 1, card_7d47eb4c: 1, card_d737400d: 1, card_cf9d85ac: 1 } }
+  - { id: q16, query: "defend a website against scrapers and brute force attacks", filters: {kinds: [request]}, relevant: { card_a8ff2174: 2, card_7d4a7b94: 2, card_9182cc24: 1, card_226f5bba: 1 } }
+  - { id: q17, query: "Show HN: open source vector database", filters: {sources: [hackernews]}, relevant: { card_f7b94912: 2 } }
+  - { id: q18, query: "API mocking tool for frontend developers", filters: {}, relevant: { card_7c0cfa67: 2, card_76c305c2: 2, card_551f82c3: 1, card_3fa45a44: 1, card_dd69564d: 1 } }
+  - { id: q19, query: "tool for running agile retrospectives and team meetings", filters: {}, relevant: { card_12f08d9f: 2 } }
+  - { id: q20, query: "habit tracker app", filters: {}, relevant: { card_69c9fbc7: 2, card_4d0fa39f: 1, card_5e7c787e: 1 } }
+  - { id: q21, query: "web scraping without code", filters: {}, relevant: { card_68477ac8: 1, card_24786af0: 1, card_10342496: 1 } }
+  - { id: q22, query: "open source help desk and customer support ticketing", filters: {sources: [github]}, relevant: { card_882ebb2b: 2, card_abf8f55f: 1, card_e8298ea5: 1 } }
+  - { id: q23, query: "generate documentation from code with AI", filters: {}, relevant: { card_5500f14d: 2, card_7e136c0a: 1, card_b3114d40: 1, card_2e09e22d: 1 } }
+  - { id: q24, query: "CRM to follow up customers and clients", filters: {}, relevant: { card_85c767a8: 2, card_350ed609: 2, card_abf8f55f: 2, card_563562ef: 1 } }

@@ -1,0 +1,23 @@
+{
+  "by_kind": {
+    "complaint": 2,
+    "product": 497,
+    "repo": 500,
+    "request": 388
+  },
+  "by_platform": {
+    "github": 500,
+    "hackernews": 497,
+    "stackexchange": 390
+  },
+  "by_source": {
+    "github": 500,
+    "hackernews": 497,
+    "stackexchange": 390
+  },
+  "date": "2026-11-27",
+  "file": "cards-20261127.jsonl.gz",
+  "format": 1,
+  "sha256": "b0322518fed2ff2d6745f928ca5b59065ae220954d98ab9d1eb05c9bfb790ed8",
+  "total": 1387
+}

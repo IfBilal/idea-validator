@@ -18,7 +18,7 @@ behaviour; verify. No row below has been read end to end by a human yet.
 |---|---|---|---|---|---|
 | Hacker News | Firebase API `hacker-news.firebaseio.com`, Algolia search `hn.algolia.com` | none | no documented hard limit for Firebase; we use 600/min | H | title, text, url, time, score, kind (Show/Ask) |
 | GitHub | REST search `api.github.com` | optional token (read-only, no scopes) | unauthenticated 60/h core and 10/min search; with a token 5,000/h and 30/min search; we use 25/min | H | name, description, topics, stars, created_at, html_url |
-| Lobsters | JSON endpoints `lobste.rs/hottest.json`, `/newest.json`, `/t/<tag>.json` | none | no published limit; "casual use": we poll at most a few requests/min | R | title, url, tags, score, created_at, comment count |
+| Lobsters (**off**, see below) | JSON endpoints `lobste.rs/hottest.json`, `/newest.json`, `/t/<tag>.json` | none | no published limit; "casual use": we poll at most a few requests/min | R | title, url, tags, score, created_at, comment count |
 | Stack Exchange | API v2.3 `api.stackexchange.com` | optional free key (stackapps.com) | 300 requests/day/IP without a key, 10,000/day with one | R | question title, body excerpt, tags, score, creation_date, link |
 | Reddit | Data API `oauth.reddit.com` (OAuth app) | **app credentials, approval required** | about 100 requests/min per client id after approval; we use 60/min | R | title, selftext, url, created_utc, subreddit (no usernames) |
 | Product Hunt | GraphQL API v2 `api.producthunt.com/v2/api/graphql` | **developer token** (needs a Product Hunt account) | 450 requests/15 min on non-GraphQL endpoints (V), GraphQL by complexity points (figures conflict) | V (limits) / R (terms) | name, tagline, topics, votes, url |
@@ -103,3 +103,16 @@ author, username, submitter, owner, display name or avatar (Hacker News `by`/`au
 Stack Exchange `owner`, Reddit `author`, Product Hunt makers are dropped at parse time; `RawItem.metadata` has a key whitelist and
 `services/scouts/tests/component/test_scouts_security_review.py` scans every recorded fixture for such keys and names). Free text may
 still mention people: it is kept short (8,000 chars), and processed rows can be deleted with `python -m scouts prune`.
+
+
+## Finding from the first live run (2026-11-27): Lobsters is off
+Running the scouts for real, Lobsters failed with "M5 refused the request". Its `robots.txt` says `User-agent: *  Disallow: /` and
+`Content-Signal: ai-input=no, ai-train=no`; only a few named search engines are allowed. M5 checks robots.txt, so it refused, and
+that is correct: we do not work around it. The source is disabled in `config/sources.yaml` and its CronJob is suspended. The three-source
+minimum is met by Hacker News, GitHub and Stack Exchange (all three ran live through M5: 500 + 500 + 390 raw items, 1,387 cards).
+
+## First snapshot and what it can answer
+`data/snapshots/cards-20261127.jsonl.gz`: 1,387 cards (GitHub 500 repos, Hacker News 497 Show/Ask HN, Stack Exchange 390
+programmer questions). The mix is developer-heavy, so retrieval queries about students, journaling, event management and similar
+were not answerable; `eval/retrieval/queries.yaml` was adapted to what the corpus can answer. More topics need more scout topics or
+sources (Product Hunt and Reddit once credentials exist), not different code.
