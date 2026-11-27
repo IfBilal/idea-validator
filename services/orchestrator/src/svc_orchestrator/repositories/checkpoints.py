@@ -1,7 +1,8 @@
 """LangGraph checkpointer on Postgres, schema ``orchestrator`` (docs/harness/29 §2).
 
 Checkpoints are what make a run survive a pod restart: ``thread_id = run_id``, so the run resumes
-exactly where ``interrupt()`` stopped it. Unit tests use ``MemorySaver`` instead.
+exactly where ``interrupt()`` stopped it. Checkpoints are read back through the strict msgpack
+allow-list of ``serde.py``. Unit tests use ``MemorySaver`` instead.
 """
 
 import re
@@ -11,6 +12,8 @@ from contextlib import asynccontextmanager
 import psycopg
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.conninfo import make_conninfo
+
+from .serde import checkpoint_serde
 
 SCHEMA = "orchestrator"
 _SCHEMA_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
@@ -41,6 +44,6 @@ async def postgres_saver(
         psycopg_url(database_url), autocommit=True
     ) as admin:
         await admin.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-    async with AsyncPostgresSaver.from_conn_string(info) as saver:
+    async with AsyncPostgresSaver.from_conn_string(info, serde=checkpoint_serde()) as saver:
         await saver.setup()
         yield saver
