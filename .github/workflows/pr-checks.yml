@@ -80,8 +80,9 @@ jobs:
           load: true
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - run: scripts/install_trivy.sh v0.76.2
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { image-ref: "${{ matrix.service }}:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
+        with: { image-ref: "${{ matrix.service }}:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true, skip-setup-trivy: true }
   ui-tests:
     runs-on: ubuntu-latest
     defaults:
@@ -111,8 +112,9 @@ jobs:
           load: true
           cache-from: type=gha,scope=ui
           cache-to: type=gha,mode=max,scope=ui
+      - run: scripts/install_trivy.sh v0.76.2
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { image-ref: "ui:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
+        with: { image-ref: "ui:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true, skip-setup-trivy: true }
   manifests:
     runs-on: ubuntu-latest
     steps:
@@ -131,8 +133,9 @@ jobs:
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
       - uses: astral-sh/setup-uv@v6
       - run: uvx pip-audit --strict || true            # make blocking once deps settle (P2)
+      - run: scripts/install_trivy.sh v0.76.2
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { scan-type: fs, scan-ref: ".", exit-code: "1", severity: "CRITICAL", scanners: "vuln,secret,misconfig" }
+        with: { scan-type: fs, scan-ref: ".", exit-code: "1", severity: "CRITICAL", scanners: "vuln,secret,misconfig", skip-setup-trivy: true }
   commitlint:
     runs-on: ubuntu-latest
     steps:
