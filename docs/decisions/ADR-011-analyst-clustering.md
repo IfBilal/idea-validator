@@ -1,4 +1,4 @@
-# ADR-009: M7 clusters with deterministic agglomeration on TF-IDF, and keeps niches in memory
+# ADR-011: M7 clusters with deterministic agglomeration on TF-IDF, and keeps niches in memory
 - **Status:** Accepted for the first slice; revisit when M6 has real cards (Phase 4 gate).
 - **Context:** docs/10 section 8 describes UMAP + HDBSCAN on dense chunk embeddings and Postgres tables (`niches`, `niche_stats`, `gaps`). M6 and its embeddings do not exist yet, and CLAUDE.md rules require deterministic, unit-tested features with no model download in M7.
 - **Options:** (1) HDBSCAN on dense embeddings now; (2) deterministic agglomerative clustering on TF-IDF behind an `Embedder` seam; (3) tag grouping only.
