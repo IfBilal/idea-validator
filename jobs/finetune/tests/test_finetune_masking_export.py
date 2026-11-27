@@ -57,3 +57,15 @@ def test_run_record_roundtrip(tmp_path: Path) -> None:
     assert json.loads(p.read_text())["synthetic"] is True
     with pytest.raises(FileExistsError):
         write_run(rec, tmp_path)
+
+
+def test_export_commands_are_built_for_both_paths() -> None:
+    from finetune.export import convert_command, quantise_command
+
+    c = convert_command(Path("src"), Path("m"), Path("o.gguf"), "q8_0")
+    assert c[-2:] == ["--outtype", "q8_0"] and "convert_hf_to_gguf.py" in c[1]
+    assert "--allow-requantize" in quantise_command(
+        Path("q"), Path("a"), Path("b"), requantize=True
+    )
+    q = quantise_command(Path("q"), Path("a"), Path("b"), requantize=False)
+    assert "--allow-requantize" not in q and q[-1] == "Q4_K_M"
