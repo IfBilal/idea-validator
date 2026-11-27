@@ -7,6 +7,7 @@ robots_exempt:
   - hacker-news.firebaseio.com
   - hn.algolia.com
   - api.github.com
+  - api.stackexchange.com
   - oauth.reddit.com
   - api.producthunt.com
   - api.openai.com
@@ -17,6 +18,8 @@ allow_list:
   - hacker-news.firebaseio.com
   - hn.algolia.com
   - api.github.com
+  - lobste.rs                  # public JSON endpoints; robots.txt is checked by M5
+  - api.stackexchange.com
   - oauth.reddit.com
   - www.reddit.com            # robots.txt + OAuth token endpoint only
   - api.producthunt.com
@@ -38,6 +41,9 @@ sources:
     schedule: "0 */6 * * *"
     feeds: [showstories, askstories]
     algolia_tags: [show_hn, ask_hn]
+    max_requests_per_run: 150
+    max_items_per_run: 2000
+    firebase_max_items: 60
   github:
     enabled: true
     hosts: [api.github.com]
@@ -46,18 +52,48 @@ sources:
     schedule: "30 */12 * * *"
     topics: [saas, devtools, productivity, education, edtech, ai, llm, fintech, healthtech, developer-tools, nocode, automation, analytics, chrome-extension, self-hosted]
     min_stars: 50
+    pages_per_topic: 2
+    max_requests_per_run: 40
+    max_items_per_run: 3000
+  lobsters:
+    enabled: true
+    hosts: [lobste.rs]
+    rate_limit_per_min: 20          # no published limit: stay polite
+    cache_ttl_s: 21600
+    schedule: "45 */6 * * *"
+    feeds: [hottest, newest]
+    tags: [show, ask, practices]
+    pages: 3
+    max_requests_per_run: 30
+    max_items_per_run: 600
+  stackexchange:
+    enabled: true
+    hosts: [api.stackexchange.com]
+    rate_limit_per_min: 20          # 300 requests/day/IP without a key: a run uses a handful
+    cache_ttl_s: 43200
+    schedule: "0 4 * * *"
+    sites: [stackoverflow, softwareengineering]
+    queries: ["is there a tool", "looking for an alternative", "how to automate", "no good solution"]
+    max_requests_per_run: 12
+    max_items_per_run: 400
   reddit:
-    enabled: false                  # needs OAuth app credentials (ADR-009); keyless sources only until then
+    enabled: false                  # needs REDDIT_CLIENT_ID/SECRET and approval; see docs/data-sources.md
     hosts: [oauth.reddit.com, www.reddit.com]
     rate_limit_per_min: 60
     cache_ttl_s: 21600
     schedule: "15 */6 * * *"
     subreddits: [SideProject, startups, SaaS, EntrepreneurRideAlong, Entrepreneur, webdev]
+    period: month
+    max_requests_per_run: 12
+    max_items_per_run: 600
   producthunt:
     enabled: false                  # enable when token is available
     hosts: [api.producthunt.com]
     rate_limit_per_min: 30
     cache_ttl_s: 86400
     schedule: "0 3 * * *"
+    pages: 5
+    max_requests_per_run: 8
+    max_items_per_run: 300
   yc:
     enabled: false                  # only if terms + robots allow; optional in Figure 1

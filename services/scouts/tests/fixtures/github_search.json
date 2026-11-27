@@ -1,0 +1,44 @@
+{
+ "total_count": 4,
+ "incomplete_results": false,
+ "items": [
+  {
+   "full_name": "acme/notes",
+   "html_url": "https://github.com/acme/notes",
+   "description": "Self-hosted notes",
+   "topics": [
+    "saas",
+    "self-hosted"
+   ],
+   "stargazers_count": 420,
+   "forks_count": 30,
+   "language": "Go",
+   "created_at": "2024-01-02T03:04:05Z",
+   "pushed_at": "2026-11-01T00:00:00Z",
+   "fork": false,
+   "archived": false,
+   "owner": {
+    "login": "acme"
+   }
+  },
+  {
+   "full_name": "someone/forked",
+   "html_url": "https://github.com/someone/forked",
+   "description": "a fork",
+   "topics": [],
+   "stargazers_count": 99,
+   "created_at": "2024-01-02T03:04:05Z",
+   "fork": true
+  },
+  {
+   "full_name": "bad/stars",
+   "html_url": "https://github.com/bad/stars",
+   "stargazers_count": "many",
+   "created_at": "2024-01-02T03:04:05Z"
+  },
+  {
+   "html_url": "https://github.com/bad/noname",
+   "stargazers_count": 5
+  }
+ ]
+}

@@ -272,6 +272,24 @@ spec:
           app: scorer
     - podSelector:
         matchLabels:
+          app: scout-github
+    - podSelector:
+        matchLabels:
+          app: scout-hackernews
+    - podSelector:
+        matchLabels:
+          app: scout-lobsters
+    - podSelector:
+        matchLabels:
+          app: scout-producthunt
+    - podSelector:
+        matchLabels:
+          app: scout-reddit
+    - podSelector:
+        matchLabels:
+          app: scout-stackexchange
+    - podSelector:
+        matchLabels:
           app: scouts
     - podSelector:
         matchLabels:
@@ -699,10 +717,31 @@ spec:
           app: migrate-kb
     - podSelector:
         matchLabels:
+          app: migrate-scouts
+    - podSelector:
+        matchLabels:
           app: orchestrator
     - podSelector:
         matchLabels:
           app: profile
+    - podSelector:
+        matchLabels:
+          app: scout-github
+    - podSelector:
+        matchLabels:
+          app: scout-hackernews
+    - podSelector:
+        matchLabels:
+          app: scout-lobsters
+    - podSelector:
+        matchLabels:
+          app: scout-producthunt
+    - podSelector:
+        matchLabels:
+          app: scout-reddit
+    - podSelector:
+        matchLabels:
+          app: scout-stackexchange
     - podSelector:
         matchLabels:
           app: scouts
@@ -835,6 +874,28 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: np-migrate-scouts
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: migrate-scouts
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: np-seed
   namespace: idea-validator
 spec:
@@ -850,6 +911,180 @@ spec:
     - podSelector:
         matchLabels:
           app: kb
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-scout-hackernews
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: scout-hackernews
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tools
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-scout-github
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: scout-github
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tools
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-scout-lobsters
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: scout-lobsters
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tools
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-scout-stackexchange
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: scout-stackexchange
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tools
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-scout-reddit
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: scout-reddit
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tools
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: np-scout-producthunt
+  namespace: idea-validator
+spec:
+  podSelector:
+    matchLabels:
+      app: scout-producthunt
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tools
     ports:
     - protocol: TCP
       port: 8000

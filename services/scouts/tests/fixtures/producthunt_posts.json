@@ -1,0 +1,46 @@
+{
+ "data": {
+  "posts": {
+   "pageInfo": {
+    "endCursor": "c2",
+    "hasNextPage": false
+   },
+   "edges": [
+    {
+     "node": {
+      "id": "1",
+      "name": "FocusBuddy",
+      "tagline": "Stay focused",
+      "description": "A pomodoro app",
+      "url": "https://www.producthunt.com/posts/focusbuddy",
+      "votesCount": 321,
+      "createdAt": "2026-11-20T08:00:00Z",
+      "topics": {
+       "edges": [
+        {
+         "node": {
+          "name": "Productivity"
+         }
+        },
+        {
+         "node": {
+          "name": "Tech"
+         }
+        }
+       ]
+      }
+     }
+    },
+    {
+     "node": {
+      "id": "2",
+      "name": "NoUrl"
+     }
+    },
+    {
+     "node": null
+    }
+   ]
+  }
+ }
+}
