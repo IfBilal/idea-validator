@@ -55,6 +55,12 @@ class RunService:
             raise NotFound("run not found", {"run_id": run_id})
         return _run(row)
 
+    async def list_by_state(self, states: list[str], limit: int, after: str | None) -> list[RunOut]:
+        """Internal: M3 recovers its non-terminal runs after a restart. Every user's runs."""
+        async with self._sessions() as session:
+            rows = await RunRepository(session).list_by_state(states, limit, after)
+        return [_run(row) for row in rows]
+
     async def put(self, run_id: str, body: RunBody) -> RunOut:
         """Create or update a run. A run belongs to one user for its whole life."""
         async with transaction(self._sessions) as session:

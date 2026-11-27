@@ -301,6 +301,91 @@ def test_run_kind_is_validated(client: TestClient) -> None:
     assert client.put("/internal/runs/run_1", json=bad, headers=H).status_code == 422
 
 
+def _put_runs(client: TestClient, uid: str, states: dict[str, str]) -> None:
+    for run_id, state in states.items():
+        assert client.put(
+            f"/internal/runs/{run_id}", json=run_body(uid, state), headers=H
+        ).is_success
+
+
+def _listed(client: TestClient, query: str) -> list[str]:
+    r = client.get(f"/internal/runs?{query}", headers=H)
+    assert r.status_code == 200, r.text
+    return [row["run_id"] for row in r.json()]
+
+
+def test_runs_can_be_listed_by_state_for_recovery(client: TestClient) -> None:
+    a, b = user(client), user(client, "bo@example.com")
+    _put_runs(client, a, {"run_a": "running", "run_b": "awaiting_input", "run_c": "succeeded"})
+    _put_runs(client, b, {"run_d": "awaiting_approval", "run_e": "failed"})
+    assert _listed(client, "state=running") == ["run_a"]
+    both = _listed(client, "state=running,awaiting_input,awaiting_approval")
+    assert both == ["run_a", "run_b", "run_d"]  # every user, ordered by run id
+    assert _listed(client, "state=nothing_like_this") == []
+
+
+def test_the_run_list_pages_by_run_id(client: TestClient) -> None:
+    uid = user(client)
+    _put_runs(client, uid, {f"run_{n:03d}": "running" for n in range(7)})
+    assert _listed(client, "state=running&limit=3") == ["run_000", "run_001", "run_002"]
+    assert _listed(client, "state=running&limit=3&after=run_002") == [
+        "run_003",
+        "run_004",
+        "run_005",
+    ]
+    assert _listed(client, "state=running&limit=3&after=run_005") == ["run_006"]
+    assert _listed(client, "state=running&after=run_006") == []
+
+
+def test_a_listed_run_carries_what_recovery_needs(client: TestClient) -> None:
+    uid = user(client)
+    body = {**run_body(uid, "awaiting_input"), "context": {"step": "WAIT_ANSWER"}}
+    client.put("/internal/runs/run_1", json=body, headers=H)
+    [row] = client.get("/internal/runs?state=awaiting_input", headers=H).json()
+    assert (row["user_id"], row["kind"], row["input"]) == (uid, "validate", {"idea": "x"})
+    assert row["context"] == {"step": "WAIT_ANSWER"}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "",  # a state filter is mandatory: no unbounded dump of every run
+        "state=",
+        "state=running&limit=0",
+        "state=running&limit=501",
+        "state=running&limit=-1",
+        "state=running&limit=abc",
+        "state=Bad-State",
+        "state=" + ",".join(f"s{n}" for n in range(11)),  # more than 10 states
+        "state=running&after=" + "x" * 81,
+    ],
+)
+def test_bad_run_list_queries_are_rejected(client: TestClient, query: str) -> None:
+    assert client.get(f"/internal/runs?{query}", headers=H).status_code == 422
+
+
+def test_the_run_list_needs_the_internal_token(client: TestClient) -> None:
+    assert client.get("/internal/runs?state=running").status_code in (401, 403)
+
+
+def test_the_run_list_edge_limits_are_accepted(client: TestClient) -> None:
+    uid = user(client)
+    _put_runs(client, uid, {"run_1": "running"})
+    assert _listed(client, "state=running&limit=1") == ["run_1"]
+    assert _listed(client, "state=running&limit=500") == ["run_1"]
+
+
+def test_fifty_runs_list_in_pages_without_loss_or_repeat(client: TestClient) -> None:
+    uid = user(client)
+    _put_runs(client, uid, {f"run_{n:03d}": "awaiting_input" for n in range(50)})
+    seen: list[str] = []
+    after = ""
+    while page := _listed(client, f"state=awaiting_input&limit=20&after={after}"):
+        seen += page
+        after = page[-1]
+    assert seen == [f"run_{n:03d}" for n in range(50)]
+
+
 def test_an_approval_is_decided_exactly_once(client: TestClient) -> None:
     body = {
         "run_id": "run_1",

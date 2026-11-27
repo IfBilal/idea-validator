@@ -17,6 +17,14 @@ class RunRepository:
             stmt = stmt.with_for_update()
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
+    async def list_by_state(self, states: list[str], limit: int, after: str | None) -> list[Run]:
+        """Runs in any of ``states`` by run id; ``after`` is the last id of the previous page."""
+        stmt = select(Run).where(Run.state.in_(states))
+        if after:
+            stmt = stmt.where(Run.run_id > after)
+        rows = await self._session.execute(stmt.order_by(Run.run_id).limit(limit))
+        return list(rows.scalars())
+
     async def add(self, run_id: str, fields: dict[str, Any]) -> Run:
         row = Run(run_id=run_id, **fields)
         self._session.add(row)
