@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
-from common.errors import DomainError, UpstreamError
+from common.errors import DomainError, Unavailable, UpstreamError
 from common.http import ServiceClient
 
 from ..models.cards import Card, EvidenceHit
@@ -114,3 +114,13 @@ class KnowledgeBaseClient:
             )
         except (ValidationError, AttributeError) as exc:
             raise UpstreamError("knowledge base returned a malformed search hit") from exc
+
+
+class UnconfiguredKnowledgeBase:
+    """Stand-in when ``KB_URL`` is not set: every call fails cleanly and readiness is false."""
+
+    async def list_cards(self) -> list[Card]:
+        raise Unavailable("knowledge base is not configured (set KB_URL)")
+
+    async def get_cards(self, ids: Sequence[str]) -> dict[str, Card]:
+        raise Unavailable("knowledge base is not configured (set KB_URL)")

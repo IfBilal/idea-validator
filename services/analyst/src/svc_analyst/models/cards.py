@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from common.schemas.base import Message
 from common.schemas.types import CardId, EvidenceId, Kind, Source, Stage
@@ -12,7 +12,12 @@ PRODUCT_KINDS: frozenset[str] = frozenset({"product", "repo"})
 
 
 class Card(Message):
-    """An M6 card as M7 needs it (a projection of ``schemas/idea_card.schema.json``)."""
+    """An M6 card as M7 needs it (a projection of ``schemas/idea_card.schema.json``).
+
+    M6 sends more fields (url, problem, fetched_at, ...): those are ignored, not rejected.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
 
     id: CardId
     name: str
@@ -52,7 +57,9 @@ class Card(Message):
 
 
 class EvidenceHit(Message):
-    """One ranked result of M6 ``POST /search``."""
+    """One ranked result of M6 ``POST /search`` (extra fields of M6's items are ignored)."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
 
     evidence_id: EvidenceId
     card_id: CardId

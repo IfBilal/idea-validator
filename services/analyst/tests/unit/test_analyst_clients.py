@@ -6,9 +6,9 @@ from datetime import date
 import httpx
 import pytest
 
-from common.errors import UpstreamError
+from common.errors import Unavailable, UpstreamError
 from svc_analyst.clients.fakes import InMemoryCardSource, InMemoryEvidenceSearch
-from svc_analyst.clients.kb import KnowledgeBaseClient
+from svc_analyst.clients.kb import KnowledgeBaseClient, UnconfiguredKnowledgeBase
 from svc_analyst.fixtures import build_cards
 from svc_analyst.models.cards import Card
 from svc_analyst.models.domain import Snapshot
@@ -226,3 +226,11 @@ async def test_store_round_trips_and_starts_empty() -> None:
     newer = Snapshot(as_of=date(2026, 7, 1), niches=[], gaps=[], unassigned=[])
     await store.save(newer)
     assert await store.load() == newer
+
+
+async def test_unconfigured_knowledge_base_fails_closed() -> None:
+    none = UnconfiguredKnowledgeBase()
+    with pytest.raises(Unavailable):
+        await none.list_cards()
+    with pytest.raises(Unavailable):
+        await none.get_cards(["card_00000001"])

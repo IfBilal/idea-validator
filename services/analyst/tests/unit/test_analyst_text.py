@@ -122,3 +122,12 @@ def test_tfidf_is_deterministic_and_order_independent_of_corpus() -> None:
 def test_tfidf_satisfies_the_embedder_protocol() -> None:
     emb: Embedder = TfidfEmbedder(["x"])
     assert emb.vectorize([]) == []
+
+
+def test_cosine_of_zero_weight_vectors_is_zero() -> None:
+    assert cosine({"a": 0.0}, {"a": 1.0}) == 0.0
+
+
+def test_cosine_at_a_threshold_is_stable_after_rounding() -> None:
+    # 0.8 exactly: the service rounds to 6 places before comparing with the 0.80 threshold
+    assert round(cosine({"x": 0.8, "y": 0.6}, {"x": 1.0}), 6) == 0.8
