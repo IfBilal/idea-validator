@@ -12,6 +12,9 @@ from svc_kb.models.api import (
     EvidenceBatchResponse,
     EvidenceFull,
     IdsRequest,
+    IngestRequest,
+    IngestResponse,
+    ReindexResponse,
     SearchRequest,
     SearchResponse,
 )
@@ -62,5 +65,13 @@ def make_router(settings: Settings) -> APIRouter:
     @router.get("/stats", response_model=KbStats)
     async def stats(kb: Kb) -> KbStats:
         return await kb.stats()
+
+    @router.post("/ingest", response_model=IngestResponse)
+    async def ingest(body: IngestRequest, kb: Kb) -> IngestResponse:
+        return await kb.ingest(list(body.cards))
+
+    @router.post("/reindex", response_model=ReindexResponse)
+    async def reindex(kb: Kb) -> ReindexResponse:
+        return await kb.reindex()
 
     return router

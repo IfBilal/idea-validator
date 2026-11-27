@@ -221,3 +221,90 @@ async def test_an_unconfigured_service_fails_closed() -> None:
         assert (await c.get("/ready")).status_code == 503
         assert (await c.get("/stats")).status_code == 503
         assert (await c.post("/search", json={"query": "x"})).status_code == 503
+
+
+def _new(url: str = "https://example.com/new", **changes: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "name": "Notesync",
+        "summary": "Sync notes.",
+        "source": "github",
+        "kind": "repo",
+        "url": url,
+        "fetched_at": "2026-11-21",
+        "published_at": "2026-11-01",
+        "text": "Notesync syncs markdown notes. Exporting to PDF is broken on large vaults.",
+        "niche_tags": ["productivity"],
+    }
+    return base | changes
+
+
+async def test_ingest_stores_indexes_and_makes_the_card_findable(client: httpx.AsyncClient) -> None:
+    r = await client.post("/ingest", json={"cards": [_new()]})
+    assert r.status_code == 200
+    res = r.json()["results"][0]
+    assert res["created"] and res["changed"] and res["card_id"].startswith("card_")
+    hit = (await client.post("/search", json={"query": "exporting pdf vaults"})).json()["items"][0]
+    assert hit["card_id"] == res["card_id"] and hit["card_name"] == "Notesync"
+    assert hit["evidence_id"] == f"{res['card_id']}#c0"
+    assert (await client.get(f"/cards/{res['card_id']}")).json()["niche_tags"] == ["productivity"]
+
+
+async def test_reingesting_the_same_page_is_a_no_op(client: httpx.AsyncClient) -> None:
+    first = (await client.post("/ingest", json={"cards": [_new()]})).json()["results"][0]
+    again = (
+        await client.post(
+            "/ingest", json={"cards": [_new("https://EXAMPLE.com/new/?utm_source=x")]}
+        )
+    ).json()
+    res = again["results"][0]
+    assert res["card_id"] == first["card_id"] and not res["created"] and not res["changed"]
+    total = (await client.get("/cards", params={"limit": 1})).json()["total"]
+    assert total == 4
+
+
+async def test_changed_text_is_reindexed_so_old_words_stop_matching(
+    client: httpx.AsyncClient,
+) -> None:
+    await client.post("/ingest", json={"cards": [_new()]})
+    await client.post(
+        "/ingest", json={"cards": [_new(text="Totally rewritten about quantum widgets.")]}
+    )
+    old = (
+        await client.post("/search", json={"query": "markdown vaults", "mode": "keyword"})
+    ).json()["items"]
+    assert all(i["card_name"] != "Notesync" for i in old)
+    new = (
+        await client.post("/search", json={"query": "quantum widgets", "mode": "keyword"})
+    ).json()["items"]
+    assert new[0]["card_name"] == "Notesync"
+
+
+@pytest.mark.parametrize(
+    "card",
+    [
+        _new("ftp://example.com/x"),
+        _new("not a url at all"),
+        _new(text=""),
+        _new(kind="rant"),
+        _new(published_at="2026-12-01"),
+        _new(extra_field=1),
+    ],
+)
+async def test_ingest_rejects_bad_cards_without_storing_anything(
+    client: httpx.AsyncClient, card: dict[str, object]
+) -> None:
+    assert (await client.post("/ingest", json={"cards": [card]})).status_code == 422
+    assert (await client.get("/cards", params={"limit": 1})).json()["total"] == 3
+
+
+async def test_ingest_batches_are_bounded(client: httpx.AsyncClient) -> None:
+    too_many = [_new(f"https://example.com/b{i}") for i in range(51)]
+    assert (await client.post("/ingest", json={"cards": too_many})).status_code == 422
+    assert (await client.post("/ingest", json={"cards": []})).status_code == 422
+
+
+async def test_reindex_rebuilds_the_search_index_from_the_store(client: httpx.AsyncClient) -> None:
+    r = await client.post("/reindex")
+    assert r.status_code == 200 and r.json() == {"cards": 3, "chunks": 3}
+    hits = (await client.post("/search", json={"query": "stripe invoice"})).json()["items"]
+    assert hits[0]["card_id"] == "card_00000002"

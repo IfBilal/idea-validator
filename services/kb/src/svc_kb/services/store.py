@@ -9,8 +9,9 @@ from typing import Protocol
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from svc_kb.models.cards import CardOut, EvidenceRow, KbStats
+from svc_kb.models.cards import CardIn, CardOut, EvidenceRow, KbStats, UpsertResult
 from svc_kb.repositories.cards import MAX_PAGE, CardRepository
+from svc_kb.services.chunking import chunk_text
 
 __all__ = ["MAX_PAGE", "PgStore", "Store"]
 
@@ -20,6 +21,7 @@ class Store(Protocol):
     async def list(self, *, limit: int, offset: int) -> tuple[builtins.list[CardOut], int]: ...
     async def evidence(self, ids: Sequence[str]) -> builtins.list[EvidenceRow]: ...
     async def stats(self) -> KbStats: ...
+    async def upsert(self, card: CardIn) -> UpsertResult: ...
     async def ping(self) -> bool: ...
 
 
@@ -44,6 +46,12 @@ class PgStore:
     async def stats(self) -> KbStats:
         async with self._sessions() as session:
             return await CardRepository(session).stats()
+
+    async def upsert(self, card: CardIn) -> UpsertResult:
+        async with self._sessions() as session, session.begin():
+            return await CardRepository(session).upsert(
+                card, chunk_text("card_00000000", card.text)
+            )
 
     async def ping(self) -> bool:
         async with self._sessions() as session:

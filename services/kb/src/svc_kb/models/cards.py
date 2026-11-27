@@ -9,8 +9,9 @@ import hashlib
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, field_validator, model_validator
 
+from common.ids import canonical_url
 from common.schemas.base import Message
 from common.schemas.types import Kind, Source
 
@@ -50,6 +51,12 @@ class CardIn(Message):
     fetched_at: date
     text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
     content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("url")
+    @classmethod
+    def _must_be_a_web_page(cls, value: str) -> str:
+        canonical_url(value)  # raises ValueError for anything that is not an http(s) page
+        return value
 
     @model_validator(mode="after")
     def _fill_hash_and_check_dates(self) -> "CardIn":
