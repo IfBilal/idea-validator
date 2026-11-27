@@ -56,6 +56,8 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P1-T02 13 stub services | #12 | 2026-11-26 | all 13 images build |
 | P2-T01..T05 M11 verdict engine | #12 | 2026-11-26 | 24 golden vectors, 99% coverage, verdict-guardian reviewed twice |
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
+| P0-T07 pr-checks workflow repaired | this PR | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
+| P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 | 2026-11-26 | layering enforced by import-linter |
 
 ## Blocked / Needs human
