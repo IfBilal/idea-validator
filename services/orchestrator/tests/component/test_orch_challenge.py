@@ -276,8 +276,9 @@ async def test_every_m2_version_call_carries_the_owner() -> None:
     world, _ = await settled_card()
     world.check_fn = check_says(False)
     await challenge(ChallengeHarness(world), claim_id="cl_risk")
-    m2 = [q for route, q in world.queries if "/internal/ideas/" in route]
-    assert len(m2) == 2 and all(q == {"user_id": "u1"} for q in m2)
+    gets = [q for route, q in world.queries if route.startswith("GET /internal/ideas/")]
+    assert gets == [{"user_id": "u1"}]  # the read names the owner in the query ...
+    assert world.bodies("profile", PUT)[0]["user_id"] == "u1"  # ... the write in its body
     assert world.versions[("idea_1", 2)]["user_id"] == "u1"
 
 
