@@ -10,6 +10,7 @@ bitsandbytes>=0.47
 datasets>=4.0
 matplotlib>=3.9
 numpy
+psutil
 sentencepiece
 protobuf
 gguf

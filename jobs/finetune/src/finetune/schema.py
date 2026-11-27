@@ -135,3 +135,17 @@ def load_jsonl(path: str) -> list[Example]:
             except (ExampleError, json.JSONDecodeError) as exc:
                 raise ExampleError(f"{path}:{number}: {exc}") from exc
     return out
+
+
+# JSON Schema for constrained decoding and the scorer wrapper: exactly the four keys.
+SCORE_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "score": {"anyOf": [{"type": "number", "minimum": 0, "maximum": 5}, {"type": "null"}]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string", "maxLength": 600},
+    },
+    "required": ["score", "confidence", "evidence_ids", "reason"],
+    "additionalProperties": False,
+}
