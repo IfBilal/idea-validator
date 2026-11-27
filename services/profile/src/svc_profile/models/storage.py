@@ -1,10 +1,11 @@
 """Request and response models for idea/version/verdict/run/approval/cache storage."""
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from common.schemas import Verdict
 from common.schemas.base import Message
@@ -29,6 +30,37 @@ class NewVersion(Message):
     clarifications: dict[str, Any] | None = None
 
 
+MAX_CARD_BYTES = 256 * 1024
+
+
+class PutVersion(Message):
+    """PUT /internal/ideas/{id}/versions/{v}: a new version with its card, stored verbatim."""
+
+    user_id: uuid.UUID
+    text: str = Field(min_length=1, max_length=4000)
+    change_note: str | None = Field(default=None, max_length=500)
+    card: dict[str, Any]
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_.:-]{1,100}$")
+    base_version: int = Field(ge=1)
+
+    @field_validator("card")
+    @classmethod
+    def _card_is_small_json(cls, card: dict[str, Any]) -> dict[str, Any]:
+        try:
+            size = len(json.dumps(card, allow_nan=False, ensure_ascii=False).encode())
+        except (ValueError, TypeError) as exc:
+            raise ValueError("card must be plain JSON") from exc
+        if size > MAX_CARD_BYTES:
+            raise ValueError(f"card exceeds {MAX_CARD_BYTES} bytes")
+        return card
+
+
+class VersionPut(Message):
+    idea_id: str
+    version: int
+    created: bool
+
+
 class IdeaCreated(Message):
     idea_id: str
     version: int
@@ -48,6 +80,7 @@ class VersionSummary(Message):
 class VersionDetail(VersionSummary):
     idea_id: str
     title: str
+    card: dict[str, Any] | None
     clarifications: dict[str, Any] | None
     verdict_payload: dict[str, Any] | None
 

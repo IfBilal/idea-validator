@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from common.errors import NotFound, ValidationFailed
+from common.errors import Conflict, NotFound, ValidationFailed
 
 from ..models.storage import (
     CompareRow,
@@ -14,7 +14,9 @@ from ..models.storage import (
     IdeaSummary,
     NewIdea,
     NewVersion,
+    PutVersion,
     VersionDetail,
+    VersionPut,
     VersionSummary,
 )
 from ..repositories.db import transaction
@@ -61,6 +63,45 @@ class IdeaService:
                 body.clarifications,
             )
             return IdeaCreated(idea_id=str(idea_id), version=number)
+
+    async def put_version(self, idea_id: uuid.UUID, version: int, body: PutVersion) -> VersionPut:
+        """Create `base_version + 1` with its card; idempotent on the key, serialised per idea."""
+        if version != body.base_version + 1:
+            raise ValidationFailed("version must equal base_version + 1")
+        async with transaction(self._sessions) as session:
+            repo = IdeaRepository(session)
+            # the row lock makes concurrent writers of one idea take turns
+            if await repo.owned(idea_id, body.user_id, lock=True) is None:
+                raise NotFound("idea not found", {"idea_id": str(idea_id)})
+            existing = await repo.by_key(idea_id, body.idempotency_key)
+            if existing is not None:
+                same = (
+                    existing.version == version
+                    and existing.parent_version == body.base_version
+                    and existing.text == body.text
+                    and existing.change_note == body.change_note
+                    and existing.card == body.card
+                )
+                if not same:
+                    raise Conflict("idempotency key reused with different content")
+                return VersionPut(idea_id=str(idea_id), version=version, created=False)
+            latest = await repo.latest_version(idea_id)
+            if latest is None or latest.version != body.base_version:
+                raise Conflict(
+                    "base_version is not the latest version",
+                    {"latest_version": latest.version if latest else None},
+                )
+            await repo.add_version(
+                idea_id,
+                version,
+                body.text,
+                body.change_note,
+                body.base_version,
+                None,
+                card=body.card,
+                idempotency_key=body.idempotency_key,
+            )
+            return VersionPut(idea_id=str(idea_id), version=version, created=True)
 
     async def page(self, user_id: uuid.UUID, limit: int, cursor: str | None) -> IdeaPage:
         limit = max(1, min(limit, MAX_PAGE))
@@ -120,6 +161,7 @@ class IdeaService:
                 **base.model_dump(),
                 idea_id=str(idea_id),
                 title=idea.title,
+                card=row.card,
                 clarifications=row.clarifications,
                 verdict_payload=verdict.payload if verdict else None,
             )
