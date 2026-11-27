@@ -59,6 +59,12 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
 | P0-T07 pr-checks workflow repaired | #16 | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
 | P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
+| P1-T04 k8s_up.sh verified end to end + guard against wrong kubectl context + `make k8s-verify` | this PR | 2026-11-27 | /usr/local/bin/kubectl is k3s here: scripts pin KUBECONFIG; Calico enforces NetworkPolicy |
+| P3-T01 data sources doc + ADR-009 | this PR | 2026-11-27 | Reddit/Product Hunt optional; 3 keyless sources; limits marked V/R/H |
+| /llm live against Groq | this PR | 2026-11-27 | both configured models were retired (404): config fixed, live availability test added |
+| M5 hardening round 2 (adversarial findings on #22/#23) | this PR | 2026-11-27 | NFKC 30 s -> 1.6 s, redirect to disabled source, overall deadline, /llm worst-case estimate + TraceRecord |
+| P1-T05 Kustomize base (generated), P1-T07 NetworkPolicies from the call graph | this PR | 2026-11-27 | kubeconform strict 57/57, kube-linter clean, server dry run clean; datastores ran under restricted PSA with data surviving restarts; edges enforced live. UI, CronJobs and Jobs still to add |
+| P1-T06 secrets, P1-T08 deploy step, P1-T09 smoke test, migrate Job | this PR | 2026-11-27 | all 13 services + 4 datastores running on kind, 0 restarts; `make smoke` passes (register, login, profile round trip through the ingress). Jenkins and rollback (P1-T08 rest) still open |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
@@ -67,7 +73,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 - [ ] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
-- [ ] **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
+- [x] (done 2026-11-27, verified: 3-node kind + Calico + ingress + metrics-server; `make k8s-verify` proves NetworkPolicy enforcement; persist the sysctl in /etc/sysctl.d/99-kind.conf to survive a reboot) **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
 - [ ] Decide which laptop hosts kind + Jenkins (≥ 16 GB RAM)
 - [ ] Colab / Kaggle account for fine-tuning
 - [ ] Ask instructor the open questions in `docs/harness/27_ASSUMPTIONS_AND_OPEN_QUESTIONS.md` §B
@@ -75,6 +81,15 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 ## Decisions made during build (link ADRs)
 - ADR-001..007 (initial) in `docs/decisions/`
 - Ownership rebalance (before Phase 0): UI moved Dev B → Dev A; M7, M12, M8 Skeptic/Change Suggester moved Dev A → Dev B (see 18 §1, 27 §A).
+
+## Tracked follow-ups (not blocking a merge; do not lose them)
+**M3 orchestrator (from the #27 review)**
+1. Budget check and charge are not atomic: with 4 parallel evidence searches `max_steps=4` can end at 7. `common/budget.py` needs a Lua compare-and-reserve (Dev A takes it); the in-memory test fake never yields, so add a yielding fake or a real-Redis concurrency test.
+2. No restart recovery: `RunService._runs` is in memory; nothing re-attaches to the Postgres checkpointer after a pod restart (docs/harness/07 §1). Rehydrate from the M2 run mirror. Without `DATABASE_URL` the checkpointer is `MemorySaver`; in a cluster it must fail (`ENVIRONMENT=production` already does).
+3. Spec deviations are listed openly in `services/orchestrator/README.md` (no M12 `/rail/input`, no M8 `/skeptic` so the -0.5 challenge penalty cannot apply yet, stability only traced, approval only for deep search, clarify after scorers, `scorer_concurrency` unused).
+4. Ownership: M3 never compares `user_id` (GET/answer/approve are by run id and predictable question/approval ids). Acceptable only because M1 is the sole caller; the gateway run endpoints (P5-T07) must enforce it and have a cross-user test.
+5. Trace inputs are an `input_hash` only (docs/harness/13 §8). The cache key has no `user_id` (safe only while idea ids are globally unique, which M2 guarantees). Register `RunStatus` with LangGraph's msgpack allow-list before strict mode becomes the default.
+6. Not verified: real Redis/Postgres under true concurrency, and that M5/M4 write tokens, pages and cost into the same `budget:{run_id}` hash.
 
 ## Lessons / notes for future sessions
 - Docker is not installed system-wide. A rootless Docker 29 lives in `~/.local/docker-rootless` (start: `DOCKERD_ROOTLESS_ROOTLESSKIT_NET=pasta ~/.local/docker-rootless/bin/dockerd-rootless.sh`, then `DOCKER_HOST=unix:///run/user/1000/docker.sock`). Its published ports do not reach the host here; use Podman (`podman run -p`) for local databases and set `TEST_DATABASE_URL` / `TEST_REDIS_URL`. CI uses real Docker + testcontainers.

@@ -4,7 +4,7 @@ TAG ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo dev)
 NS  := idea-validator
 SERVICES := gateway profile orchestrator scouts tools kb analyst ideation validators scorer verdict critic agentops
 
-.PHONY: help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
+.PHONY: secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
@@ -27,12 +27,18 @@ migrate: ## alembic upgrade (P2)
 	uv run --package profile alembic -c services/profile/alembic.ini upgrade head
 seed: ## restore card snapshot (P3)
 	uv run --package ingestion python -m ingestion restore data/snapshots/latest.jsonl.gz
-images: ## build all module images tagged by commit SHA
-	for s in $(SERVICES); do docker build -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) .; done
-	docker build -t localhost:5001/ui:$(TAG) services/ui
-	docker build -t localhost:5001/ingestion:$(TAG) jobs/ingestion
+images: ## build and push every module image to the local registry, tagged TAG (default: commit SHA)
+	for s in $(SERVICES); do docker build -q -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) . && docker push -q localhost:5001/$$s:$(TAG); done
+	@if [ -f services/ui/package.json ]; then docker build -q -t localhost:5001/ui:$(TAG) services/ui && docker push -q localhost:5001/ui:$(TAG); fi
+	@if [ -f jobs/ingestion/Dockerfile ]; then docker build -q -t localhost:5001/ingestion:$(TAG) jobs/ingestion && docker push -q localhost:5001/ingestion:$(TAG); fi
 k8s-up: ## kind + calico + registry + ingress + metrics-server (P1)
 	./scripts/k8s_up.sh
+k8s-gen: ## regenerate k8s/ manifests from scripts/gen_k8s.py (a test fails if they drift)
+	uv run python scripts/gen_k8s.py
+k8s-verify: ## prove registry, ingress, metrics and NetworkPolicy enforcement on the kind cluster (P1)
+	./scripts/verify_cluster.sh
+secrets: ## create/update the app-secrets Secret from .env (keeps existing random values)
+	./scripts/create_secrets.sh
 deploy: ## kustomize apply with images at TAG (P1)
 	./scripts/deploy.sh $(TAG)
 smoke: ## smoke test through ingress (P1)
