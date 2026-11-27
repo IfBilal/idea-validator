@@ -20,6 +20,10 @@ class BaseClient:
     def __init__(self, http: ServiceClient) -> None:
         self._http = http
 
+    def bad(self, message: str) -> UpstreamError:
+        """A reply that arrived but is unusable. Not retried, so status 200 marks it as such."""
+        return UpstreamError(message, {"target": self.name, "status": 200})
+
     async def _call(
         self, method: str, path: str, body: Any = None, *, http: ServiceClient | None = None
     ) -> Any:
@@ -28,15 +32,15 @@ class BaseClient:
         try:
             return response.json()
         except ValueError as exc:
-            raise UpstreamError(f"{self.name} returned a body that is not JSON") from exc
+            raise self.bad(f"{self.name} returned a body that is not JSON") from exc
 
     def _parse(self, model: type[M], data: Any) -> M:
         try:
             return model.model_validate(data)
         except ValidationError as exc:
-            raise UpstreamError(f"{self.name} returned an invalid {model.__name__}") from exc
+            raise self.bad(f"{self.name} returned an invalid {model.__name__}") from exc
 
     def _object(self, data: Any, what: str) -> dict[str, Any]:
         if not isinstance(data, dict):
-            raise UpstreamError(f"{self.name} returned an invalid {what}: expected an object")
+            raise self.bad(f"{self.name} returned an invalid {what}: expected an object")
         return data

@@ -32,7 +32,9 @@ def after_evidence(state: ValidateState) -> str:
 def after_deep_search_decision(state: ValidateState) -> str:
     if state.stopped:
         return "card"
-    return "await_approval" if state.pending_approval else "scout"
+    if state.pending_approval:
+        return "await_approval"
+    return "features" if state.deep_search_done else "scout"  # done = skipped for lack of budget
 
 
 def after_await_approval(state: ValidateState) -> str:

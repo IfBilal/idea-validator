@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -8,7 +9,7 @@ from svc_orchestrator.services.run_config import load_run_config, run_config_fro
 
 REPO_CONFIG = Path(__file__).resolve().parents[4] / "config"
 
-MINIMAL = {
+MINIMAL: dict[str, Any] = {
     "validate": {
         "max_retries": 2,
         "timeouts_s": {"tool_fetch": 10, "kb_search": 5, "scorer": 60, "llm": 60, "verdict": 2},
@@ -50,24 +51,24 @@ def test_missing_kind_is_a_config_error() -> None:
 
 @pytest.mark.parametrize("retries", [-1, 3])
 def test_retries_are_bounded_to_zero_through_two(retries: int) -> None:
-    bad = {**MINIMAL, "validate": {**MINIMAL["validate"], "max_retries": retries}}  # type: ignore[dict-item]
+    bad = {**MINIMAL, "validate": {**MINIMAL["validate"], "max_retries": retries}}
     with pytest.raises(ConfigError, match="max_retries"):
         run_config_from(bad, "validate")
 
 
 def test_zero_retries_is_allowed() -> None:
-    ok = {**MINIMAL, "validate": {**MINIMAL["validate"], "max_retries": 0}}  # type: ignore[dict-item]
+    ok = {**MINIMAL, "validate": {**MINIMAL["validate"], "max_retries": 0}}
     assert run_config_from(ok, "validate").max_retries == 0
 
 
 def test_non_positive_timeout_is_a_config_error() -> None:
-    bad_section = {**MINIMAL["validate"], "timeouts_s": {"scorer": 0}}  # type: ignore[dict-item]
+    bad_section = {**MINIMAL["validate"], "timeouts_s": {"scorer": 0}}
     with pytest.raises(ConfigError, match="timeout"):
         run_config_from({**MINIMAL, "validate": bad_section}, "validate")
 
 
 def test_missing_deep_search_defaults_to_no_scouting() -> None:
-    section = {k: v for k, v in MINIMAL["validate"].items() if k != "deep_search"}  # type: ignore[union-attr]
+    section = {k: v for k, v in MINIMAL["validate"].items() if k != "deep_search"}
     cfg = run_config_from({**MINIMAL, "validate": section}, "validate")
     assert cfg.deep_search_pages == 0
     assert cfg.deep_search_cost_usd == 0

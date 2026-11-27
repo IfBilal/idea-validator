@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
-from common.errors import UpstreamError
 from common.schemas import EvidenceItem
 
 from .base import BaseClient
@@ -31,7 +30,7 @@ class KbClient(BaseClient):
         )
         raw = data.get("items")
         if not isinstance(raw, list):
-            raise UpstreamError("M6 kb returned a search response without an items list")
+            raise self.bad("M6 kb returned a search response without an items list")
         items: list[EvidenceItem] = []
         skipped = 0
         for entry in raw:

@@ -79,12 +79,13 @@ class StepRunner:
         call: Callable[[], Awaitable[Any]],
         timeout_s: float,
         estimate: Spend | None = None,
+        memoise: bool = True,
     ) -> StepOutcome:
         estimate = estimate or Spend(steps=1)
         key = memo_key(step, inputs)
         await self._ledger.check()  # an already over-budget run stops even if this step is free
 
-        if key in memo:
+        if memoise and key in memo:
             with self._tracer.span(
                 agent, "tool_call", tool=tool, run_id=self._run_id, input=inputs
             ) as handle:
@@ -139,7 +140,7 @@ class StepRunner:
                 "spend_update", spent=spent.model_dump(), budget=limits.model_dump()
             )
             await self._emitter.emit("agent_finished", agent=agent, step=step)
-        return StepOutcome(value, False, key, {key: value})
+        return StepOutcome(value, False, key, {key: value} if memoise else {})
 
     def decision(self, name: str, inputs: Any, output: Any) -> None:
         """A routing or policy decision as a ``kind=decision`` trace record (docs/harness/07 §8)."""

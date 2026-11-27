@@ -3,8 +3,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from common.errors import UpstreamError
-
 from .base import BaseClient
 
 
@@ -36,6 +34,6 @@ class ValidatorsClient(BaseClient):
         data = self._object(await self._call("POST", "/score-all", body), "score-all response")
         scores = data.get("scores")
         if not isinstance(scores, list):
-            raise UpstreamError("M9 validators returned a score-all response without scores")
+            raise self.bad("M9 validators returned a score-all response without scores")
         extra = data.get("extra")
         return ScoreAllResult(scores, extra if isinstance(extra, dict) else {})

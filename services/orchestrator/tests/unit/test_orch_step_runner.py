@@ -273,3 +273,30 @@ async def test_decision_records_use_kind_decision() -> None:
     assert record.tool == "transition"
     assert record.input == {"from": "evidence"}
     assert record.output == {"decision": "route", "to": "features", "reason": "enough"}
+
+
+async def test_memoise_false_always_calls_and_never_returns_a_memo_entry() -> None:
+    rig = Rig()
+    calls = 0
+
+    async def counted() -> Any:
+        nonlocal calls
+        calls += 1
+        return {"n": calls}
+
+    first = await rig.runner.run(
+        {}, "profile", agent="a", tool="t", inputs=1, call=counted, timeout_s=1, memoise=False
+    )
+    assert first.memo_update == {}
+    again = await rig.runner.run(
+        {first.memo_key: {"n": 99}},
+        "profile",
+        agent="a",
+        tool="t",
+        inputs=1,
+        call=counted,
+        timeout_s=1,
+        memoise=False,
+    )
+    assert again.value == {"n": 2}
+    assert again.cache_hit is False

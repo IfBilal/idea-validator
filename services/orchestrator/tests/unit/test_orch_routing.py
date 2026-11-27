@@ -34,6 +34,7 @@ TABLE: list[tuple[Route, dict[str, object], str]] = [
         {"pending_approval": {"approval_id": "a1"}},
         "await_approval",
     ),
+    (routing.after_deep_search_decision, {"deep_search_done": True}, "features"),
     (routing.after_await_approval, {"approval_decision": "approved"}, "scout"),
     (routing.after_await_approval, {"approval_decision": "declined"}, "features"),
     (routing.after_await_approval, {"approval_decision": None}, "features"),
@@ -91,3 +92,12 @@ def test_awaiting_states_are_not_stopped() -> None:
 def test_stop_beats_a_pending_approval_too() -> None:
     s = state(status=RunStatus.BUDGET_STOPPED, pending_approval={"approval_id": "a"})
     assert routing.after_deep_search_decision(s) == "card"
+
+
+def test_every_routing_outcome_is_a_declared_edge_of_the_graph() -> None:
+    from svc_orchestrator.services.validate_graph import EDGES
+
+    by_route = {route: targets for route, targets in EDGES.values()}
+    for route, _fields, expected in TABLE:
+        assert expected in by_route[route], (route.__name__, expected)
+    assert {r for r, _ in EDGES.values()} == {route for route, _, _ in TABLE}

@@ -4,6 +4,7 @@ M1 turns the Redis channel ``run:{run_id}`` into the SSE stream. Publishing is b
 event bus must never fail a run.
 """
 
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -36,7 +37,7 @@ class InMemoryPublisher:
 
 
 class PubSubRedis(Protocol):
-    async def publish(self, channel: str, message: str) -> Any: ...
+    def publish(self, channel: str, message: str) -> Awaitable[Any]: ...
 
 
 class RedisPublisher:

@@ -69,6 +69,7 @@ class ValidateState(BaseModel):
     scorer_extra: dict[str, Any] = Field(default_factory=dict)
     answers: Annotated[dict[str, float | None], operator.or_] = Field(default_factory=dict)
     asked: Annotated[list[str], operator.add] = Field(default_factory=list)
+    vetted: Annotated[list[str], operator.add] = Field(default_factory=list)  # VOI said: no change
     pending_question: dict[str, Any] | None = None
 
     # --- approval -----------------------------------------------------------------------------
