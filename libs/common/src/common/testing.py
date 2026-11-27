@@ -49,6 +49,7 @@ class EmulatedRedis:
     def __init__(self) -> None:
         self.hashes: dict[str, dict[str, float]] = {}
         self.ttls: dict[str, int] = {}
+        self.values: dict[str, str] = {}
 
     async def hincrby(self, name: str, key: str, amount: int) -> int:
         h = self.hashes.setdefault(name, {})
@@ -59,6 +60,21 @@ class EmulatedRedis:
         h = self.hashes.setdefault(name, {})
         h[key] = float(h.get(key, 0.0)) + float(amount)
         return float(h[key])
+
+    async def set(
+        self, name: str, value: str, *, ex: int | None = None, get: bool = False
+    ) -> bytes | bool | None:
+        previous = self.values.get(name)
+        self.values[name] = value
+        if ex is not None:
+            self.ttls[name] = int(ex)
+        if get:
+            return None if previous is None else previous.encode()
+        return True
+
+    async def delete(self, *names: str) -> int:
+        removed = [n for n in names if self.values.pop(n, None) is not None]
+        return len(removed)
 
     async def hgetall(self, name: str) -> dict[bytes, bytes]:
         return {k.encode(): str(v).encode() for k, v in self.hashes.get(name, {}).items()}

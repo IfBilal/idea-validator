@@ -51,6 +51,10 @@ class RedisLike(Protocol):
     def expire(self, name: str, time: int) -> Awaitable[Any]: ...
     def ttl(self, name: str) -> Awaitable[Any]: ...
     def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Awaitable[Any]: ...
+    def set(
+        self, name: str, value: str, *, ex: int | None = None, get: bool = False
+    ) -> Awaitable[Any]: ...
+    def delete(self, *names: str) -> Awaitable[Any]: ...
 
 
 class Spend(Message):
@@ -124,6 +128,35 @@ class BudgetLedger:
             await self._redis.hincrbyfloat(self._key, "cost_usd", spend.cost_usd)
         await self._redis.expire(self._key, self._ttl_s)
         return await self.spent()
+
+    async def claim_step(self, token: str, owner: str) -> bool:
+        """Mark a step as in flight; True when a *different* process left a claim behind.
+
+        A step that was running when its process died is re-run after recovery. The first run was
+        already charged by ``reserve``, so the re-run must not be charged again. A claim by the same
+        ``owner`` is a second identical step in flight at once: real work, billed normally.
+        The caller ``release_step``s on completion or error, but not when it is cancelled.
+        """
+        previous = await self._redis.set(self._claim_key(token), owner, ex=self._ttl_s, get=True)
+        if previous is None:
+            return False
+        return (previous.decode() if isinstance(previous, bytes) else str(previous)) != owner
+
+    async def release_step(self, token: str) -> None:
+        await self._redis.delete(self._claim_key(token))
+
+    def _claim_key(self, token: str) -> str:
+        return f"{self._key}:claim:{token}"
+
+    async def restore_if_empty(self, spent: Spend) -> bool:
+        """Put back spend saved elsewhere (M2's run mirror) when the Redis hash was lost.
+
+        Never overwrites a ledger that already has spend, so M5 charges made since are kept.
+        """
+        if spent == Spend() or await self.spent() != Spend():
+            return False
+        await self.record(spent)
+        return True
 
     async def reserve(self, estimate: Spend) -> Spend:
         """Atomically refuse (``BudgetExceeded``, nothing changed) or admit a step and count it.
