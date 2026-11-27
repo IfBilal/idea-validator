@@ -21,11 +21,13 @@ from ..models.storage import (
     NewApproval,
     NewIdea,
     NewVersion,
+    PutVersion,
     RunBody,
     RunOut,
     StoreVerdict,
     VerdictStored,
     VersionDetail,
+    VersionPut,
     VersionSummary,
 )
 from ..services.auth import AuthService
@@ -121,6 +123,15 @@ def make_router(settings: Settings) -> APIRouter:
         user_id: Annotated[uuid.UUID, Query()],
     ) -> VersionDetail:
         return await ideas.detail(idea_id, user_id, version)
+
+    @router.put("/ideas/{idea_id}/versions/{version}", response_model=VersionPut)
+    async def put_version(
+        idea_id: uuid.UUID,
+        version: Annotated[int, Path(ge=1)],
+        body: PutVersion,
+        ideas: Ideas,
+    ) -> VersionPut:
+        return await ideas.put_version(idea_id, version, body)
 
     @router.post("/verdicts", status_code=201, response_model=VerdictStored)
     async def store_verdict(body: StoreVerdict, verdicts: Verdicts) -> VerdictStored:

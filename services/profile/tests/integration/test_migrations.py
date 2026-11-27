@@ -131,3 +131,72 @@ def test_the_database_rejects_out_of_range_profiles(db: str, bad: dict[str, obje
 def test_a_valid_profile_is_accepted(db: str) -> None:
     command.upgrade(_config(), "head")
     asyncio.run(_insert_profile(db))
+
+
+async def _version_columns(url: str) -> dict[str, str]:
+    engine = create_async_engine(url)
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT column_name, is_nullable FROM information_schema.columns "
+                "WHERE table_schema = :s AND table_name = 'idea_versions'"
+            ),
+            {"s": SCHEMA},
+        )
+        found = {r[0]: r[1] for r in rows}
+    await engine.dispose()
+    return found
+
+
+async def _insert_versions(url: str, key_a: str | None, key_b: str | None) -> None:
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as conn:
+            user_id = (
+                await conn.execute(
+                    text(
+                        f"INSERT INTO {SCHEMA}.users (email, hash) VALUES ('a@b.co', 'h') "
+                        "RETURNING id"
+                    )
+                )
+            ).scalar_one()
+            idea_id = (
+                await conn.execute(
+                    text(
+                        f"INSERT INTO {SCHEMA}.ideas (user_id, title, source) "
+                        "VALUES (:u, 't', 'own') RETURNING id"
+                    ),
+                    {"u": user_id},
+                )
+            ).scalar_one()
+            for version, key in ((1, key_a), (2, key_b)):
+                await conn.execute(
+                    text(
+                        f"INSERT INTO {SCHEMA}.idea_versions "
+                        "(idea_id, version, text, idempotency_key) VALUES (:i, :v, 'x', :k)"
+                    ),
+                    {"i": idea_id, "v": version, "k": key},
+                )
+    finally:
+        await engine.dispose()
+
+
+def test_0002_adds_nullable_card_and_key_and_round_trips(db: str) -> None:
+    command.upgrade(_config(), "0001")
+    assert "card" not in asyncio.run(_version_columns(db))
+    command.upgrade(_config(), "head")
+    cols = asyncio.run(_version_columns(db))
+    assert cols["card"] == cols["idempotency_key"] == "YES"
+    command.downgrade(_config(), "0001")
+    assert "card" not in asyncio.run(_version_columns(db))
+    command.upgrade(_config(), "head")
+    assert "card" in asyncio.run(_version_columns(db))
+
+
+def test_idempotency_key_is_unique_per_idea_but_nulls_repeat(db: str) -> None:
+    command.upgrade(_config(), "head")
+    asyncio.run(_insert_versions(db, None, None))
+    asyncio.run(_reset(db))
+    command.upgrade(_config(), "head")
+    with pytest.raises(DBAPIError):
+        asyncio.run(_insert_versions(db, "same", "same"))
