@@ -18,6 +18,9 @@ docs
 eval
 k8s
 data
+!data/snapshots
+data/snapshots/.tmp-*
+data/snapshots/*.partial
 templates
 scripts
 *.gguf

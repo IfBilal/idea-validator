@@ -27,12 +27,12 @@ down: ## stop the dev stack; data volumes are kept (docker compose down -v delet
 	docker compose down
 migrate: ## alembic upgrade on the compose Postgres (run `make up` first)
 	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head && uv run --package idea-validator-kb alembic -c services/kb/alembic.ini upgrade head
-seed: ## restore the card snapshot into Postgres + Qdrant (needs M6 and ingestion, issue 30)
-	@echo "make seed needs the ingestion job (issue #30, P3-T09), which is not built yet" >&2; exit 1
+seed: ## restore the newest data/snapshots/cards-*.jsonl.gz into the kind cluster via a seed Job (M6i, P3-T09)
+	./scripts/seed.sh $(TAG)
 images: ## build and push every module image to the local registry, tagged TAG (default: commit SHA)
 	for s in $(SERVICES); do docker build -q -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) . && docker push -q localhost:5001/$$s:$(TAG); done
 	@if [ -f services/ui/package.json ]; then docker build -q -t localhost:5001/ui:$(TAG) services/ui && docker push -q localhost:5001/ui:$(TAG); fi
-	@if [ -f jobs/ingestion/Dockerfile ]; then docker build -q -t localhost:5001/ingestion:$(TAG) jobs/ingestion && docker push -q localhost:5001/ingestion:$(TAG); fi
+	@if [ -f jobs/ingestion/Dockerfile ]; then docker build -q -f jobs/ingestion/Dockerfile -t localhost:5001/ingestion:$(TAG) . && docker push -q localhost:5001/ingestion:$(TAG); fi
 k8s-up: ## kind + calico + registry + ingress + metrics-server (P1)
 	./scripts/k8s_up.sh
 k8s-gen: ## regenerate k8s/ manifests from scripts/gen_k8s.py (a test fails if they drift)
