@@ -257,30 +257,26 @@ class FakeWorld:
         ]
 
 
-class Harness:
-    """Runs the Validate graph against a ``FakeWorld`` with in-memory Redis, events and traces."""
+class Rig:
+    """Everything a run needs, wired to a ``FakeWorld`` with in-memory Redis, events and traces."""
 
     def __init__(
         self,
         world: FakeWorld | None = None,
         *,
-        run_id: str = "run_1",
         limits: dict[str, Any] | None = None,
         max_retries: int = 2,
         timeouts: dict[str, float] | None = None,
         deep_search_pages: int = 20,
+        approval_timeout_s: float = 600,
     ) -> None:
-        from common.budget import BudgetLedger
         from common.schemas import TraceRecord
-        from common.tracing import Tracer
 
         from .clients.factory import build_clients
-        from .repositories.events import InMemoryPublisher, RunEmitter
+        from .repositories.events import InMemoryPublisher
         from .services.run_config import run_config_from
-        from .services.run_context import RunContext
 
         self.world = world or FakeWorld()
-        self.run_id = run_id
         self.redis = FakeRedis()
         self.publisher = InMemoryPublisher()
         self.records: list[TraceRecord] = []
@@ -296,28 +292,61 @@ class Harness:
             **(limits or {}),
         }
         self.config = run_config_from(
-            {"validate": section, "concurrency": {"scorers": 4}, "approval_timeout_s": 600},
+            {
+                "validate": section,
+                "concurrency": {"scorers": 4},
+                "approval_timeout_s": approval_timeout_s,
+            },
             "validate",
         )
-        self.ledger = BudgetLedger(self.redis, run_id, self.config.limits)
-        self.ctx = RunContext(
+        self.clients = build_clients(
+            URLS,
+            self.config,
+            internal_token="test-token",  # noqa: S106
+            backoff_s=0.0,
+            transport=self.world.transport(),
+        )
+
+    def context(self, run_id: str) -> Any:
+        from common.budget import BudgetLedger
+        from common.tracing import Tracer
+
+        from .repositories.events import RunEmitter
+        from .services.run_context import RunContext
+
+        return RunContext(
             run_id=run_id,
             config=self.config,
-            ledger=self.ledger,
+            ledger=BudgetLedger(self.redis, run_id, self.config.limits),
             tracer=Tracer("orchestrator", sink=self.records.append),
             emitter=RunEmitter(run_id, self.publisher),
-            clients=build_clients(
-                URLS,
-                self.config,
-                internal_token="test-token",  # noqa: S106
-                backoff_s=0.0,
-                transport=self.world.transport(),
-            ),
+            clients=self.clients,
         )
+
+
+class Harness:
+    """Runs the Validate graph directly (no run service) against a ``FakeWorld``."""
+
+    def __init__(
+        self,
+        world: FakeWorld | None = None,
+        *,
+        run_id: str = "run_1",
+        **rig_options: Any,
+    ) -> None:
         from langgraph.checkpoint.memory import MemorySaver
 
         from .services.validate_graph import build_validate_graph, graph_config
 
+        self.rig = Rig(world, **rig_options)
+        self.world = self.rig.world
+        self.run_id = run_id
+        self.redis = self.rig.redis
+        self.publisher = self.rig.publisher
+        self.records = self.rig.records
+        self.config = self.rig.config
+        self.ctx = self.rig.context(run_id)
+        self.ledger = self.ctx.ledger
         self.graph = build_validate_graph(self.ctx, MemorySaver())
         self._config = graph_config(run_id)
 
@@ -332,11 +361,8 @@ class Harness:
         return {**base, **over}
 
     async def start(self, **over: Any) -> dict[str, Any]:
-        return dict(
-            await self.graph.ainvoke(
-                ValidateState.model_validate(self.initial(**over)), self._config
-            )
-        )
+        state = ValidateState.model_validate(self.initial(**over))
+        return dict(await self.graph.ainvoke(state, self._config))
 
     async def resume(self, value: Any) -> dict[str, Any]:
         from langgraph.types import Command
