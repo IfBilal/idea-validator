@@ -178,7 +178,7 @@ make replay RUN=id  # python -m agentops.replay <run_id>
 README.md  CLAUDE.md  AGENTS.md  PROGRESS.md  Makefile  docker-compose.yml  Jenkinsfile  .env.example
 docs/            harness/ (this harness), decisions/ (ADRs), report/, screenshots/, ai-usage-log.md, contribution.md
 services/        gateway ui profile orchestrator scouts tools kb analyst ideation validators scorer verdict critic agentops
-                 (each: Dockerfile, .dockerignore, pyproject/requirements, src/, tests/)
+                 (each: Dockerfile, pyproject, src/, tests/; one root .dockerignore, images build from the repo root)
 libs/common/     shared: schemas (Pydantic), tracing client, config loader, http client w/ retries+timeouts, logging
 jobs/            ingestion  finetune  evaluation
 rubrics/         <dimension>@v<N>.yaml  (versioned, one per dimension)

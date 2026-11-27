@@ -27,6 +27,7 @@ answers differently, update this file, the affected spec and an ADR. Report thes
 | A-19 | "Ranked list" order | not specified | verdict rank, then score, then confidence | 07 §3 |
 | A-20 | Debate early stop | "repeat up to 3 rounds" | stop early when no new accepted non-fatal objections or enough survivors | 07 §3 |
 | A-21 | Team ownership split | Guide asks for a contribution table, no split given | Dev A (Taimoor): platform, data, ops, UI, fine-tuning/serving. Dev B (Bilal): verdict, agents, orchestrator, gateway, M7, M12. Chosen so every Validate-path producer/consumer is one developer's and the UI is mock-driven in parallel | 18, 20 |
+| A-22 | What-if for gate failures | 08 §2.8 lists suggestions for the evidence, risk and duplicate gates | M11 follows the reference engine (which the golden vectors encode): the feasibility gate gets an hours-needed candidate; a duplicate-gate failure is fixed through the normal differentiation to 3.0 candidate; evidence and risk gates give no what-if candidate, only `missing` / the named blocker. Revisit with new vectors if the instructor expects more | 08 |
 
 ## B. Open questions (ask the instructor early; proceed with the assumption meanwhile)
 1. Is it acceptable that Learning & portfolio value is produced by the Feasibility-for-this-student scorer (A-01)?

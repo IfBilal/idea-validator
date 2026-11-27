@@ -18,16 +18,28 @@ Everything a coding agent (Claude Code, Codex) or a human needs to build the sys
 | `CLAUDE.md` / `AGENTS.md` | Operating manual for coding agents: rules, loop, stack, commands |
 | `PROGRESS.md` | Live project state, gate log, blockers |
 | `docs/harness/00_INDEX.md` | Map of all specs: PRD, requirements, architecture, data model, API, flows, state machines, verdict engine, agents, RAG, fine-tuning, AgenticOps, security, testing, CI/CD, Kubernetes, plan, critical path, gates, backlog, UI, deliverables, risks, don'ts, traceability, assumptions, glossary, tech stack |
-| `docs/source/` | Verbatim text of the instructor's two PDFs |
+| `docs/source/` | The instructor's two PDFs (`Project.pdf` = what to build, `Project_Guide.pdf` = how to build it) |
 | `config/`, `rubrics/`, `schemas/`, `prompts/`, `eval/` | Seed artefacts (rules, rubrics, JSON contracts, prompts, eval sets, verdict test vectors) |
 
 ### How to use the harness with a coding agent
-1. Create the GitHub repo, copy this folder in, push (owner does branch protection: see `docs/harness/15_CICD.md`).
+1. Clone `https://github.com/IfBilal/idea-validator`. `main` is protected: work on a branch and open a PR (see `docs/harness/15_CICD.md`).
 2. Fill team info + get API keys (see `PROGRESS.md` → Blocked / Needs human). Put keys in a local `.env` (never commit).
 3. Open the repo in Claude Code (or Codex) and say: **"Read CLAUDE.md and PROGRESS.md, then run /next-task."**
    Each developer tells their agent which role they are (Dev A = Taimoor or Dev B = Bilal, see `18_CRITICAL_PATH_AND_PARALLELIZATION.md`).
 4. After each phase: **`/phase-gate <N>`** (testing + security gate). Capture the phase's screenshots.
 5. Review every PR yourselves (the other member approves). Keep `docs/ai-usage-log.md` current.
+
+## Prerequisites
+| Tool | Version | Used for |
+|---|---|---|
+| Python + [uv](https://docs.astral.sh/uv/) | 3.12 | services, libs, tests (`make setup`) |
+| Node.js + npm | 20 LTS or newer | React UI (Phase 1+) |
+| Docker | recent | images, `docker compose` for dev databases |
+| kind, kubectl, kustomize | pinned in Phase 1 | local Kubernetes cluster |
+| git + GitHub CLI (`gh`) | recent | PR workflow |
+| RAM | ≥ 16 GB | cluster + Jenkins + databases + model server |
+
+Keys (LLM provider, GitHub, Reddit / Product Hunt) go in a local `.env` copied from `.env.example`. Never commit it.
 
 ## Quick start (fill in as the system is built; must stay ≤ ~10 commands)
 ```bash

@@ -56,7 +56,7 @@ this file) into everything a coding agent needs to build, test, secure, deploy a
 - `docs/decisions/`: ADR template + initial ADRs.
 - `docs/ai-usage-log.md`, `docs/contribution.md`, `docs/report/REPORT_OUTLINE.md`, `docs/screenshots/CHECKLIST.md`.
 - `.github/`: PR template, issue templates, `pr-checks.yml` starter.
-- `Jenkinsfile`, `Makefile`, `.env.example`, `.gitignore`, `.dockerignore.template`, `.pre-commit-config.yaml`.
+- `Jenkinsfile`, `Makefile`, `.env.example`, `.gitignore`, `.dockerignore` (repo root, applies to every image build), `.pre-commit-config.yaml`.
 - `.claude/`: settings (permissions), slash commands, subagents.
 
 ## Figures from the PDFs (look at them, they contain requirements)
