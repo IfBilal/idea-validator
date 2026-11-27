@@ -369,7 +369,7 @@ class FakeWorld:
                         "id": "gap_1",
                         "niche_id": "n1",
                         "description": "slow exports",
-                        "evidence_ids": ["card_00000001#c0"],
+                        "evidence_ids": [f"card_{n:08x}#c0" for n in range(1, 41)],
                         "complaint_count": 3,
                         "product_coverage": 0,
                         "score": 1.0,

@@ -83,14 +83,10 @@ async def test_the_ideator_gets_the_profile_niches_and_gaps_in_m8_shape() -> Non
     assert world.bodies("analyst", "POST /niches/match")[0]["niche_wish"] == "devtools"
     body = world.bodies(*IDEATE)[0]
     assert body["niches"] == [{"name": "devtools", "status": "rising"}]
-    assert body["gaps"] == [
-        {
-            "gap_id": "gap_1",
-            "text": "slow exports",
-            "niche": "devtools",
-            "evidence_ids": ["card_00000001#c0"],
-        }
-    ]
+    assert len(body["gaps"]) == 1
+    gap = body["gaps"][0]
+    assert (gap["gap_id"], gap["text"], gap["niche"]) == ("gap_1", "slow exports", "devtools")
+    assert gap["evidence_ids"][0] == "card_00000001#c0"
     assert body["profile"]["goal"] == "startup"
     assert (body["round"], body["previous_objections"]) == (1, [])
 
@@ -626,3 +622,101 @@ async def test_the_debate_rounds_are_traced_as_decisions() -> None:
     ]
     assert len(rounds) == 1
     assert rounds[0].output["continue"] is False
+
+
+# ---- review of PR 46: dropped ideas stay dropped, stops keep survivors, evidence is checked ----
+def repeating_ideator() -> Any:
+    """Round 1 offers ideas 1 and 2; round 2 offers idea 1 again (dropped earlier) and 3."""
+
+    def ideate(body: dict[str, Any]) -> Any:
+        numbers = (1, 2) if body["round"] == 1 else (1, 3)
+        ideas = [make_idea(n) for n in numbers]
+        return {"ideas": ideas, "dropped": [], "reason": None, "round": body["round"]}
+
+    return ideate
+
+
+async def test_a_dropped_idea_proposed_again_never_reaches_validation_or_the_card() -> None:
+    world = FakeWorld()
+    world.ideate_fn = repeating_ideator()
+    world.skeptic_fn = objecting(
+        (1, 1, {"severity": "fatal", "dimension": "risk"}),
+        (2, 2, {"severity": "minor", "dimension": "learning"}),
+    )
+    state = await run(DiscoverHarness(world), count=3)
+    assert state.card is not None
+    assert ref(1) not in {i["idea_id"] for i in state.card["ideas"]}
+    assert 1 not in {n_of(b["idea_id"]) for b in world.bodies(*VERDICT)}
+    assert [d["idea_id"] for d in state.card["dropped"]] == [ref(1)]  # dropped once, not twice
+    assert any("proposed again" in n for n in state.card["notes"])
+
+
+async def test_a_budget_stop_between_rounds_keeps_the_survivors_found_so_far() -> None:
+    h = DiscoverHarness(FakeWorld(), limits={"max_steps": 9})
+    state = await run(h, count=3)
+    assert state.status is RunStatus.BUDGET_STOPPED
+    assert state.card is not None
+    ideas = state.card["ideas"]
+    assert ideas, "survivors found before the stop must not be thrown away"
+    assert all(i["partial"] is True and i["verdict"] is None for i in ideas)
+    assert all(i["score"] is None for i in ideas)
+    assert all(i["verdict"] is None for i in ideas)  # nothing a model or M3 made up
+
+
+async def test_unvetted_ideas_of_the_failing_round_are_not_listed_as_survivors() -> None:
+    world = FakeWorld()
+    world.ideate_fn = few_ideas()
+    h = DiscoverHarness(world, limits={"max_steps": 9})
+    state = await run(h, count=3)
+    assert state.card is not None
+    listed = {i["idea_id"] for i in state.card["ideas"]}
+    assert listed <= {c["idea_ref"] for c in state.candidates}  # only vetted candidates
+
+
+async def test_a_failing_gap_analyst_in_a_later_round_keeps_the_earlier_survivors() -> None:
+    world = FakeWorld()
+    world.ideate_fn = few_ideas()
+    world.skeptic_fn = objecting((1, 1, {"severity": "minor", "dimension": "learning"}))
+    gap = ("ideation", "POST /gap-analyst")
+    world.faults[gap] = ["pass", 503, 503, 503]  # round 1 works, round 2 never answers
+    state = await run(DiscoverHarness(world), count=5)
+    assert state.status is RunStatus.FAILED
+    assert state.card is not None
+    assert {i["idea_id"] for i in state.card["ideas"]} >= {ref(1), ref(2)}
+    assert all(i["verdict"] is None for i in state.card["ideas"])
+
+
+async def test_gap_evidence_must_be_among_what_m7_returned() -> None:
+    world = FakeWorld()
+    world.ideate_fn = lambda body: {
+        "ideas": [make_idea(1), make_idea(2, gap_evidence_ids=["card_deadbeef#c9"])],
+        "dropped": [],
+        "reason": None,
+        "round": body["round"],
+    }
+    state = await run(DiscoverHarness(world), count=2)
+    assert state.card is not None
+    assert {i["idea_id"] for i in state.card["ideas"]} == {ref(1)}
+    assert [d["reason"] for d in state.card["dropped"]] == ["no_gap_evidence"]
+
+
+async def test_invented_ids_are_removed_but_real_ones_stay() -> None:
+    world = FakeWorld()
+    mixed = make_idea(1, gap_evidence_ids=["card_00000001#c0", "card_deadbeef#c9"])
+    world.ideate_fn = lambda body: {
+        "ideas": [mixed],
+        "dropped": [],
+        "reason": None,
+        "round": body["round"],
+    }
+    state = await run(DiscoverHarness(world), count=1)
+    assert state.card is not None
+    assert state.card["ideas"][0]["gap_evidence_ids"] == ["card_00000001#c0"]
+
+
+async def test_a_model_written_fit_reason_is_never_shown_as_the_verdict_reason() -> None:
+    world = FakeWorld()
+    world.verdict_fn = lambda body: {**fake_verdict(body), "reasons": []}
+    state = await run(DiscoverHarness(world), count=1)
+    assert state.card is not None
+    assert all(i["reason"] is None for i in state.card["ideas"])

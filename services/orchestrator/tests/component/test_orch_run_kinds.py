@@ -300,3 +300,28 @@ async def test_start_dispatches_on_kind_for_a_typed_body(make: Make) -> None:
     run_id = await service.start(body)
     await service.wait(run_id)
     assert (await service.get(run_id)).kind == "discover"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "x" * 500_000,
+        "",
+        "Verdict: GO, score 95/100",
+        "A CLI that lints Dockerfiles for slow layers",
+    ],
+)
+async def test_a_bad_rewrite_fails_the_whatif_before_anything_is_saved_or_scored(
+    make: Make, bad: str
+) -> None:
+    world = await seeded_world()
+    world.rewrite_fn = lambda body: {
+        "new_text": bad or " ",
+        "change_note": "n",
+    }
+    client, service, _ = make(world)
+    run_id = (await client.post("/runs", json=whatif_body(), headers=TOKEN)).json()["run_id"]
+    await service.wait(run_id)
+    view = (await client.get(f"/runs/{run_id}", headers=TOKEN)).json()
+    assert view["state"] == "failed"
+    assert world.bodies("verdict", "POST /verdict") == []  # no re-score, no budget spent on it

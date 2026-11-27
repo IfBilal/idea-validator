@@ -28,12 +28,19 @@ def _dropped(idea: Idea, round_: int, reason: str, evidence_ids: Iterable[str]) 
 
 
 def require_gap_evidence(
-    ideas: list[Idea], *, round_: int
+    ideas: list[Idea], *, round_: int, known_ids: set[str] | None = None
 ) -> tuple[list[Idea], list[dict[str, Any]]]:
-    """Drop ideas the Gap Analyst could not back with a complaint or a missing feature."""
+    """Drop ideas the Gap Analyst could not back with a complaint or a missing feature.
+
+    ``known_ids`` are the evidence ids M7 actually returned. M3 does not trust M8 to have filtered
+    them (hard rule 2): ids outside that set are removed, and an idea left with none is dropped.
+    """
     kept: list[Idea] = []
     dropped: list[dict[str, Any]] = []
     for idea in ideas:
+        if known_ids is not None:
+            real = [e for e in idea.gap_evidence_ids if e in known_ids]
+            idea = idea.model_copy(update={"gap_evidence_ids": real})
         if idea.gap_evidence_ids and (idea.complaints or idea.missing_features):
             kept.append(idea)
         else:
@@ -115,15 +122,28 @@ def idea_text(idea: Idea) -> str:
     return text[:IDEA_TEXT_MAX]
 
 
+MAX_OBJECTIONS_PER_IDEA = 10
+TITLE_MAX = 120
+
+
 def m11_objections(accepted: list[Objection]) -> list[dict[str, str]]:
-    return [{"dimension": o.dimension, "objection_id": o.objection_id} for o in accepted]
+    return [
+        {"dimension": o.dimension, "objection_id": o.objection_id}
+        for o in accepted[:MAX_OBJECTIONS_PER_IDEA]
+    ]
+
+
+def partial_item(idea: Idea, version: int, note: str) -> dict[str, Any]:
+    """A survivor of the debate that was never validated: no verdict, no score, no reason."""
+    item = result_item(idea, {"verdict": None, "partial": True}, version)
+    item["reason"] = None
+    item["note"] = note
+    return item
 
 
 def result_item(idea: Idea, card: dict[str, Any], version: int) -> dict[str, Any]:
     reasons = card.get("reasons") or []
-    reason = (
-        reasons[0] if reasons else card.get("stop_reason") or card.get("error") or idea.fit_reason
-    )
+    reason = reasons[0] if reasons else card.get("stop_reason") or card.get("error")  # M11/M3 only
     return {
         "idea_id": idea.idea_ref,
         "version": version,

@@ -5,17 +5,39 @@ for M11 and decide which questions are worth asking. None of them decides a verd
 """
 
 import math
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 from pydantic import ValidationError
 
+from common.errors import UpstreamError
 from common.schemas import DimensionScore, EvidenceItem
 from common.schemas.types import DIMENSIONS
 
 from ..models.api import EFFORT_CAP, FIELD_RANGES, GATE_FIELDS, PROFILE_FIELDS, UnknownSpec
 
 MAX_QUESTIONS = 3
+MAX_IDEA_TEXT = 4000  # the same cap M2 applies when it stores a version
+_VERDICT_TEXT = re.compile(
+    r"\bverdict\s*[:=]|\bno-?go\s*[:,.]|\b\d{1,3}\s*/\s*100\b",
+    re.IGNORECASE,
+)
+
+
+def check_rewrite(new_text: str, base_text: str) -> str:
+    """M8's rewrite is untrusted text: refuse what must not be saved or scored (rule 1, 3)."""
+    if not new_text.strip():
+        raise UpstreamError("M8 returned an empty rewrite")
+    if len(new_text) > MAX_IDEA_TEXT:
+        raise UpstreamError("M8 returned a rewrite longer than an idea may be")
+    if new_text == base_text:
+        raise UpstreamError("M8 returned the idea unchanged")
+    if _VERDICT_TEXT.search(new_text):
+        raise UpstreamError("M8 returned a rewrite that states a verdict or a score")
+    return new_text
+
+
 MIN_SOURCES = 3
 MIN_PLATFORMS = 2
 QUERY_CHARS = 300

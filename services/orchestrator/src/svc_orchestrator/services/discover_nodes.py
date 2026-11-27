@@ -155,16 +155,20 @@ class DiscoverNodes:
         )
         fresh = {i["idea_ref"]: i for i in out.value["ideas"]}  # same title twice: last one wins
         notes: list[str] = []
+        defeated = {d["idea_ref"] for d in state.dropped}
+        again = [ref for ref in fresh if ref in defeated]
+        for ref in again:  # a dropped idea stays dropped: it is never validated or ranked
+            del fresh[ref]
+        if again:
+            notes.append(f"round {state.round}: {len(again)} dropped ideas were proposed again")
         if not fresh:
             notes.append(
                 f"round {state.round}: no ideas ({out.value['reason'] or 'none returned'})"
             )
         if out.value["skipped"]:
             notes.append(f"{out.value['skipped']} malformed ideas were dropped")
-        by_ref = {c["idea_ref"]: c for c in state.candidates}
-        by_ref.update(fresh)  # a revised idea replaces its earlier version
+        # new ideas are candidates only once the gap analyst has vetted them (next node)
         return {
-            "candidates": list(by_ref.values()),
             "pending": list(fresh.values()),
             "rounds_run": state.round,
             "notes": notes,
@@ -188,7 +192,8 @@ class DiscoverNodes:
         enriched = {i["idea_ref"]: i for i in out.value}
         # an idea the analyst did not return has no findings, so the rule below drops it
         merged = _ideas([enriched.get(p["idea_ref"], p) for p in state.pending])
-        kept, dropped = debate.require_gap_evidence(merged, round_=state.round)
+        known = {e for g in state.gaps for e in g.get("evidence_ids") or []}
+        kept, dropped = debate.require_gap_evidence(merged, round_=state.round, known_ids=known)
         await self._announce_drops(dropped)
         gone = {d["idea_ref"] for d in dropped}
         by_ref = {c["idea_ref"]: c for c in state.candidates if c["idea_ref"] not in gone}
@@ -312,7 +317,7 @@ class DiscoverNodes:
         for d in dropped:
             await self.ctx.emitter.emit(
                 "idea_dropped",
-                title=d["title"],
+                title=d["title"][: debate.TITLE_MAX],
                 round=d["round"],
                 reason=d["reason"],
                 defeated_by_evidence_ids=d["defeated_by_evidence_ids"],
@@ -352,12 +357,15 @@ class DiscoverNodes:
                     log.error("child_crashed", idea=idea.idea_ref, error=type(exc).__name__)
                     card, stop = {"verdict": None, "partial": True, "error": "internal error"}, None
             item = debate.result_item(idea, card, 1)
-            await self.ctx.emitter.emit(
-                "partial_result",
-                idea_id=item["idea_id"],
-                verdict=item["verdict"],
-                score=item["score"],
-            )
+            try:
+                await self.ctx.emitter.emit(
+                    "partial_result",
+                    idea_id=item["idea_id"],
+                    verdict=item["verdict"],
+                    score=item["score"],
+                )
+            except Exception as exc:  # a lost event must not abort the other children
+                log.warning("partial_result_emit_failed", error=type(exc).__name__)
             return item, stop
 
         done = await asyncio.gather(*(one(i) for i in chosen))
@@ -370,8 +378,21 @@ class DiscoverNodes:
     # ---- RESULT ----
     async def result(self, state: DiscoverState) -> Update:
         status = state.status if state.stopped else RunStatus.SUCCEEDED
+        ideas = debate.rank(state.items)
+        notes = list(state.notes)
+        if state.stopped:  # a stop keeps what the debate found: survivors without a verdict
+            have = {i["idea_id"] for i in ideas}
+            left = [c for c in state.candidates if c["idea_ref"] not in have]
+            why = state.stop_reason or state.error or "the run stopped early"
+            note = f"not validated: {why}"
+            ideas += [
+                debate.partial_item(i, 1, note)
+                for i in _ideas(left)[: max(0, state.count - len(ideas))]
+            ]
+            if left:
+                notes.append(f"{len(left)} survivors were found but not validated ({why})")
         card: dict[str, Any] = {
-            "ideas": debate.rank(state.items),
+            "ideas": ideas,
             "dropped": [
                 {
                     "idea_id": d["idea_ref"],
@@ -383,7 +404,7 @@ class DiscoverNodes:
                 for d in state.dropped
             ],
             "rounds": state.rounds_run,
-            "notes": list(state.notes),
+            "notes": notes,
             "degraded": state.degraded,
             "partial": state.stopped,
         }

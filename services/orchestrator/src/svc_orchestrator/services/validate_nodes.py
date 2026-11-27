@@ -98,7 +98,8 @@ class ValidateNodes:
             done = await self.ctx.clients.ideation.rewrite(
                 self.ctx.run_id, base.value["text"], change_text
             )
-            return {"new_text": done.new_text, "change_note": done.change_note}
+            checked = builders.check_rewrite(done.new_text, base.value["text"])
+            return {"new_text": checked, "change_note": done.change_note[:500]}
 
         written = await self._step(
             state,
