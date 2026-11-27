@@ -50,3 +50,14 @@ uv run --package idea-validator-critic uvicorn svc_critic.main:app --port 8000
 uv run pytest services/critic
 docker build -f services/critic/Dockerfile -t critic:$(git rev-parse --short=7 HEAD) .
 ```
+
+## Known limits (from review of PR 19)
+- **Names must be in the cited evidence (hard rule 2).** Every product or company name in a claim (capitalised
+  token, mixed-case like `iPhone`, or a name after a cue such as "such as asana") must appear in a cited evidence
+  text or card name (card names also match fuzzily, ratio >= 0.9). Heuristic, errs towards rejection.
+- **Injection heuristics are not applied to claims or objections.** The deterministic lexical judge cannot be
+  steered by their text; when an LLM judge is added, run `common.injection.find_injections` on them first.
+- **Input rail** is a heuristic by design (for example `i1gnore previous instructions` passes); it is one layer,
+  with M5's sanitiser, `<evidence>` wrapping and this critic behind it.
+- **Approval maths** uses `Decimal`; absurd inputs (above 1e300) are reported with `projected: null`.
+- **Body size** is enforced by `common.limits.BodyLimitMiddleware` (also for chunked uploads), 413 on excess.

@@ -14,10 +14,12 @@ from common.schemas import Claim, ClaimCheckRequest, ClaimCheckResponse, ClaimRe
 from ..models.evidence import EvidenceRecord
 from .competitors import matches_any, names_competitors
 from .entailment import REASON_NO_SUPPORT, EntailmentJudge
+from .entities import find_unsupported_entities
 
 REASON_MISSING = "evidence id missing"
 REASON_NO_EVIDENCE = "no evidence cited"
 REASON_COMPETITOR = "competitor not in knowledge base"
+REASON_ENTITY = "name not in cited evidence"
 REASON_JUDGE_FAILED = "support check failed"
 
 log = get_logger("critic.claims")
@@ -84,6 +86,10 @@ class ClaimChecker:
         unknown = [n for n in names if not matches_any(n, kb_names)]
         if unknown:
             return fail(f"{REASON_COMPETITOR}: {', '.join(unknown)}")
+
+        unnamed = find_unsupported_entities(claim.text, (r.body for r in records), kb_names)
+        if unnamed:
+            return fail(f"{REASON_ENTITY}: {', '.join(unnamed)}")
 
         try:
             verdict = await self._judge.judge(claim.text, records)

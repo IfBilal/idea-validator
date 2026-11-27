@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from fastapi import FastAPI
 
+from common.limits import BodyLimitMiddleware
 from common.service import create_app
 
 from .api.routes import make_router
@@ -57,6 +58,7 @@ def build_app(
         ready_checks={"knowledge_base": kb.is_ready, "budgets": budgets_loadable},
         lifespan=lifespan,
     )
+    app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)
     app.state.checker = checker
     app.state.objection_filter = ObjectionFilter(checker, max_accepted=settings.max_objections)
     app.state.rail = InputRail(

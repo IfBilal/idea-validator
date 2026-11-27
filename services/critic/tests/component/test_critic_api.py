@@ -263,7 +263,7 @@ async def test_oversized_body_is_refused_before_parsing() -> None:
         response = await client.post(
             "/rail/input", json={"text": "a" * 5000, "kind": "idea"}, headers=AUTH
         )
-    assert response.status_code == 422
+    assert response.status_code == 413
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
@@ -353,3 +353,15 @@ def test_settings_validation() -> None:
 def test_settings_read_the_kb_url_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KB_URL", "http://kb.internal:9000")
     assert Settings().kb_url == "http://kb.internal:9000"
+
+
+async def test_chunked_bodies_over_the_limit_are_refused_too() -> None:
+    from collections.abc import AsyncIterator
+
+    async def chunks() -> AsyncIterator[bytes]:
+        for _ in range(10):
+            yield b"a" * 60_000
+
+    async with make_client() as client:
+        r = await client.post("/check", content=chunks(), headers=AUTH)
+    assert r.status_code == 413

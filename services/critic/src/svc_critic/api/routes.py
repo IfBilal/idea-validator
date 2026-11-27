@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
-from common.errors import ValidationFailed
 from common.schemas import ClaimCheckRequest, ClaimCheckResponse
 from common.service import require_internal_token
 
@@ -45,14 +44,8 @@ Book = Annotated[BudgetBook, Depends(budget_book)]
 
 
 def make_router(settings: Settings) -> APIRouter:
-    def limit_body(request: Request) -> None:
-        declared = request.headers.get("content-length", "0")
-        if declared.isdigit() and int(declared) > settings.max_body_bytes:
-            raise ValidationFailed("request body too large")
-
-    router = APIRouter(
-        dependencies=[Depends(require_internal_token(settings)), Depends(limit_body)]
-    )
+    # the body size limit is enforced by common.limits.BodyLimitMiddleware (chunked-safe)
+    router = APIRouter(dependencies=[Depends(require_internal_token(settings))])
 
     @router.post("/check", response_model=ClaimCheckResponse)
     async def check(body: ClaimCheckRequest, service: Checker) -> ClaimCheckResponse:

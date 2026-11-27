@@ -116,11 +116,13 @@ async def test_competitor_check_needs_card_names() -> None:
     assert r.reason.startswith("competitor not in knowledge base")
 
 
-async def test_names_in_non_competition_claims_are_not_policed() -> None:
+async def test_a_name_missing_from_the_evidence_is_rejected_in_any_dimension() -> None:
+    # hard rule 2 applies to every claim, not only competition ones (review of PR 19)
     (r,) = await run(
         checker(), claim("c1", "Students struggle with Obscure schedules", [E1], "demand_pain")
     )
-    assert r.supported is True
+    assert r.supported is False
+    assert "Obscure" in r.reason
 
 
 async def test_one_kb_call_for_all_claims_with_deduplicated_ids() -> None:
