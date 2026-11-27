@@ -443,7 +443,9 @@ async def test_every_outcome_is_counted_per_source() -> None:
 
 
 # ---- round 2: hostile bodies, redirects into other sources, a deadline for the whole request
-HOSTILE_SECONDS = 2.0  # generous for slow CI; the unfixed sanitiser needed 11 s for the first case
+HOSTILE_SECONDS = (
+    8.0  # loaded CI is ~3x slower than 1.6 s; the unfixed code needed 21-30 s on these
+)
 
 
 async def test_characters_that_expand_under_normalisation_cannot_stall_the_service() -> None:
