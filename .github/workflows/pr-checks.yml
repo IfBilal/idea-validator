@@ -1,8 +1,13 @@
-# Required checks on main (Guide §8.1). Pin action versions (prefer commit SHAs) and tool versions in Phase 0.
+# Required checks on main (Guide §8.1).
+# Jobs for ui-tests, retrieval-gate, manifests (kubeconform/kube-linter) and check_registry land with the PRs that add
+# services/ui, eval/retrieval and k8s/overlays/dev; adding them earlier would only produce permanently red checks.
 name: pr-checks
 on: pull_request
-permissions: { contents: read }
-concurrency: { group: pr-${{ github.event.pull_request.number }}, cancel-in-progress: true }
+permissions:
+  contents: read
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   lint-type:
     runs-on: ubuntu-latest
@@ -10,8 +15,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --all-packages --frozen
-      - run: uv run ruff check . && uv run ruff format --check .
-      - run: uv run mypy services libs jobs
+      - run: uv run ruff check . && uv run ruff format --check . && uv run lint-imports
+      - run: uv run mypy
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -27,21 +32,6 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --all-packages --frozen
       - run: uv run pytest -q -m integration            # testcontainers: Postgres, Redis, Qdrant
-  ui-tests:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: services/ui } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: "22", cache: npm, cache-dependency-path: services/ui/package-lock.json }
-      - run: npm ci && npm run lint && npm run typecheck && npm test -- --run && npm run build
-  retrieval-gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --all-packages --frozen
-      - run: uv run pytest eval/retrieval -q            # fails if quality drops below baseline
   contracts:
     runs-on: ubuntu-latest
     steps:
@@ -49,33 +39,25 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --all-packages --frozen
       - run: uv run pytest libs/common/tests/test_schema_drift.py -q
-      - run: uv run python scripts/check_registry.py   # prompt/rubric change needs version bump + eval result
   docker:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        service: [gateway, ui, profile, orchestrator, scouts, tools, kb, analyst, ideation, validators, scorer, verdict, critic, agentops]
+        service: [gateway, profile, orchestrator, scouts, tools, kb, analyst, ideation, validators, scorer, verdict, critic, agentops]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
-          context: services/${{ matrix.service }}
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
           tags: ${{ matrix.service }}:${{ github.sha }}
           load: true
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-      - uses: aquasecurity/trivy-action@0.24.0   # pin to latest at P0
+      - uses: aquasecurity/trivy-action@0.28.0
         with: { image-ref: "${{ matrix.service }}:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
-  manifests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          kubectl kustomize k8s/overlays/dev > /tmp/all.yaml
-          docker run --rm -v /tmp:/tmp ghcr.io/yannh/kubeconform:latest-PIN -strict -summary /tmp/all.yaml
-          docker run --rm -v /tmp:/tmp stackrox/kube-linter:latest-PIN lint /tmp/all.yaml
   security:
     runs-on: ubuntu-latest
     steps:
@@ -85,7 +67,7 @@ jobs:
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
       - uses: astral-sh/setup-uv@v6
       - run: uvx pip-audit --strict || true            # make blocking once deps settle (P2)
-      - uses: aquasecurity/trivy-action@0.24.0
+      - uses: aquasecurity/trivy-action@0.28.0
         with: { scan-type: fs, scan-ref: ".", exit-code: "1", severity: "CRITICAL", scanners: "vuln,secret,misconfig" }
   commitlint:
     runs-on: ubuntu-latest
