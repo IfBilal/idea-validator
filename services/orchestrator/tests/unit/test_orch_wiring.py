@@ -30,3 +30,16 @@ async def test_wiring_with_redis_builds_a_working_run_service(redis_url: str) ->
         assert (await ctx.ledger.limits()).max_steps == 80
         await app.state.redis.delete("budget:run_wired")
         await service.aclose()
+
+
+async def test_production_refuses_the_in_memory_checkpointer() -> None:
+    settings = Settings(
+        redis_url=SecretStr("redis://r:6379/0"), config_dir=REPO_CONFIG, environment="production"
+    )
+    async with AsyncExitStack() as stack:
+        with pytest.raises(ConfigError, match="DATABASE_URL"):
+            await _wire(settings, build_app(settings), stack)
+
+
+async def test_the_default_environment_is_not_production() -> None:
+    assert Settings().environment == "dev"

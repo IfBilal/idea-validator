@@ -76,14 +76,24 @@ use LangGraph `interrupt()`.
   (engine, rubrics, profile_weights) equal the key's. A profile without a version fails the run.
 - Cache key: `verdict:{idea_id}:{version}:{idea_hash}:p{profile}:r{rubrics}:w{weights}:e{engine}`.
 
-## Known limits
-- Cache key versions cover M11 (engine, rubrics, weights), the profile and the idea. The scorer model /
-  prompt version and the critic version are not in the key: no module exposes them yet. Add them when
-  M9/M10/M12 report them in `/config` or `/health`.
-- Paused runs are not rehydrated from the M2 run mirror after a restart; with a Postgres checkpointer the
-  graph state survives, but `RunService` forgets the in-memory run until it is re-registered.
-- Parallel fan-outs (4 searches, 3 scouts) check the step budget per call, so the step count can overshoot
-  `max_steps` by at most the fan-out width. Reserving steps before the gather is future work.
+## Spec deviations and known limits (stated openly)
+- No M12 `/rail/input` call at intake and no M8 `/skeptic` call, so `objections_accepted` is always empty and the
+  -0.5 challenge penalty cannot apply yet. The challenge step only checks score claims through M12 `/check`.
+- Stability is only traced (from M11's `sensitivity` / `what_would_make_go`); there is no M11 `/whatif` call here.
+- Approval is requested only for deep search (scouting), not for other steps that could pass the budget.
+- CLARIFY runs after the scorers (it needs their effort estimate for the value-of-information call).
+- `concurrency.scorers` is parsed into `RunConfig.scorer_concurrency` but unused: M9 runs the four scorers.
+- Runs are not rehydrated after a restart: LangGraph checkpoints survive in Postgres but `RunService` forgets
+  the in-memory run until rehydration from the M2 run mirror is built.
+- Without `DATABASE_URL` the checkpointer is in memory; with `ENVIRONMENT=production` startup fails instead.
+- M3 never compares `user_id`: M1 is the only caller and must enforce run ownership.
+- Trace inputs are an `input_hash` only (no idea text or profile, per docs/harness/13 §8). Outputs, such as
+  evidence and the verdict, are still traced.
+- The verdict cache key has no `user_id`. This is safe because idea ids are globally unique (M2 guarantees it).
+- `RunStatus` is not registered in LangGraph's msgpack allow-list; it is stored as a plain string value.
+- Cache key versions cover M11, the profile and the idea only (scorer/critic versions are not exposed yet).
+- Parallel fan-outs check the step budget per call and can overshoot `max_steps` by the fan-out width; the
+  atomic compare-and-reserve belongs in `common/budget.py` (owned by Dev A).
 
 ## Layout and tests
 `api/` routes only, `services/` logic (no FastAPI imports), `repositories/` Redis and Postgres,

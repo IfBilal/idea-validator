@@ -23,7 +23,7 @@ from common.tracing import Tracer
 
 from ..clients.base import retries_var
 from ..repositories.events import RunEmitter
-from .cache_keys import memo_key
+from .cache_keys import canonical_hash, memo_key
 from .run_config import RunConfig
 
 TIMEOUT_GRACE_S = 1.0
@@ -83,11 +83,13 @@ class StepRunner:
     ) -> StepOutcome:
         estimate = estimate or Spend(steps=1)
         key = memo_key(step, inputs)
+        # idea text and profile stay out of traces (docs/harness/13 §8): log a hash only
+        traced = {"input_hash": canonical_hash(inputs)[:16]}
         await self._ledger.check()  # an already over-budget run stops even if this step is free
 
         if memoise and key in memo:
             with self._tracer.span(
-                agent, "tool_call", tool=tool, run_id=self._run_id, input=inputs
+                agent, "tool_call", tool=tool, run_id=self._run_id, input=traced
             ) as handle:
                 handle.cache_hit = True
                 handle.set_output(memo[key])
@@ -108,7 +110,7 @@ class StepRunner:
         started = time.perf_counter()
         try:
             with self._tracer.span(
-                agent, "tool_call", tool=tool, run_id=self._run_id, input=inputs
+                agent, "tool_call", tool=tool, run_id=self._run_id, input=traced
             ) as handle:
                 try:
                     async with asyncio.timeout(self.total_timeout(timeout_s)):

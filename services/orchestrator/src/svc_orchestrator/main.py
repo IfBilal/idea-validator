@@ -91,6 +91,8 @@ async def _wire(settings: Settings, app: FastAPI, stack: AsyncExitStack) -> RunS
         saver = await stack.enter_async_context(
             postgres_saver(settings.database_url.get_secret_value())
         )
+    elif settings.environment == "production":
+        raise ConfigError("DATABASE_URL is required in production")
     else:
         saver = MemorySaver()  # runs do not survive a restart without DATABASE_URL
     return RunService(

@@ -10,6 +10,7 @@ class Settings(ServiceSettings):
     database_url: SecretStr | None = None  # Postgres checkpointer (schema ``orchestrator``)
     redis_url: SecretStr | None = None  # budget ledger + run events
     question_timeout_s: float = 600
+    environment: str = "dev"  # "production" forbids the in-memory checkpointer
 
     # Other modules, reached over HTTP only. Defaults are the in-cluster service names.
     profile_url: str = "http://profile:8000"

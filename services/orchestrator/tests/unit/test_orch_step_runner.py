@@ -12,6 +12,7 @@ from common.schemas import TraceRecord
 from common.tracing import Tracer
 from svc_orchestrator.clients.base import retries_var
 from svc_orchestrator.repositories.events import InMemoryPublisher, RunEmitter
+from svc_orchestrator.services.cache_keys import canonical_hash
 from svc_orchestrator.services.run_config import RunConfig, run_config_from
 from svc_orchestrator.services.steps import StepRunner
 from svc_orchestrator.testing import FakeRedis
@@ -212,7 +213,7 @@ async def test_trace_record_carries_tool_inputs_retries_and_cost_context() -> No
         "tool_call",
         "kb.search",
     )
-    assert record.input == {"q": "x"}
+    assert record.input == {"input_hash": canonical_hash({"q": "x"})[:16]}  # no raw idea text
     assert record.retries == 2
     assert record.cache_hit is False
     assert record.error is None
