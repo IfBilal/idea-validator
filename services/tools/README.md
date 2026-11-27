@@ -2,7 +2,7 @@
 
 The **only** way any module reads the internet (NetworkPolicy gives egress only to pods labelled
 `app: tools`). Scouts, agents and ingestion call `POST /fetch`; hosted-LLM calls will go through
-`POST /llm/v1/chat/completions` (next PR, LiteLLM).
+`POST /llm/v1/chat/completions` (OpenAI-compatible adapter, ADR-008).
 
 | | |
 |---|---|
@@ -44,3 +44,11 @@ Refusals are 403 with `error.details.reason`: `DOMAIN_NOT_ALLOWED`, `INVALID_URL
 - The sanitiser is a heuristic layer: obfuscations such as letter-spacing are not caught. Defence in depth is that
   fetched text is only ever shown to models as data, scorers never obey it, and the critic checks every claim.
 - The run budget is in memory until the shared Redis ledger (`common.budget`) is wired in.
+
+## `POST /llm/v1/chat/completions`
+Body: `{run_id, agent, model (alias), messages[1..50], max_tokens 1..4096 (800), temperature 0..2 (0), response_format json|text}`.
+Reply: `{content, tokens_in, tokens_out, cost_usd, latency_ms, provider, model}` plus OpenAI-shaped `choices` and `usage`.
+- **Aliases** live in `config/llm.yaml` (`hosted-default`, `hosted-cheap`): provider host (must be on the allow-list, checked at start-up), model, price per million tokens and `api_key_env`. **Keys come from environment variables (K8s Secret), never from files or git**, and are sent only to that provider.
+- **Same network guard as `/fetch`:** URL policy, SSRF check and pinned address; compressed replies refused; 2 MB reply cap; retries (2) on 5xx and timeouts only; 429 is passed on with `retry_after`; provider 4xx become a generic 502 that never echoes the provider's body.
+- **Budget:** per run (`LLM_RUN_MAX_TOKENS` 250000, `LLM_RUN_MAX_COST_USD` 0.25, the largest values in `config/budgets.yaml`; M3 enforces the exact per-kind numbers). A pre-flight check refuses a call whose worst case would cross the cap (402 `BUDGET_EXCEEDED`), actual cost is charged exactly (Decimal), and a run that went over is stopped.
+- **Never logged:** prompts, completions, keys. Metrics: `llm_tokens_total{alias,direction}`, `llm_cost_usd_total{alias}`.
