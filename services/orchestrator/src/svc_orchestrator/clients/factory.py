@@ -10,13 +10,14 @@ from common.http import ServiceClient
 from ..services.run_config import RunConfig
 from .analyst import AnalystClient
 from .critic import CriticClient
+from .ideation import IdeationClient
 from .kb import KbClient
 from .profile import ProfileClient
 from .scouts import ScoutsClient
 from .validators import ValidatorsClient
 from .verdict import VerdictClient
 
-SERVICES = ("profile", "kb", "analyst", "scouts", "validators", "verdict", "critic")
+SERVICES = ("profile", "kb", "analyst", "scouts", "validators", "verdict", "critic", "ideation")
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class Clients:
     validators: ValidatorsClient
     verdict: VerdictClient
     critic: CriticClient
+    ideation: IdeationClient
     _http: tuple[ServiceClient, ...]
 
     async def aclose(self) -> None:
@@ -67,5 +69,6 @@ def build_clients(
         validators=ValidatorsClient(make("validators", t.scorer)),
         verdict=VerdictClient(make("verdict", t.verdict)),
         critic=CriticClient(make("critic", max(t.critic, t.approval))),
+        ideation=IdeationClient(make("ideation", t.llm)),
         _http=tuple(created),
     )

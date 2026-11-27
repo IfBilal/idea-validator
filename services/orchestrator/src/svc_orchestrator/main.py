@@ -31,6 +31,7 @@ def service_urls(settings: Settings) -> dict[str, str]:
         "validators": settings.validators_url,
         "verdict": settings.verdict_url,
         "critic": settings.critic_url,
+        "ideation": settings.ideation_url,
     }
 
 

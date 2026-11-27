@@ -82,6 +82,7 @@ URLS = {
     "validators": "http://m9",
     "verdict": "http://m11",
     "critic": "http://m12",
+    "ideation": "http://m8",
 }
 _HOSTS = {url.removeprefix("http://"): name for name, url in URLS.items()}
 
@@ -135,6 +136,39 @@ def voi_response(
     }
 
 
+def make_idea(n: int, **over: Any) -> dict[str, Any]:
+    """A schema-valid M8 idea. ``n`` makes title, ref and gap distinct."""
+    idea: dict[str, Any] = {
+        "idea_ref": f"idea_{n:010x}",
+        "title": f"Idea number {n}",
+        "summary": f"Summary {n}",
+        "target_user": "students",
+        "core_features": ["a", "b", "c"],
+        "gap_ref": f"gap_{n}",
+        "gap_evidence_ids": [f"card_{n:08x}#c0"],
+        "fit_reason": "fits the profile",
+        "est_scope": "M",
+        "niche": "devtools",
+        "complaints": [],
+        "missing_features": [],
+    }
+    idea.update(over)
+    return idea
+
+
+def make_objection(n: int, idea: dict[str, Any], **over: Any) -> dict[str, Any]:
+    obj: dict[str, Any] = {
+        "objection_id": f"obj_{n}",
+        "idea_ref": idea["idea_ref"],
+        "dimension": "competition",
+        "claim": f"competitor exists ({n})",
+        "severity": "major",
+        "evidence_ids": [f"card_{n:08x}#c0"],
+    }
+    obj.update(over)
+    return obj
+
+
 class FakeWorld:
     """Stands in for M2, M4, M6, M7, M9, M11 and M12. Tests tweak attributes before the run."""
 
@@ -163,6 +197,16 @@ class FakeWorld:
         self.scout_results: dict[str, Any] = {"fetched": 3, "raw_page_ids": ["p1", "p2", "p3"]}
         self.after_scout: list[dict[str, Any]] | None = None  # evidence once scouting happened
         self._scouted = False
+        # M8 / M7 / M12 discover-side behaviour: tests replace these with their own functions
+        self.ideate_fn: Any = None
+        self.gap_fn: Any = None
+        self.skeptic_fn: Any = None
+        self.filter_fn: Any = None
+        self.suggest_fn: Any = None
+        self.rewrite_fn: Any = None
+        self.niches_fn: Any = None
+        self.gaps_fn: Any = None
+        self.versions: dict[tuple[str, int], dict[str, Any]] = {}  # M2 idea versions
 
     # -- helpers -----------------------------------------------------------------------------
     def count(self, service: str, route: str) -> int:
@@ -242,6 +286,101 @@ class FakeWorld:
             }
         if route == "POST /approval/evaluate":
             return 200, {"needs_approval": self.needs_approval, "spent": 0.04, "budget": 0.05}
+        return self._discover_answer(route, path, body)
+
+    def _discover_answer(self, route: str, path: str, body: Any) -> tuple[int, Any]:
+        if route == "POST /niches/match":
+            if self.niches_fn:
+                return 200, self.niches_fn(body)
+            return 200, {
+                "matches": [
+                    {
+                        "niche_id": "n1",
+                        "name": "devtools",
+                        "status": "rising",
+                        "size": 9,
+                        "score": 1,
+                    }
+                ]
+            }
+        if route == "GET /gaps":
+            if self.gaps_fn:
+                return 200, self.gaps_fn()
+            return 200, {
+                "gaps": [
+                    {
+                        "id": "gap_1",
+                        "niche_id": "n1",
+                        "description": "slow exports",
+                        "evidence_ids": ["card_00000001#c0"],
+                        "complaint_count": 3,
+                        "product_coverage": 0,
+                        "score": 1.0,
+                    }
+                ]
+            }
+        if route == "POST /ideate":
+            if self.ideate_fn:
+                return 200, self.ideate_fn(body)
+            ideas = [make_idea(n) for n in range(1, body["count"] + 1)]
+            return 200, {"ideas": ideas, "dropped": [], "reason": None, "round": body["round"]}
+        if route == "POST /gap-analyst":
+            if self.gap_fn:
+                return 200, self.gap_fn(body)
+            ideas = [
+                {**i, "complaints": [{"text": "slow", "evidence_ids": i["gap_evidence_ids"]}]}
+                for i in body["ideas"]
+            ]
+            return 200, {"ideas": ideas, "discarded": 0}
+        if route == "POST /skeptic":
+            return 200, self.skeptic_fn(body) if self.skeptic_fn else {"objections": []}
+        if route == "POST /objections/filter":
+            if self.filter_fn:
+                return 200, self.filter_fn(body)
+            accepted = [
+                {
+                    "objection_id": o["objection_id"],
+                    "dimension": o["dimension"],
+                    "text": o["text"],
+                    "evidence_ids": o["evidence_ids"],
+                    "supporting_quote": "quote",
+                }
+                for o in body["objections"]
+            ]
+            return 200, {"accepted": accepted, "rejected": []}
+        if route == "POST /suggest-changes":
+            if self.suggest_fn:
+                return 200, self.suggest_fn(body)
+            change = {
+                "change_id": f"chg_{body['target_dimension']}",
+                "text": f"Improve {body['target_dimension']}",
+                "target_dimension": body["target_dimension"],
+                "rationale": "",
+                "evidence_ids": ["card_00000001#c0"],
+            }
+            return 200, {"changes": [change]}
+        if route == "POST /rewrite":
+            if self.rewrite_fn:
+                return 200, self.rewrite_fn(body)
+            return 200, {
+                "new_text": body["idea_text"] + " (revised: " + body["change_text"] + ")",
+                "change_note": body["change_text"][:100],
+            }
+        if route.startswith("GET /internal/ideas/"):
+            parts = path.strip("/").split("/")  # internal/ideas/{id}/versions/{v}
+            found = self.versions.get((parts[2], int(parts[4])))
+            return (200, found) if found else (404, {"error": {"code": "NOT_FOUND"}})
+        if route.startswith("POST /internal/ideas/"):
+            idea_id = path.strip("/").split("/")[2]
+            latest = max((v for (i, v) in self.versions if i == idea_id), default=0)
+            self.versions[(idea_id, latest + 1)] = {
+                "idea_id": idea_id,
+                "version": latest + 1,
+                "text": body["text"],
+                "card": {},
+                "change_note": body["change_note"],
+            }
+            return 200, {"version": latest + 1}
         return 404, {"error": {"code": "NOT_FOUND"}}
 
     def _scores(self, body: dict[str, Any]) -> list[dict[str, Any]]:
