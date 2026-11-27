@@ -23,9 +23,11 @@ resources:
 - services/verdict.yaml
 - services/critic.yaml
 - services/agentops.yaml
+- services/ui.yaml
 - jobs/migrate.yaml
 - jobs/migrate-kb.yaml
 - ingress.yaml
+- ingress-ui.yaml
 - hpa.yaml
 - netpol/default-deny.yaml
 - netpol/services.yaml

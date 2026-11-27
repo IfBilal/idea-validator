@@ -80,6 +80,7 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 | P8 Phase A (M10t): pipeline pieces, QLoRA train script, export, CPU serving benchmark | this PR | 2026-11-27 | gpu-session. RTX 3060 Ti 8 GB, Windows 11. Smoke (synthetic): 50 steps 382 s, peak VRAM 4.24 GB, 1118 tok/s; Q4_K_M 935 MiB, CPU p50 3.6 s / p95 5.5 s (570-token prompt, 4 threads), peak RSS 1.86 GB; quantisation damage 0.1 mean abs score diff. Real data and hand-checks still missing (see Blocked) |
+| P1-T03 slice 1: UI shell (Vite, React 19, TS, Tailwind v4, TanStack, zod), runtime config.js, nginx-unprivileged image, ui-tests + docker-ui CI jobs, ui in the k8s generator | this PR | 2026-11-27 | gpu-session. 32 Vitest tests, tsc/eslint/build clean; k8s generator + manifests tests updated (ui: uid 101, 8080, /healthz, own Ingress for `/`). Image NOT built on this PC (no Docker): CI docker-ui job is the first real build; screens come in slices 2-9 |
 
 ## Blocked / Needs human
 - [ ] gpu-session (P8-T03): >= 60 human-reviewed examples via `python -m finetune.review` (Taimoor and Bilal); never simulated. Until then the test set cannot be called hand-checked.

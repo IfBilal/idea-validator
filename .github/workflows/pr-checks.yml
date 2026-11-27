@@ -1,6 +1,6 @@
 # Required checks on main (Guide §8.1).
-# Jobs for ui-tests, retrieval-gate and check_registry land with the PRs that add
-# services/ui, eval/retrieval and the registry script; adding them earlier would only produce permanently red checks.
+# ui-tests and docker-ui arrived with services/ui. Jobs for retrieval-gate and check_registry land with the PRs that add
+# eval/retrieval and the registry script; adding them earlier would only produce permanently red checks.
 name: pr-checks
 on: pull_request
 permissions:
@@ -58,6 +58,37 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with: { image-ref: "${{ matrix.service }}:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
+  ui-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/ui/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test -- --run
+      - run: npm run build
+  docker-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/ui
+          tags: ui:${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=ui
+          cache-to: type=gha,mode=max,scope=ui
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with: { image-ref: "ui:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
   manifests:
     runs-on: ubuntu-latest
     steps:
