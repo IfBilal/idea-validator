@@ -14,7 +14,7 @@ class Settings(ServiceSettings):
     tools_url: str | None = None  # M5: the only way out to an LLM provider
     kb_url: str | None = None  # M6
     analyst_url: str | None = None  # M7
-    prompts_dir: Path | None = None
+    prompts_dir: Path = Path("/app/prompts")
     llm_model: str = "hosted-default"
     llm_timeout_s: float = Field(default=60, gt=0)  # budgets.yaml timeouts_s.llm
     kb_timeout_s: float = Field(default=5, gt=0)  # budgets.yaml timeouts_s.kb_search

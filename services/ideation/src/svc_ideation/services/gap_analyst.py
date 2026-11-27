@@ -94,7 +94,7 @@ class GapAnalystService:
                 discarded += 1
                 continue
             seen.add(key)
-            kept.append(Finding(text=parsed.text, evidence_ids=ids))  # type: ignore[arg-type]
+            kept.append(Finding(text=parsed.text, evidence_ids=ids))
         return kept, discarded
 
     async def _evidence(self, request: GapAnalystRequest) -> list[EvidenceItem]:

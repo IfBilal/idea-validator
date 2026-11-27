@@ -89,7 +89,7 @@ class SkepticService:
                     dimension=raw.dimension,
                     claim=raw.claim,
                     severity=raw.severity,
-                    evidence_ids=ids,  # type: ignore[arg-type]
+                    evidence_ids=ids,
                 )
             )
 

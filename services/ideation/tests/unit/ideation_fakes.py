@@ -29,8 +29,8 @@ def evidence(
     name: str | None = "NoteApp",
 ) -> EvidenceItem:
     return EvidenceItem(
-        evidence_id=eid(card, chunk),  # type: ignore[arg-type]
-        card_id=f"card_{card:08x}",  # type: ignore[arg-type]
+        evidence_id=eid(card, chunk),
+        card_id=f"card_{card:08x}",
         quote=quote,
         source="hackernews",
         url="https://news.ycombinator.com/item?id=1",
@@ -136,9 +136,10 @@ class FakeKb:
         self.searches: list[dict[str, Any]] = []
         self.batches: list[list[str]] = []
         self.fail = False
+        self.fail_search = False
 
     def handler(self, request: httpx.Request) -> httpx.Response:
-        if self.fail:
+        if self.fail or (self.fail_search and request.url.path == "/search"):
             return httpx.Response(503, json={})
         body = json.loads(request.content) if request.content else {}
         if request.url.path == "/search":

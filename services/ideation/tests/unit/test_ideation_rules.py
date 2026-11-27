@@ -7,7 +7,7 @@ from svc_ideation.services.fit import EFFORT_HOURS, available_hours, fits_profil
 from svc_ideation.services.similarity import feature_overlap, jaccard, tokenize
 
 
-def test_effort_hours_match_the_spec():
+def test_effort_hours_match_the_spec() -> None:
     assert EFFORT_HOURS == {"S": 60, "M": 160, "L": 400}
 
 
@@ -15,7 +15,7 @@ def test_effort_hours_match_the_spec():
     ("hours", "weeks", "team", "expected"),
     [(10, 10, 1, 100), (0, 10, 1, 0), (80, 52, 10, 41600), (5, 8, 2, 80), (1, 1, 1, 1)],
 )
-def test_available_hours_is_the_product(hours: int, weeks: int, team: int, expected: int):
+def test_available_hours_is_the_product(hours: int, weeks: int, team: int, expected: int) -> None:
     assert available_hours(profile(hours, weeks, team)) == expected
 
 
@@ -33,27 +33,27 @@ def test_available_hours_is_the_product(hours: int, weeks: int, team: int, expec
         ("L", 80, 52, 10, True),
     ],
 )
-def test_fits_profile_boundaries(scope: str, hours: int, weeks: int, team: int, fits: bool):
-    assert fits_profile(scope, profile(hours, weeks, team)) is fits  # type: ignore[arg-type]
+def test_fits_profile_boundaries(scope: str, hours: int, weeks: int, team: int, fits: bool) -> None:
+    assert fits_profile(scope, profile(hours, weeks, team)) is fits
 
 
 @pytest.mark.parametrize("scope", ["XL", "", "s", None])
-def test_unknown_scope_never_fits(scope: object):
-    assert fits_profile(scope, profile(80, 52, 10)) is False  # type: ignore[arg-type]
+def test_unknown_scope_never_fits(scope: object) -> None:
+    assert fits_profile(str(scope), profile(80, 52, 10)) is False
 
 
-def test_tokenize_lowercases_and_drops_stopwords_and_short_words():
+def test_tokenize_lowercases_and_drops_stopwords_and_short_words() -> None:
     assert tokenize("The Exam-Countdown for AI of 2026!") == frozenset(
         {"exam", "countdown", "2026"}
     )
 
 
-def test_tokenize_empty_and_punctuation_only():
+def test_tokenize_empty_and_punctuation_only() -> None:
     assert tokenize("") == frozenset()
     assert tokenize("?! ... --") == frozenset()
 
 
-def test_jaccard_basic_values():
+def test_jaccard_basic_values() -> None:
     assert jaccard(frozenset("abc"), frozenset("abc")) == 1.0
     assert jaccard(frozenset("abc"), frozenset("def")) == 0.0
     assert jaccard(frozenset("abc"), frozenset("abd")) == 0.5
@@ -64,17 +64,17 @@ def test_jaccard_basic_values():
 @given(
     st.frozensets(st.text(min_size=1, max_size=4)), st.frozensets(st.text(min_size=1, max_size=4))
 )
-def test_jaccard_is_symmetric_and_bounded(a: frozenset[str], b: frozenset[str]):
+def test_jaccard_is_symmetric_and_bounded(a: frozenset[str], b: frozenset[str]) -> None:
     assert jaccard(a, b) == jaccard(b, a)
     assert 0.0 <= jaccard(a, b) <= 1.0
 
 
-def test_feature_overlap_compares_all_features_with_the_product_text():
+def test_feature_overlap_compares_all_features_with_the_product_text() -> None:
     score = feature_overlap(
         ["exam countdown", "spaced repetition"], "NoteApp: exam countdown, spaced repetition"
     )
     assert score == pytest.approx(4 / 5)  # 4 shared tokens, plus "noteapp" only in the product
 
 
-def test_feature_overlap_of_unrelated_text_is_zero():
+def test_feature_overlap_of_unrelated_text_is_zero() -> None:
     assert feature_overlap(["exam countdown"], "kubernetes operator for postgres") == 0.0
