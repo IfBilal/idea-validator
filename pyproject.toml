@@ -99,3 +99,9 @@ allow_indirect_imports = true
 name = "gateway: lower layers never import higher ones"
 type = "layers"
 layers = ["svc_gateway.api", "svc_gateway.services", "svc_gateway.clients"]
+
+# GPU-only libraries are installed in a separate venv (jobs/finetune/requirements-gpu.txt);
+# the root environment never has them, so their imports are untyped here.
+[[tool.mypy.overrides]]
+module = ["torch.*", "transformers.*", "peft.*", "matplotlib.*", "bitsandbytes.*", "datasets.*", "gguf.*"]
+ignore_missing_imports = true
