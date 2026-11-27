@@ -25,6 +25,13 @@ resources:
 - services/agentops.yaml
 - jobs/migrate.yaml
 - jobs/migrate-kb.yaml
+- jobs/migrate-scouts.yaml
+- cronjobs/scout-hackernews.yaml
+- cronjobs/scout-github.yaml
+- cronjobs/scout-lobsters.yaml
+- cronjobs/scout-stackexchange.yaml
+- cronjobs/scout-reddit.yaml
+- cronjobs/scout-producthunt.yaml
 - ingress.yaml
 - hpa.yaml
 - netpol/default-deny.yaml

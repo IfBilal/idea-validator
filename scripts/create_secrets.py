@@ -38,6 +38,9 @@ def parse_dotenv(text: str) -> dict[str, str]:
     return out
 
 
+OPTIONAL_KEYS = ("GITHUB_TOKEN", "REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "PRODUCTHUNT_TOKEN")
+
+
 def build(
     existing: dict[str, str],
     dotenv: dict[str, str],
@@ -62,6 +65,9 @@ def build(
     v["TOOLS_REDIS_URL"] = f"redis://:{v['TOOLS_REDIS_PASSWORD']}@redis-tools:6379/0"
     # an empty key keeps the pod startable; /llm then answers 502 "not configured" instead of a crash loop
     v["GROQ_API_KEY"] = dotenv.get("GROQ_API_KEY") or v.get("GROQ_API_KEY", "")
+    # optional scout credentials: empty means "source off" (docs/data-sources.md); never generated
+    for key in OPTIONAL_KEYS:
+        v[key] = dotenv.get(key) or v.get(key, "")
     return v
 
 
