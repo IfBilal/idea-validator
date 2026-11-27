@@ -42,3 +42,5 @@ export const ValidateAccepted = z.object({
 });
 
 export const Accepted = z.object({}).passthrough();
+
+export const RunAccepted = z.object({ run_id: z.string() }).passthrough();

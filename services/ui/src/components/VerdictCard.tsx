@@ -11,6 +11,7 @@ import {
   type Dimension,
   type PartialCard,
   type SettledCard,
+  type SuggestedChange,
 } from "@/lib/verdict";
 
 /**
@@ -190,7 +191,16 @@ function Dimensions({ card, onChallenge }: { card: SettledCard; onChallenge?: (c
   );
 }
 
-export function VerdictCard({ raw, onChallenge }: { raw: unknown; onChallenge?: (claim: Claim) => void }) {
+export function VerdictCard({
+  raw,
+  onChallenge,
+  onApplyChange,
+}: {
+  raw: unknown;
+  onChallenge?: (claim: Claim) => void;
+  /** Called with a concrete suggested change (M8 text for one of M11's deltas); shown only when not GO. */
+  onApplyChange?: (change: SuggestedChange) => void;
+}) {
   const parsed = parseCard(raw);
   if (parsed.kind === "invalid") {
     return (
@@ -282,6 +292,25 @@ export function VerdictCard({ raw, onChallenge }: { raw: unknown; onChallenge?: 
                   ))}
                 </ul>
               )}
+            </div>
+          )}
+
+          {card.verdict !== "GO" && card.changes.length > 0 && (
+            <div>
+              <h3 className="mb-1 font-medium">Suggested changes</h3>
+              <ul className="space-y-2 text-sm">
+                {card.changes.map((c, i) => (
+                  <li key={`${i}-${c.change_id}`} className="space-y-1">
+                    <p>{c.text}</p>
+                    {c.rationale && <p className="text-xs text-[var(--muted)]">{c.rationale}</p>}
+                    {onApplyChange && (
+                      <Button variant="outline" className="px-2 py-0.5 text-xs" onClick={() => onApplyChange(c)}>
+                        Try this change
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
