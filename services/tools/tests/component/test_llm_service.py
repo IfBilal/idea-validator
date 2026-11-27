@@ -13,6 +13,8 @@ from common.errors import (
     UpstreamTimeout,
     ValidationFailed,
 )
+from common.schemas.trace import TraceRecord
+from common.tracing import Tracer
 from svc_tools.config_llm import LlmConfig, parse_llm_config
 from svc_tools.models.llm import LlmRequest
 from svc_tools.services.fetcher import RawResponse
@@ -114,6 +116,7 @@ def build(
     resolver: Resolver | None = None,
     sleeps: list[float] | None = None,
     clock: list[float] | None = None,
+    tracer: Tracer | None = None,
 ) -> LlmService:
     ticks = clock if clock is not None else [100.0, 100.25]
     sleeps = sleeps if sleeps is not None else []
@@ -132,6 +135,7 @@ def build(
         budget=budget or LlmBudget(max_tokens=60_000, max_cost_usd=Decimal("0.25")),
         sleep=sleep,
         clock=now,
+        tracer=tracer,
     )
 
 
@@ -422,3 +426,50 @@ async def test_the_key_and_the_prompt_are_never_logged(capsys: pytest.CaptureFix
     out = capsys.readouterr().out
     assert KEY not in out
     assert secret_prompt not in out
+
+
+# ---- round 2: a conservative pre-flight and a real trace record
+async def test_the_preflight_assumes_the_worst_tokenisation_of_the_input() -> None:
+    # 40,000 CJK characters: "chars / 4" says 10k tokens ($0.005); a tokeniser can need one token
+    # per byte (3 per character), i.e. 120k tokens = $0.06, which does not fit a $0.05 cap
+    poster = FakePoster(reply())
+    service = build(poster, budget=LlmBudget(max_tokens=10_000_000, max_cost_usd=Decimal("0.05")))
+    cjk = request(messages=[{"role": "user", "content": "\u6f22" * 40_000}], max_tokens=1)
+    with pytest.raises(BudgetExceeded):
+        await service.complete(cjk)
+    assert poster.calls == []
+
+
+async def test_an_ordinary_english_prompt_still_fits_a_small_budget() -> None:
+    poster = FakePoster(reply(usage={"prompt_tokens": 2000, "completion_tokens": 100}))
+    service = build(poster, budget=LlmBudget(max_tokens=60_000, max_cost_usd=Decimal("0.05")))
+    long_prompt = request(messages=[{"role": "user", "content": "word " * 1600}], max_tokens=800)
+    assert (await service.complete(long_prompt)).tokens_in == 2000
+
+
+async def test_every_call_writes_an_llm_call_trace_record_without_the_prompt() -> None:
+    sink: list[TraceRecord] = []
+    poster = FakePoster(reply('{"score": 4}', usage={"prompt_tokens": 30, "completion_tokens": 7}))
+    service = build(poster, tracer=Tracer("tools", sink.append))
+    secret_prompt = "PRIVATE-STUDENT-IDEA-TEXT"
+    await service.complete(request(messages=[{"role": "user", "content": secret_prompt}]))
+    (record,) = sink
+    assert record.kind == "llm_call" and record.run_id == "run_1" and record.agent == "scorer"
+    assert (record.tokens_in, record.tokens_out) == (30, 7)
+    assert record.cost_usd == pytest.approx(30 * 0.5e-6 + 7 * 1.5e-6)
+    assert record.model == "llama-3.3-70b" and record.error is None
+    dumped = record.model_dump_json()
+    assert secret_prompt not in dumped and '{"score": 4}' not in dumped
+
+
+async def test_a_refused_or_failed_call_is_traced_with_its_error() -> None:
+    sink: list[TraceRecord] = []
+    poster = FakePoster(reply())
+    service = build(
+        poster,
+        budget=LlmBudget(max_tokens=100_000, max_cost_usd=Decimal("0.0000001")),
+        tracer=Tracer("tools", sink.append),
+    )
+    with pytest.raises(BudgetExceeded):
+        await service.complete(request(max_tokens=4096))
+    assert sink[0].kind == "llm_call" and sink[0].error is not None

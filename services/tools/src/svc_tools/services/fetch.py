@@ -5,6 +5,7 @@ limit -> GET (pinned addresses, 10 s timeout, size cap, 2 retries, redirects re-
 sanitise -> cache -> response.
 """
 
+import asyncio
 import hashlib
 import json
 import re
@@ -82,6 +83,8 @@ Sleep = Callable[[float], Awaitable[None]]
 
 
 MAX_JSON_DEPTH = 50
+MAX_JSON_STRINGS = 20_000  # strings plus keys; beyond this the body is sanitised as plain text
+DEFAULT_DEADLINE_S = 30.0  # for the whole request: retries and redirects share it
 _CHARSET_NAMES = """
 utf-8 utf8 ascii us-ascii latin-1 latin1 iso-8859-1 iso-8859-2 iso-8859-15
 windows-1250 windows-1251 windows-1252 utf-16 utf-16le utf-16be
@@ -106,6 +109,58 @@ def _parse_json(decoded: str) -> Any:
         return json.loads(decoded, parse_constant=_no_constant, parse_float=_finite_float)
     except (ValueError, RecursionError):
         return None
+
+
+_JSON_ESCAPE = re.compile(
+    r"\\(?:u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][c-fC-F][0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|([\"\\\\/bfnrt]))"
+)
+_SIMPLE_ESCAPES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
+
+
+def _decode_json_escapes(text: str) -> str:
+    """Decode JSON string escapes in one pass (so ``\\\\u0069`` stays literal, as in real JSON).
+
+    A JSON body that cannot be parsed into structure (truncated, or too many strings) is
+    sanitised as text; without this, ``\\u0069gnore previous instructions`` would pass the pattern
+    matcher and be decoded later by whatever reads it, a model included.
+    """
+
+    def decode(match: re.Match[str]) -> str:
+        if match.group(1):
+            high, low = int(match.group(1), 16), int(match.group(2), 16)
+            return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+        if match.group(3):
+            return chr(int(match.group(3), 16))
+        return _SIMPLE_ESCAPES[match.group(4)]
+
+    return _JSON_ESCAPE.sub(decode, text)
+
+
+def _too_many_strings(value: Any) -> bool:
+    """Cheap, iterative count of strings and keys (no regex), so the limit costs microseconds."""
+    seen = 0
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            seen += 1
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, dict):
+            seen += len(item)
+            stack.extend(item.values())
+        if seen > MAX_JSON_STRINGS:
+            return True
+    return False
 
 
 def _sanitise_json(value: Any, depth: int = 0) -> tuple[Any, int]:
@@ -172,7 +227,9 @@ class FetchService:
         metrics: FetchMetrics,
         sleep: Sleep,
         clock: Callable[[], float],
+        deadline_s: float = DEFAULT_DEADLINE_S,
     ) -> None:
+        self._deadline_s = deadline_s
         self._policy, self._robots, self._bucket = policy, robots, bucket
         self._cache, self._fetcher, self._budget = cache, fetcher, budget
         self._sources, self._metrics, self._sleep, self._clock = sources, metrics, sleep, clock
@@ -184,9 +241,15 @@ class FetchService:
             label, entry = source_for_host(self._sources, checked.host)
             if not entry.enabled:
                 raise Forbidden("this source is disabled", {"reason": "SOURCE_DISABLED"})
-            response, outcome = await self._fetch(
-                req, checked, entry.rate_limit_per_min, entry.cache_ttl_s, label
-            )
+            try:
+                async with asyncio.timeout(self._deadline_s):
+                    response, outcome = await self._fetch(
+                        req, checked, entry.rate_limit_per_min, entry.cache_ttl_s, label
+                    )
+            except TimeoutError as exc:
+                raise UpstreamTimeout(
+                    "the fetch exceeded its overall deadline", {"host": checked.host}
+                ) from exc
         except Forbidden:
             self._metrics.outcome(label, "blocked")
             raise
@@ -232,10 +295,13 @@ class FetchService:
                 raise UpstreamError("redirect without a location", {"host": current.host})
             target = urljoin(f"https://{current.host}{current.path_and_query}", location)
             moved = await self._policy.check(target)  # allow-list + SSRF checks on every hop
+            _, moved_entry = source_for_host(self._sources, moved.host)
+            if not moved_entry.enabled:  # a redirect must not reach a source we switched off
+                raise Forbidden("this source is disabled", {"reason": "SOURCE_DISABLED"})
             if not await self._robots.allowed(moved.host, moved.path_and_query):
                 raise Forbidden("robots.txt disallows this path", {"reason": "ROBOTS_DISALLOWED"})
             if moved.host != current.host:
-                await self._bucket.acquire(moved.host, rate)
+                await self._bucket.acquire(moved.host, moved_entry.rate_limit_per_min)
             current = moved
         final = f"https://{current.host}{current.path_and_query}"
 
@@ -243,7 +309,8 @@ class FetchService:
             retry_after = raw.headers.get("retry-after", "")
             seconds = int(retry_after) if retry_after.isdigit() else 60
             raise RateLimited("the upstream is rate limiting us", {"retry_after": seconds})
-        response = self._build(req.url, final, raw)
+        # CPU-bound and up to about a second for a big page: keep it off the event loop
+        response = await asyncio.to_thread(self._build, req.url, final, raw)
         if req.run_id:
             self._budget.charge(req.run_id, len(raw.body))
         if response.sanitiser.removed_patterns:
@@ -281,10 +348,13 @@ class FetchService:
             parsed: Any = None
             if content_type.endswith("json") and not raw.truncated:
                 parsed = _parse_json(decoded)
+                if parsed is not None and _too_many_strings(parsed):
+                    parsed = None  # sanitised as text below, which is capped
             if parsed is not None:
                 data, removed = _sanitise_json(parsed)
             else:
-                result = sanitise(decoded, content_type)
+                source = _decode_json_escapes(decoded) if content_type.endswith("json") else decoded
+                result = sanitise(source, content_type)
                 text, removed = result.text, result.removed_patterns
         return FetchResponse(
             url=url,
