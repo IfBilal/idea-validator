@@ -16,6 +16,7 @@ class SourceEntry(BaseModel):
     enabled: bool = True
     rate_limit_per_min: int = Field(default=30, ge=0)
     cache_ttl_s: int = Field(default=3600, ge=0)
+    hosts: list[str] = Field(default_factory=list)  # rate limit, TTL and enabled follow the host
 
 
 class SourcesConfig(BaseModel):
@@ -29,6 +30,15 @@ class SourcesConfig(BaseModel):
 
 
 DEFAULT_SOURCE = SourceEntry()
+OTHER = "other"
+
+
+def source_for_host(config: SourcesConfig, host: str) -> tuple[str, SourceEntry]:
+    """The source a host belongs to. Callers cannot choose: an unlisted host is ``other``."""
+    for name, entry in config.sources.items():
+        if host in {h.lower().rstrip(".") for h in entry.hosts}:
+            return name, entry
+    return OTHER, DEFAULT_SOURCE
 
 
 def parse_sources(data: dict[str, Any]) -> SourcesConfig:
