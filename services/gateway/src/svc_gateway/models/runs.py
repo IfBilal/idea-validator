@@ -20,7 +20,7 @@ _LAYOUT = frozenset("\n\r\t")
 # control (incl. C1), format (zero-width, bidi), line/paragraph separators, surrogates, private use
 _FORBIDDEN = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"})
 
-TERMINAL_STATES = frozenset({"succeeded", "failed", "budget_stopped"})
+TERMINAL_STATES = frozenset({"succeeded", "failed", "budget_stopped", "cancelled"})
 RUN_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
 OpaqueId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,80}$")]
 IDEMPOTENCY_KEY_PATTERN = r"^[A-Za-z0-9_.:-]{1,64}$"

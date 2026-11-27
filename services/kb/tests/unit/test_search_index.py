@@ -1,8 +1,5 @@
 """Hybrid chunk search on an in-memory Qdrant with deterministic fake models (docs/harness/10 section 6)."""
 
-import hashlib
-import math
-import re
 from datetime import date
 
 import pytest
@@ -13,42 +10,8 @@ from svc_kb.services.search import (
     ChunkIndex,
     IndexedCard,
     SearchFilters,
-    SparseVec,
 )
-
-DIM = 64
-WORD = re.compile(r"[a-z0-9]+")
-
-
-def _h(word: str) -> int:
-    return int.from_bytes(hashlib.md5(word.encode(), usedforsecurity=False).digest()[:4], "big")
-
-
-class FakeModels:
-    """Dense = hashed bag of words; sparse = word counts; rerank = shared-word count."""
-
-    async def dense(self, texts: list[str]) -> list[list[float]]:
-        out = []
-        for t in texts:
-            v = [0.0] * DIM
-            for w in WORD.findall(t.lower()):
-                v[_h(w) % DIM] += 1.0
-            norm = math.sqrt(sum(x * x for x in v)) or 1.0
-            out.append([x / norm for x in v])
-        return out
-
-    async def sparse(self, texts: list[str]) -> list[SparseVec]:
-        out = []
-        for t in texts:
-            counts: dict[int, float] = {}
-            for w in WORD.findall(t.lower()):
-                counts[_h(w)] = counts.get(_h(w), 0.0) + 1.0
-            out.append(SparseVec(indices=list(counts), values=list(counts.values())))
-        return out
-
-    async def rerank(self, query: str, texts: list[str]) -> list[float]:
-        q = set(WORD.findall(query.lower()))
-        return [float(len(q & set(WORD.findall(t.lower())))) for t in texts]
+from svc_kb.testing import DIM, FakeModels
 
 
 def card(
