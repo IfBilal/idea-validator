@@ -57,7 +57,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { image-ref: "${{ matrix.service }}:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
+        with: { image-ref: "${{ matrix.service }}:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true, version: "v0.76.2" }
   ui-tests:
     runs-on: ubuntu-latest
     defaults:
@@ -88,7 +88,7 @@ jobs:
           cache-from: type=gha,scope=ui
           cache-to: type=gha,mode=max,scope=ui
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { image-ref: "ui:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true }
+        with: { image-ref: "ui:${{ github.sha }}", exit-code: "1", severity: "CRITICAL", ignore-unfixed: true, version: "v0.76.2" }
   manifests:
     runs-on: ubuntu-latest
     steps:
@@ -108,7 +108,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uvx pip-audit --strict || true            # make blocking once deps settle (P2)
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with: { scan-type: fs, scan-ref: ".", exit-code: "1", severity: "CRITICAL", scanners: "vuln,secret,misconfig" }
+        with: { scan-type: fs, scan-ref: ".", exit-code: "1", severity: "CRITICAL", scanners: "vuln,secret,misconfig", version: "v0.76.2" }
   commitlint:
     runs-on: ubuntu-latest
     steps:
