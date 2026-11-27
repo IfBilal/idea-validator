@@ -13,6 +13,7 @@ FROM python:3.12.8-slim-bookworm
 RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
+COPY --chown=10001:10001 rubrics /app/rubrics
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER 10001
 EXPOSE 8000
