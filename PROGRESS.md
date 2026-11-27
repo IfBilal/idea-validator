@@ -60,6 +60,9 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P0-T07 pr-checks workflow repaired | #16 | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
 | P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
 | P1-T05 Kustomize base (generated), P1-T07 NetworkPolicies from the call graph | this PR | 2026-11-27 | kubeconform strict 57/57, kube-linter clean, server dry run clean; datastores ran under restricted PSA with data surviving restarts; edges enforced live. UI, CronJobs and Jobs still to add |
+| P1-T04 k8s_up.sh verified end to end + guard against wrong kubectl context + `make k8s-verify` | this PR | 2026-11-27 | /usr/local/bin/kubectl is k3s here: scripts pin KUBECONFIG; Calico enforces NetworkPolicy |
+| P3-T01 data sources doc + ADR-009 | this PR | 2026-11-27 | Reddit/Product Hunt optional; 3 keyless sources; limits marked V/R/H |
+| /llm live against Groq | this PR | 2026-11-27 | both configured models were retired (404): config fixed, live availability test added |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
@@ -68,7 +71,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 - [ ] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
-- [ ] **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
+- [x] (done 2026-11-27, verified: 3-node kind + Calico + ingress + metrics-server; `make k8s-verify` proves NetworkPolicy enforcement; persist the sysctl in /etc/sysctl.d/99-kind.conf to survive a reboot) **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
 - [ ] Decide which laptop hosts kind + Jenkins (≥ 16 GB RAM)
 - [ ] Colab / Kaggle account for fine-tuning
 - [ ] Ask instructor the open questions in `docs/harness/27_ASSUMPTIONS_AND_OPEN_QUESTIONS.md` §B
