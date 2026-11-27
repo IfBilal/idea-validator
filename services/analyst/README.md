@@ -67,7 +67,7 @@ HDBSCAN + dense embeddings are the production option: plug an `Embedder` (`vecto
   (`card_sources.platform`) and optionally `github_stars`; unknown fields are ignored.
 - M6 evidence ids are `<card_id>#c<n>`; M7 cites chunk 0 for whole-card evidence in gaps.
 
-## Known limits (see docs/decisions/ADR-009-analyst-clustering.md)
+## Known limits (see docs/decisions/ADR-011-analyst-clustering.md)
 - D4: not HDBSCAN; thresholds tuned on synthetic fixtures, cluster quality on real data is unmeasured.
 - D6: only an in-memory `NicheStore` (no Postgres tables); state is lost on restart. Production shape: a recompute Job writes
   the tables and replicas only serve them.

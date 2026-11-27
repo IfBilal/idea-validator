@@ -35,3 +35,20 @@ uv run --package idea-validator-scorer uvicorn svc_scorer.main:app --port 8000
 uv run pytest services/scorer
 docker build -f services/scorer/Dockerfile -t scorer:$(git rev-parse --short=7 HEAD) .
 ```
+
+## Local-first mode (P8-T07, docs/harness/11 §4)
+Set `LOCAL_LLM_URL` (the llama.cpp server holding the fine-tuned GGUF, same pod, loopback). `POST /score` then:
+local model with JSON-schema constrained decoding -> validate (JSON, ranges, evidence ids subset of the request) ->
+invalid: retry once -> still invalid, or the server is down (no retry): hosted model via M5 (`LLM_URL`), logged and counted
+in `scorer_fallback_total{reason="invalid_output"|"unavailable"}`, result `fallback: true`, `model` = hosted model ->
+still invalid: abstain (`score: null`, `confidence: 0`). A local answer carries `model: scorer-lora@v1`
+(`LOCAL_MODEL_NAME`). Hosted transport errors still propagate (M9 turns them into abstentions). With only `LOCAL_LLM_URL`
+set the service has no fallback and abstains on invalid output.
+`/ready` is true only when the model has loaded (`/health`) and one warm-up completion succeeded.
+Config: `LOCAL_LLM_URL`, `LOCAL_MODEL_NAME` (`scorer-lora@v1`), `LOCAL_TIMEOUT_S` (120).
+
+Deployment shape (for the Kubernetes generator): the scorer pod runs two containers, `llama-server` (pinned llama.cpp
+server image, `-m /models/scorer-lora-v1.gguf -c 4096 -np 1 --host 127.0.0.1`, model on the `models` PVC, filled by the
+`model-import` Job through M5 and verified against the release sha256) and this wrapper. Measured on a Ryzen 5 5600
+(4 threads, 570-token prompt, Q4_K_M): p50 3.6 s, p95 5.5 s, peak RSS 1.86 GB (`jobs/finetune/runs/smoke_serving.json`,
+synthetic weights: re-measure with the real model). Start from requests cpu 1 / mem 2Gi, limits cpu 2 / mem 3Gi.
