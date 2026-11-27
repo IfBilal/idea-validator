@@ -1,12 +1,15 @@
 """Test doubles shared by the orchestrator's unit and component tests (not used at runtime)."""
 
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
 from common.testing import EmulatedRedis
 
+from .models.challenge_state import ChallengeState
+from .models.discover_state import DiscoverState
 from .models.state import ValidateState
 
 
@@ -63,6 +66,7 @@ URLS = {
     "validators": "http://m9",
     "verdict": "http://m11",
     "critic": "http://m12",
+    "ideation": "http://m8",
 }
 _HOSTS = {url.removeprefix("http://"): name for name, url in URLS.items()}
 
@@ -116,6 +120,71 @@ def voi_response(
     }
 
 
+_DEFAULT_LIMITS: dict[str, dict[str, Any]] = {
+    "validate": {
+        "max_tokens": 60000,
+        "max_pages": 30,
+        "max_steps": 80,
+        "max_cost_usd": 0.05,
+        "approval_threshold_usd": 0.05,
+    },
+    "whatif": {
+        "max_tokens": 40000,
+        "max_pages": 10,
+        "max_steps": 60,
+        "max_cost_usd": 0.03,
+        "approval_threshold_usd": 0.03,
+    },
+    "challenge": {
+        "max_tokens": 10000,
+        "max_pages": 0,
+        "max_steps": 20,
+        "max_cost_usd": 0.01,
+        "approval_threshold_usd": 0.01,
+    },
+    "discover": {
+        "max_tokens": 250000,
+        "max_pages": 60,
+        "max_steps": 400,
+        "max_cost_usd": 0.25,
+        "approval_threshold_usd": 0.25,
+    },
+}
+
+
+def make_idea(n: int, **over: Any) -> dict[str, Any]:
+    """A schema-valid M8 idea. ``n`` makes title, ref and gap distinct."""
+    idea: dict[str, Any] = {
+        "idea_ref": f"idea_{n:010x}",
+        "title": f"Idea number {n}",
+        "summary": f"Summary {n}",
+        "target_user": "students",
+        "core_features": ["a", "b", "c"],
+        "gap_ref": f"gap_{n}",
+        "gap_evidence_ids": [f"card_{n:08x}#c0"],
+        "fit_reason": "fits the profile",
+        "est_scope": "M",
+        "niche": "devtools",
+        "complaints": [],
+        "missing_features": [],
+    }
+    idea.update(over)
+    return idea
+
+
+def make_objection(n: int, idea: dict[str, Any], **over: Any) -> dict[str, Any]:
+    obj: dict[str, Any] = {
+        "objection_id": f"obj_{n}",
+        "idea_ref": idea["idea_ref"],
+        "dimension": "competition",
+        "claim": f"competitor exists ({n})",
+        "severity": "major",
+        "evidence_ids": [f"card_{n:08x}#c0"],
+    }
+    obj.update(over)
+    return obj
+
+
 class FakeWorld:
     """Stands in for M2, M4, M6, M7, M9, M11 and M12. Tests tweak attributes before the run."""
 
@@ -144,6 +213,21 @@ class FakeWorld:
         self.scout_results: dict[str, Any] = {"fetched": 3, "raw_page_ids": ["p1", "p2", "p3"]}
         self.after_scout: list[dict[str, Any]] | None = None  # evidence once scouting happened
         self._scouted = False
+        # M8 / M7 / M12 discover-side behaviour: tests replace these with their own functions
+        self.ideate_fn: Any = None
+        self.gap_fn: Any = None
+        self.skeptic_fn: Any = None
+        self.filter_fn: Any = None
+        self.suggest_fn: Any = None
+        self.rewrite_fn: Any = None
+        self.niches_fn: Any = None
+        self.gaps_fn: Any = None
+        self.versions: dict[tuple[str, int], dict[str, Any]] = {}  # M2 idea versions
+        self.creates: list[tuple[str, int]] = []  # versions M2 actually created (not replays)
+        self.last_query: dict[str, str] = {}
+        self.queries: list[tuple[str, dict[str, str]]] = []
+        self.weights_version = "w1"
+        self.engine_version = "m11@v1"
 
     # -- helpers -----------------------------------------------------------------------------
     def count(self, service: str, route: str) -> int:
@@ -159,6 +243,8 @@ class FakeWorld:
         service = _HOSTS[request.url.host]
         route = f"{request.method} {request.url.path}"
         body = json.loads(request.content) if request.content else None
+        self.last_query = dict(request.url.params)
+        self.queries.append((route, self.last_query))
         self.calls.append((service, route, body))
         queue = self.faults.get((service, route))
         if queue:
@@ -204,7 +290,11 @@ class FakeWorld:
         if route == "GET /config":
             return 200, {
                 "rules": {"rubric_versions": {d: f"{d}@v1" for d in DIMS}},
-                "versions": {"engine": "m11@v1", "rubrics": "r1", "profile_weights": "w1"},
+                "versions": {
+                    "engine": self.engine_version,
+                    "rubrics": "r1",
+                    "profile_weights": self.weights_version,
+                },
             }
         if route == "POST /verdict":
             if self.verdict_fn:
@@ -223,6 +313,125 @@ class FakeWorld:
             }
         if route == "POST /approval/evaluate":
             return 200, {"needs_approval": self.needs_approval, "spent": 0.04, "budget": 0.05}
+        return self._discover_answer(route, path, body)
+
+    def _put_version(self, path: str, body: Any) -> tuple[int, Any]:
+        """M2's idempotent save: 409 on a stale base or an existing version under another key."""
+        parts = path.strip("/").split("/")
+        idea_id, version = parts[2], int(parts[4])
+        user = body.get("user_id")
+        existing = self.versions.get((idea_id, version))
+        if existing is not None:
+            if existing.get("idempotency_key") == body["idempotency_key"]:
+                return 200, {"idea_id": idea_id, "version": version, "created": False}
+            return 409, {"error": {"code": "CONFLICT"}}
+        base = self.versions.get((idea_id, body["base_version"]))
+        if base is not None and base.get("user_id") not in (None, user):
+            return 404, {"error": {"code": "NOT_FOUND"}}  # someone else's idea
+        if version != body["base_version"] + 1:
+            return 422, {"error": {"code": "VALIDATION_ERROR"}}
+        latest = max((v for (i, v) in self.versions if i == idea_id), default=0)
+        if body["base_version"] != latest:
+            return 409, {"error": {"code": "CONFLICT"}}
+        self.versions[(idea_id, version)] = {
+            "idea_id": idea_id,
+            "version": version,
+            "user_id": user,
+            "text": body["text"],
+            "card": body["card"],
+            "change_note": body["change_note"],
+            "idempotency_key": body["idempotency_key"],
+        }
+        self.creates.append((idea_id, version))
+        return 200, {"idea_id": idea_id, "version": version, "created": True}
+
+    def _discover_answer(self, route: str, path: str, body: Any) -> tuple[int, Any]:
+        if route == "POST /niches/match":
+            if self.niches_fn:
+                return 200, self.niches_fn(body)
+            return 200, {
+                "matches": [
+                    {
+                        "niche_id": "n1",
+                        "name": "devtools",
+                        "status": "rising",
+                        "size": 9,
+                        "score": 1,
+                    }
+                ]
+            }
+        if route == "GET /gaps":
+            if self.gaps_fn:
+                return 200, self.gaps_fn()
+            return 200, {
+                "gaps": [
+                    {
+                        "id": "gap_1",
+                        "niche_id": "n1",
+                        "description": "slow exports",
+                        "evidence_ids": [f"card_{n:08x}#c0" for n in range(1, 41)],
+                        "complaint_count": 3,
+                        "product_coverage": 0,
+                        "score": 1.0,
+                    }
+                ]
+            }
+        if route == "POST /ideate":
+            if self.ideate_fn:
+                return 200, self.ideate_fn(body)
+            ideas = [make_idea(n) for n in range(1, body["count"] + 1)]
+            return 200, {"ideas": ideas, "dropped": [], "reason": None, "round": body["round"]}
+        if route == "POST /gap-analyst":
+            if self.gap_fn:
+                return 200, self.gap_fn(body)
+            ideas = [
+                {**i, "complaints": [{"text": "slow", "evidence_ids": i["gap_evidence_ids"]}]}
+                for i in body["ideas"]
+            ]
+            return 200, {"ideas": ideas, "discarded": 0}
+        if route == "POST /skeptic":
+            return 200, self.skeptic_fn(body) if self.skeptic_fn else {"objections": []}
+        if route == "POST /objections/filter":
+            if self.filter_fn:
+                return 200, self.filter_fn(body)
+            accepted = [
+                {
+                    "objection_id": o["objection_id"],
+                    "dimension": o["dimension"],
+                    "text": o["text"],
+                    "evidence_ids": o["evidence_ids"],
+                    "supporting_quote": "quote",
+                }
+                for o in body["objections"]
+            ]
+            return 200, {"accepted": accepted, "rejected": []}
+        if route == "POST /suggest-changes":
+            if self.suggest_fn:
+                return 200, self.suggest_fn(body)
+            change = {
+                "change_id": f"chg_{body['target_dimension']}",
+                "text": f"Improve {body['target_dimension']}",
+                "target_dimension": body["target_dimension"],
+                "rationale": "",
+                "evidence_ids": ["card_00000001#c0"],
+            }
+            return 200, {"changes": [change]}
+        if route == "POST /rewrite":
+            if self.rewrite_fn:
+                return 200, self.rewrite_fn(body)
+            return 200, {
+                "new_text": body["idea_text"] + " (revised: " + body["change_text"] + ")",
+                "change_note": body["change_text"][:100],
+            }
+        if route.startswith("GET /internal/ideas/"):
+            parts = path.strip("/").split("/")  # internal/ideas/{id}/versions/{v}
+            found = self.versions.get((parts[2], int(parts[4])))
+            owner = found.get("user_id") if found else None
+            if not found or (owner is not None and owner != self.last_query.get("user_id")):
+                return 404, {"error": {"code": "NOT_FOUND"}}
+            return 200, found
+        if route.startswith("PUT /internal/ideas/"):
+            return self._put_version(path, body)
         return 404, {"error": {"code": "NOT_FOUND"}}
 
     def _scores(self, body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -253,6 +462,9 @@ class Rig:
         timeouts: dict[str, float] | None = None,
         deep_search_pages: int = 20,
         approval_timeout_s: float = 600,
+        kind: str = "validate",
+        debate_max_rounds: int = 3,
+        children_concurrency: int = 3,
     ) -> None:
         from common.schemas import TraceRecord
 
@@ -264,25 +476,25 @@ class Rig:
         self.redis = FakeRedis()
         self.publisher = InMemoryPublisher()
         self.records: list[TraceRecord] = []
-        section: dict[str, Any] = {
-            "max_retries": max_retries,
-            "timeouts_s": {"scorer": 2, "kb_search": 1, "verdict": 1, **(timeouts or {})},
-            "max_tokens": 60000,
-            "max_pages": 30,
-            "max_steps": 80,
-            "max_cost_usd": 0.05,
-            "approval_threshold_usd": 0.05,
-            "deep_search": {"max_pages": deep_search_pages, "est_cost_per_page_usd": 0.0008},
-            **(limits or {}),
+
+        def section(of: str) -> dict[str, Any]:
+            return {
+                "max_retries": max_retries,
+                "timeouts_s": {"scorer": 2, "kb_search": 1, "verdict": 1, **(timeouts or {})},
+                **_DEFAULT_LIMITS[of],
+                "debate": {"max_rounds": debate_max_rounds},
+                "validate_children_concurrency": children_concurrency,
+                "deep_search": {"max_pages": deep_search_pages, "est_cost_per_page_usd": 0.0008},
+                **(limits or {}),
+            }
+
+        document = {
+            **{k: section(k) for k in _DEFAULT_LIMITS},
+            "concurrency": {"scorers": 4},
+            "approval_timeout_s": approval_timeout_s,
         }
-        self.config = run_config_from(
-            {
-                "validate": section,
-                "concurrency": {"scorers": 4},
-                "approval_timeout_s": approval_timeout_s,
-            },
-            "validate",
-        )
+        self.configs = {k: run_config_from(document, k) for k in _DEFAULT_LIMITS}
+        self.config = self.configs[kind]
         self.clients = build_clients(
             URLS,
             self.config,
@@ -291,17 +503,18 @@ class Rig:
             transport=self.world.transport(),
         )
 
-    def context(self, run_id: str) -> Any:
+    def context(self, run_id: str, kind: str | None = None) -> Any:
         from common.budget import BudgetLedger
         from common.tracing import Tracer
 
         from .repositories.events import RunEmitter
         from .services.run_context import RunContext
 
+        config = self.configs[kind] if kind else self.config
         return RunContext(
             run_id=run_id,
-            config=self.config,
-            ledger=BudgetLedger(self.redis, run_id, self.config.limits),
+            config=config,
+            ledger=BudgetLedger(self.redis, run_id, config.limits),
             tracer=Tracer("orchestrator", sink=self.records.append),
             emitter=RunEmitter(run_id, self.publisher),
             clients=self.clients,
@@ -369,3 +582,95 @@ class Harness:
 
     def decisions(self) -> list[Any]:
         return [r for r in self.records if r.kind == "decision"]
+
+
+ChildHook = Callable[
+    [Callable[[ValidateState, str], Awaitable[ValidateState]], ValidateState, str],
+    Awaitable[ValidateState],
+]
+
+
+class DiscoverHarness:
+    """Runs the Discover graph directly against a ``FakeWorld`` (children included)."""
+
+    def __init__(
+        self,
+        world: FakeWorld | None = None,
+        *,
+        run_id: str = "run_1",
+        child_hook: ChildHook | None = None,
+        **rig_options: Any,
+    ) -> None:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        from .services.discover_graph import build_discover_graph, make_child_runner
+        from .services.validate_graph import graph_config
+
+        self.rig = Rig(world, kind="discover", **rig_options)
+        self.world = self.rig.world
+        self.run_id = run_id
+        self.redis = self.rig.redis
+        self.publisher = self.rig.publisher
+        self.records = self.rig.records
+        self.ctx = self.rig.context(run_id)
+        self.ledger = self.ctx.ledger
+        saver = MemorySaver()
+        base = make_child_runner(self.ctx, saver)
+
+        async def run_child(state: ValidateState, thread: str) -> ValidateState:
+            return (
+                await child_hook(base, state, thread) if child_hook else await base(state, thread)
+            )
+
+        self.graph = build_discover_graph(self.ctx, saver, run_child)
+        self._config = graph_config(run_id)
+
+    async def start(self, **over: Any) -> DiscoverState:
+        base: dict[str, Any] = {"run_id": self.run_id, "user_id": "u1", "count": 5}
+        state = DiscoverState.model_validate({**base, **over})
+        await self.graph.ainvoke(state, self._config)
+        snap = await self.graph.aget_state(self._config)
+        return DiscoverState.model_validate(snap.values)
+
+    def event_types(self) -> list[str]:
+        return [e.type for e in self.publisher.events_of(self.run_id)]
+
+    def events(self, type_: str) -> list[Any]:
+        return [e for e in self.publisher.events_of(self.run_id) if e.type == type_]
+
+
+class ChallengeHarness:
+    """Runs the Challenge graph directly against a ``FakeWorld``."""
+
+    def __init__(
+        self, world: FakeWorld | None = None, *, run_id: str = "run_1", **rig_options: Any
+    ) -> None:
+        from langgraph.checkpoint.memory import MemorySaver
+
+        from .services.challenge import build_challenge_graph
+        from .services.validate_graph import graph_config
+
+        self.rig = Rig(world, kind="challenge", **rig_options)
+        self.world = self.rig.world
+        self.run_id = run_id
+        self.publisher = self.rig.publisher
+        self.records = self.rig.records
+        self.ctx = self.rig.context(run_id)
+        self.graph = build_challenge_graph(self.ctx, MemorySaver())
+        self._config = graph_config(run_id)
+
+    async def start(self, **over: Any) -> ChallengeState:
+        base: dict[str, Any] = {
+            "run_id": self.run_id,
+            "user_id": "u1",
+            "idea_id": "idea_1",
+            "version": 1,
+            "claim_id": "cl_risk",
+        }
+        state = ChallengeState.model_validate({**base, **over})
+        await self.graph.ainvoke(state, self._config)
+        snap = await self.graph.aget_state(self._config)
+        return ChallengeState.model_validate(snap.values)
+
+    def event_types(self) -> list[str]:
+        return [e.type for e in self.publisher.events_of(self.run_id)]

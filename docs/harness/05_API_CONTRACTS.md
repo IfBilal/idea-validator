@@ -44,7 +44,14 @@ All bodies are JSON validated against `schemas/*.schema.json` (Pydantic mirrors 
 | `POST /runs/{id}/answer` | `{"question_id","answer"}` | 202 |
 | `POST /runs/{id}/approve` | `{"approval_id","decision":"approve"\|"decline"}` | 202 |
 
-Result for discover: `{"ideas":[{"idea_id","version","title","summary","niche","verdict","stability","score","reason","gap_evidence_ids":[]}], "dropped":[{"title","defeated_by_evidence_ids":[],"round"}]}` sorted by verdict rank then score.
+Result for discover: `{"ideas":[{"idea_id","version","title","summary","niche","verdict","stability","score","reason","gap_evidence_ids":[]}], "dropped":[{"title","defeated_by_evidence_ids":[],"round"}]}` sorted by verdict rank, then score, then confidence. M3 adds `confidence`, `partial` and `needs_input` to each idea (a child
+that stopped or failed has `verdict: null`, `partial: true`) and `idea_id`, `reason` to each dropped entry
+(`fatal_objection | multiple_objections | no_gap_evidence`); the result also has `rounds`, `notes[]`, `degraded`, `partial`.
+Result for challenge: `{"claim_id","outcome":"defended"|"removed","reason","evidence_ids","supporting_quote"?,"new_version"?,"card"?}`
+(`card` is the new verdict card computed by M11). Result for what-if: the verdict card of the new version plus `base_version`,
+`change_note` and `diff` (`verdict_from/to`, `verdict_changed`, `score_from/to`, per-dimension `from/to/delta`). A settled validate
+card also has `changes[]` (concrete change texts from M8 for M11's `what_would_make_go` deltas) and `verdict_input` (the exact M11
+request, used to recompute a challenge). Each `claims[]` entry has `text`, `evidence_ids`, `dimension`, `supported`, `removed`.
 Result for validate: the **Verdict card** = M11 verdict JSON + `claims[]` + `challenge_log[]` + `cache_hit` + `evidence{id: EvidenceItem}` (for links).
 
 **The verdict can be `null`.** M3 only shows a verdict M11 produced and the challenge settled. Otherwise the card is partial:
@@ -105,7 +112,12 @@ data: {"run_id","seq","ts","type", ...payload}
 Every read takes the caller's `user_id`; someone else's idea, version or run is reported as 404, never 403.
 
 ### M3 Orchestrator
-`POST /runs` `{kind, user_id, input}` → `{run_id}`; `GET /runs/{id}`; `POST /runs/{id}/answer`; `POST /runs/{id}/approve`;
+`POST /runs` `{kind, user_id, input}` → 202 `{run_id}`, `kind` is `validate | discover | challenge | whatif` and each `input` is
+validated strictly (unknown fields, wrong types and out-of-range numbers are 422):
+`validate` `{idea_text ≤4000, idea_id, version ≥1, title?, overrides?, unknowns?}`; `discover` `{niche? ≤200, count 1..10 (default 5),
+deep_search?}`; `challenge` `{idea_id, version, claim_id}`; `whatif` `{idea_id, version, change_id | custom_change ≤1000}` (exactly one).
+Ids are `[A-Za-z0-9_-]{1,64}` because they reach URL paths. Budgets come from the run kind in `config/budgets.yaml`.
+`GET /runs/{id}`; `POST /runs/{id}/answer`; `POST /runs/{id}/approve` (only validate and what-if runs ask or need approval; 409 otherwise);
 `POST /runs/{id}/cancel`; `POST /replay/{run_id}` (used by M13 replay).
 
 ### M4 Scouts
