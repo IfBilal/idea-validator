@@ -15,7 +15,7 @@ from common.testing import EmulatedRedis
 LIMITS = BudgetLimits(max_tokens=1000, max_pages=10, max_steps=10, max_cost_usd=0.05)
 
 
-@pytest.fixture(params=["emulated", "real"])
+@pytest.fixture(params=["emulated", pytest.param("real", marks=pytest.mark.integration)])
 async def redis(request: pytest.FixtureRequest) -> AsyncIterator[Any]:
     if request.param == "emulated":
         yield EmulatedRedis()
