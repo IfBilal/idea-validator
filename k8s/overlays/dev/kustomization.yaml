@@ -44,6 +44,9 @@ images:
 - name: idea-validator/agentops
   newName: localhost:5001/agentops
   newTag: dev
+- name: idea-validator/ui
+  newName: localhost:5001/ui
+  newTag: dev
 replicas:
 - name: gateway
   count: 1
@@ -70,6 +73,8 @@ replicas:
 - name: critic
   count: 1
 - name: agentops
+  count: 1
+- name: ui
   count: 1
 patches:
 - target:

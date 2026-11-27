@@ -138,6 +138,11 @@ CRONJOBS: dict[str, dict[str, Any]] = {
     },
 }
 CRONJOB_CALLS = ["postgres", "tools"]
+
+# the browser UI (services/ui): nginx-unprivileged on 8080 as uid 101, no secrets, no egress at all.
+# Not in SERVICES: it has no /ready, no /metrics, no trace edge and is built from services/ui as its own context.
+UI_PORT = 8080
+UI = {"module": "m1", "replicas": 2, "uid": 101, "api_base_url": "/api"}
 IMAGE_TAG = "unset"  # the overlay / deploy script sets the commit SHA; never "latest"
 RESOURCES = {  # placeholders until scripts/measure_resources.sh (P11-T01) sets them from measurements
     "requests": {"cpu": "50m", "memory": "128Mi"},
@@ -286,6 +291,122 @@ def _deployment(name: str) -> str:
         },
     }
     return _dump(deployment, service)
+
+
+def _ui_workload() -> str:
+    uid = UI["uid"]
+    container = {
+        "name": "ui",
+        "image": f"{NAMESPACE}/ui:{IMAGE_TAG}",
+        "ports": [{"name": "http", "containerPort": UI_PORT}],
+        "env": [{"name": "API_BASE_URL", "value": UI["api_base_url"]}],
+        "readinessProbe": {"httpGet": {"path": "/healthz", "port": "http"}, "periodSeconds": 5},
+        "livenessProbe": {
+            "httpGet": {"path": "/healthz", "port": "http"},
+            "periodSeconds": 10,
+            "failureThreshold": 3,
+        },
+        "resources": RESOURCES,
+        "securityContext": {
+            "allowPrivilegeEscalation": False,
+            "readOnlyRootFilesystem": True,
+            "capabilities": {"drop": ["ALL"]},
+        },
+        "volumeMounts": [
+            {"name": "tmp", "mountPath": TMP_MOUNT}
+        ],  # nginx pid/temp + generated config
+    }
+    deployment = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": _meta("ui", UI["module"]),
+        "spec": {
+            "replicas": UI["replicas"],
+            "strategy": {
+                "type": "RollingUpdate",
+                "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},
+            },
+            "selector": {"matchLabels": {"app": "ui"}},
+            "template": {
+                "metadata": {"labels": {"app": "ui", "module": UI["module"]}},
+                "spec": {
+                    "serviceAccountName": "app",
+                    "automountServiceAccountToken": False,
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "runAsUser": uid,
+                        "runAsGroup": uid,
+                        "fsGroup": uid,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [container],
+                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                },
+            },
+        },
+    }
+    service = {
+        "apiVersion": "v1",
+        "kind": "Service",
+        "metadata": _meta("ui", UI["module"]),
+        "spec": {
+            "selector": {"app": "ui"},
+            "ports": [{"name": "http", "port": UI_PORT, "targetPort": "http"}],
+        },
+    }
+    return _dump(deployment, service)
+
+
+def _ui_netpol() -> dict[str, Any]:
+    """Only the ingress controller may reach the UI; the UI itself calls nothing."""
+    return {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {"name": "np-ui", "namespace": NAMESPACE},
+        "spec": {
+            "podSelector": {"matchLabels": {"app": "ui"}},
+            "policyTypes": ["Ingress", "Egress"],
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {"kubernetes.io/metadata.name": "ingress-nginx"}
+                            }
+                        }
+                    ],
+                    "ports": [{"protocol": "TCP", "port": UI_PORT}],
+                }
+            ],
+            "egress": [],
+        },
+    }
+
+
+def _ui_ingress() -> dict[str, Any]:
+    """`/` -> ui. A separate Ingress: the API one rewrites every path (rewrite-target), which would
+    turn `/` into a request for `/`+captures. nginx prefers the longer /api regex over this prefix."""
+    return {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "Ingress",
+        "metadata": {"name": "idea-validator-ui", "namespace": NAMESPACE},
+        "spec": {
+            "ingressClassName": "nginx",
+            "rules": [
+                {
+                    "http": {
+                        "paths": [
+                            {
+                                "path": "/",
+                                "pathType": "Prefix",
+                                "backend": {"service": {"name": "ui", "port": {"name": "http"}}},
+                            }
+                        ]
+                    }
+                }
+            ],
+        },
+    }
 
 
 def _statefulset(name: str) -> str:
@@ -614,6 +735,7 @@ def _netpols() -> str:
                 "spec": spec,
             }
         )
+    docs.append(_ui_netpol())
     return _dump(*docs)
 
 
@@ -720,6 +842,7 @@ def _simple() -> dict[str, str]:
         "k8s/base/namespace.yaml": _dump(namespace),
         "k8s/base/serviceaccount.yaml": _dump(account),
         "k8s/base/ingress.yaml": _dump(ingress),
+        "k8s/base/ingress-ui.yaml": _dump(_ui_ingress()),
         "k8s/base/hpa.yaml": _dump(hpa),
     }
 
@@ -729,10 +852,12 @@ def _kustomization() -> str:
         ["namespace.yaml", "serviceaccount.yaml"]
         + [f"data/{n}.yaml" for n in DATA]
         + [f"services/{n}.yaml" for n in SERVICES]
+        + ["services/ui.yaml"]
         + [f"jobs/{n}.yaml" for n, spec in JOBS.items() if not spec.get("manual")]
         + [f"cronjobs/{n}.yaml" for n in CRONJOBS]
         + [
             "ingress.yaml",
+            "ingress-ui.yaml",
             "hpa.yaml",
             "netpol/default-deny.yaml",
             "netpol/services.yaml",
@@ -767,9 +892,9 @@ def _overlay() -> str:
         "resources": ["../../base"],
         "images": [
             {"name": f"{NAMESPACE}/{n}", "newName": f"localhost:5001/{n}", "newTag": "dev"}
-            for n in SERVICES
+            for n in [*SERVICES, "ui"]
         ],
-        "replicas": [{"name": n, "count": 1} for n in SERVICES],
+        "replicas": [{"name": n, "count": 1} for n in [*SERVICES, "ui"]],
         "patches": [
             {
                 "target": {"kind": "HorizontalPodAutoscaler", "name": "gateway"},
@@ -796,6 +921,7 @@ def render() -> dict[str, str]:
     }
     for name in SERVICES:
         files[f"k8s/base/services/{name}.yaml"] = _deployment(name)
+    files["k8s/base/services/ui.yaml"] = _ui_workload()
     for name in DATA:
         files[f"k8s/base/data/{name}.yaml"] = _statefulset(name)
     for name, spec in JOBS.items():

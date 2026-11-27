@@ -1,13 +1,30 @@
 """M2 Profile/Session/Cache client: profile, verdict cache and persisted run state."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from common.http import ServiceClient
 from common.schemas import StudentProfile
 
 from .base import BaseClient
+
+
+class StoredRun(BaseModel):
+    """One row of M2's run mirror: as much of it as recovery needs."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    run_id: str
+    user_id: str
+    kind: str
+    state: str
+    input: dict[str, Any]
+    context: dict[str, Any] = Field(default_factory=dict)
+    pending_question: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -41,6 +58,21 @@ class ProfileClient(BaseClient):
 
     async def put_run(self, run_id: str, record: dict[str, Any]) -> None:
         await self._call("PUT", f"/internal/runs/{run_id}", record)
+
+    async def list_runs(
+        self, states: Sequence[str], *, limit: int = 100, after: str = ""
+    ) -> list[StoredRun]:
+        """M2 contract: ``GET /internal/runs?state=a,b&limit=&after=``, a page ordered by run id."""
+        query = {"state": ",".join(states), "limit": str(limit)}
+        if after:
+            query["after"] = after
+        data = await self._call("GET", f"/internal/runs?{urlencode(query, safe=',')}")
+        if not isinstance(data, list):
+            raise self.bad("M2 profile returned an invalid run list: expected an array")
+        try:
+            return [StoredRun.model_validate(row) for row in data]
+        except ValidationError as exc:
+            raise self.bad("M2 profile returned an invalid run list") from exc
 
     async def get_idea_version(self, user_id: str, idea_id: str, version: int) -> IdeaVersion:
         """M2 contract: ``GET /internal/ideas/{id}/versions/{v}?user_id=`` -> text, card, note."""

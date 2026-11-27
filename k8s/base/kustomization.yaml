@@ -23,6 +23,7 @@ resources:
 - services/verdict.yaml
 - services/critic.yaml
 - services/agentops.yaml
+- services/ui.yaml
 - jobs/migrate.yaml
 - jobs/migrate-kb.yaml
 - jobs/migrate-scouts.yaml
@@ -33,6 +34,7 @@ resources:
 - cronjobs/scout-reddit.yaml
 - cronjobs/scout-producthunt.yaml
 - ingress.yaml
+- ingress-ui.yaml
 - hpa.yaml
 - netpol/default-deny.yaml
 - netpol/services.yaml

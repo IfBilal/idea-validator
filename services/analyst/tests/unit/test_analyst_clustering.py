@@ -463,6 +463,9 @@ def test_clustering_1500_cards_takes_a_few_seconds_at_most() -> None:
 
 
 def test_growth_between_1k_and_3k_cards_is_roughly_linear() -> None:
-    small, large = _timed(1000), _timed(3000)
-    # 3x the data; a quadratic algorithm would take 9x. Allow generous slack for CI noise.
+    # The fastest of three runs is the least disturbed by a busy CI machine (a noisy run can only
+    # make a timing slower, never faster), so the ratio reflects the algorithm, not the neighbours.
+    small = min(_timed(1000) for _ in range(3))
+    large = min(_timed(3000) for _ in range(3))
+    # 3x the data; a quadratic algorithm would take 9x. Allow slack for what noise is left.
     assert large < max(small, 0.2) * 6.0, (small, large)

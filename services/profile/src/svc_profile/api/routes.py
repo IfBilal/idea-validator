@@ -1,10 +1,12 @@
 """HTTP layer only: parse, validate, call a service, map errors. Internal endpoints."""
 
+import re
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 
+from common.errors import ValidationFailed
 from common.schemas import StudentProfile
 from common.service import require_internal_token
 
@@ -36,6 +38,9 @@ from ..services.ideas import IdeaService
 from ..services.profiles import ProfileService
 from ..services.runs import ApprovalService, RunService
 from ..services.verdicts import VerdictService
+
+MAX_LIST_STATES = 10
+STATE_NAME = re.compile(r"[a-z_]{1,40}")
 
 
 def auth_service(request: Request) -> AuthService:
@@ -144,6 +149,19 @@ def make_router(settings: Settings) -> APIRouter:
         idea_ids: Annotated[list[uuid.UUID], Query(min_length=2, max_length=5)],
     ) -> list[CompareRow]:
         return await ideas.compare(user_id, idea_ids)
+
+    @router.get("/runs", response_model=list[RunOut])
+    async def list_runs(
+        runs: Runs,
+        state: Annotated[str, Query(min_length=1, max_length=400)],
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        after: Annotated[str, Query(max_length=80)] = "",
+    ) -> list[RunOut]:
+        """``state`` is a comma list such as ``running,awaiting_input``; paged by run id."""
+        states = state.split(",")
+        if len(states) > MAX_LIST_STATES or not all(STATE_NAME.fullmatch(s) for s in states):
+            raise ValidationFailed("state must be up to 10 lower-case state names")
+        return await runs.list_by_state(states, limit, after or None)
 
     @router.get("/runs/{run_id}", response_model=RunOut)
     async def get_run(
