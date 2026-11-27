@@ -41,6 +41,13 @@ export function setTokenProvider(provider: TokenProvider): void {
   tokenProvider = provider;
 }
 
+let unauthorizedHandler: () => void = () => {};
+
+/** Called when a request that carried a token is answered 401 (expired or revoked session). */
+export function setUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
 function retryAfter(response: Response): number | undefined {
   const raw = response.headers.get("Retry-After");
   const seconds = raw === null ? Number.NaN : Number.parseInt(raw, 10);
@@ -82,6 +89,7 @@ export async function apiFetch<T>(path: string, schema: z.ZodType<T>, init: ApiI
   const body = parseJson(text);
 
   if (!response.ok) {
+    if (response.status === 401 && token) unauthorizedHandler(); // a failed login sends no token: not triggered
     const envelope = ErrorEnvelope.safeParse(body);
     if (envelope.success) {
       const { code, message, request_id } = envelope.data.error;
