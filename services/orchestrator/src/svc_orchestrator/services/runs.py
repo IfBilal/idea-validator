@@ -14,9 +14,14 @@ no web-framework imports.
 """
 
 import asyncio
+import json
+import math
+import time
+import traceback
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from langchain_core.runnables import RunnableConfig
@@ -43,6 +48,7 @@ from ..models.api import (
 from ..models.challenge_state import ChallengeState
 from ..models.discover_state import DiscoverState
 from ..models.state import TERMINAL, RunStatus, ValidateState
+from ..repositories.attempts import RecoveryAttempts
 from ..repositories.events import EventLog
 from ..repositories.leases import RunLeases
 from .challenge import build_challenge_graph
@@ -65,6 +71,8 @@ STATE_MODELS: dict[str, type[BaseModel]] = {
     "discover": DiscoverState,
     "challenge": ChallengeState,
 }
+MAX_MIRROR_BYTES = 60_000  # M2 refuses a run row's context over 64 KB; leave room for the rest
+FINISHED_TTL_S = 24 * 3600  # how long a finished run stays readable from memory
 RESTORE_PARALLELISM = 16  # checkpoint reads at once; resuming graphs is bounded separately
 
 
@@ -87,6 +95,8 @@ class ActiveRun:
     kind: str = KIND
     input: dict[str, Any] = field(default_factory=dict)  # the start request, kept for the M2 mirror
     leased: bool = False
+    renew_failures: int = 0
+    finished_at: float | None = None
     status: RunStatus = RunStatus.CREATED
     step: str = "INTAKE"
     pending_question: dict[str, Any] | None = None
@@ -112,9 +122,28 @@ class RunService:
         resume_concurrency: int = 4,
         heartbeat_s: float = 20.0,
         recovery_page_size: int = 100,
+        attempts: RecoveryAttempts | None = None,
+        recovery_attempt_limit: int = 3,
+        lease_failures_allowed: int = 2,
+        finished_ttl_s: float = FINISHED_TTL_S,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        if resume_concurrency < 1 or recovery_page_size < 1 or heartbeat_s <= 0:
-            raise ValueError("resume_concurrency, recovery_page_size and heartbeat_s must be > 0")
+        if (
+            min(
+                resume_concurrency,
+                recovery_page_size,
+                recovery_attempt_limit,
+                lease_failures_allowed,
+            )
+            < 1
+            or heartbeat_s <= 0
+        ):
+            raise ValueError("concurrency, page size, limits and heartbeat_s must be > 0")
+        self._attempts = attempts
+        self._attempt_limit = recovery_attempt_limit
+        self._lease_failures_allowed = lease_failures_allowed
+        self._finished_ttl_s = finished_ttl_s
+        self._clock = clock
         self._leases = leases
         self._events = event_log
         self._source = run_source
@@ -133,6 +162,7 @@ class RunService:
 
     # ---- commands ----------------------------------------------------------------------------
     async def start(self, body: StartRun) -> str:
+        self._evict_finished()
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         ctx = self._factory(run_id, body.kind)
         graph, state = self._prepare(body, run_id, ctx)
@@ -325,7 +355,9 @@ class RunService:
                 return await self._restore_owned(stored)
             except Exception as exc:
                 log.error("run_recovery_error", run_id=run_id, error=type(exc).__name__)
-                self._runs.pop(run_id, None)
+                half = self._runs.get(run_id)
+                if half is not None:
+                    self._discard(half)  # no timer or task of a half-restored run may keep going
                 if self._leases is not None:
                     await self._leases.release(run_id)
                 return "error"
@@ -339,7 +371,6 @@ class RunService:
             ctx.emitter.resume_from(await self._events.last_seq(stored.run_id))
         if kind not in STATE_MODELS:
             return await self._give_up(None, stored, ctx)
-        await self._restore_ledger(ctx, stored)
         model = STATE_MODELS[kind]
         run = ActiveRun(
             run_id=stored.run_id,
@@ -355,37 +386,109 @@ class RunService:
         )
         self._runs[run.run_id] = run
         self._ensure_heartbeat()
+        # a run that keeps killing its process is not tried forever
+        if (
+            self._attempts is not None
+            and await self._attempts.incr(run.run_id) > self._attempt_limit
+        ):
+            log.error("run_recovery_attempts_exhausted", run_id=run.run_id)
+            return await self._give_up(run, stored, ctx)
+        if not await self._restore_ledger(ctx, stored):
+            return await self._give_up(run, stored, ctx)
         try:
             snapshot = await run.graph.aget_state(run.config)
-            state = model.model_validate(snapshot.values)
-        except Exception as exc:  # no checkpoint, or one that cannot be read
+            state = self._revalidated(model, snapshot.values)
+        except Exception as exc:  # no checkpoint, or one that cannot be read or trusted
             log.warning("run_checkpoint_unusable", run_id=run.run_id, error=type(exc).__name__)
             return await self._give_up(run, stored, ctx)
-        if getattr(state, "run_id", None) != run.run_id:  # a checkpoint that is not this run's
+        if (
+            getattr(state, "run_id", None) != run.run_id
+            or getattr(state, "user_id", None) != stored.user_id
+        ):  # a checkpoint that is not this run's, or not this user's
             log.warning("run_checkpoint_mismatch", run_id=run.run_id)
             return await self._give_up(run, stored, ctx)
         run.step = getattr(state, "step", run.step)
         for task in snapshot.tasks:
             for pending in task.interrupts:
-                self._pause(run, dict(pending.value))
-                await self._persist(run)
+                timer = self._pause(run, dict(pending.value), arm=False)
+                await self._persist(run)  # the timer starts only once the pause is recorded
+                self._arm(run, *timer)
+                await self._attempts_reset(run.run_id)
                 return "paused"
         if snapshot.next:
             run.status = RunStatus.RUNNING
             await ctx.emitter.emit("heartbeat", recovered=True, step=run.step)
             run.task = asyncio.create_task(self._drive_recovered(run))
             return "resumed"
-        await self._settle(run)
+        return await self._finish_recovered(run, state, stored, ctx)
+
+    @staticmethod
+    def _revalidated(model: type[BaseModel], values: Any) -> BaseModel:
+        """LangGraph builds a state without validation (``model_construct``) when it cannot
+        validate a checkpoint; validate it again from its plain data so a bad one is refused."""
+        raw = values.model_dump() if isinstance(values, BaseModel) else values
+        return model.model_validate(raw)
+
+    async def _finish_recovered(
+        self, run: ActiveRun, state: BaseModel, stored: StoredRun, ctx: RunContext
+    ) -> str:
+        """A graph with nothing left to do must end in a terminal status (and, for validate and
+        what-if, hold a card); anything else is a damaged checkpoint, never a quiet success."""
+        has_card = getattr(state, "card", None) is not None
+        needs_card = run.kind in ("validate", "whatif")
+        if getattr(state, "status", None) not in TERMINAL or (needs_card and not has_card):
+            log.warning("run_checkpoint_not_final", run_id=run.run_id)
+            return await self._give_up(run, stored, ctx)
+        self._apply_final(run, state)
         await self._persist(run)
         return "finished"
 
-    async def _restore_ledger(self, ctx: RunContext, stored: StoredRun) -> None:
-        """A Redis that lost the budget hash gets the spend M3 last mirrored to M2."""
+    async def _restore_ledger(self, ctx: RunContext, stored: StoredRun) -> bool:
+        """A Redis that lost the budget hash gets back the spend and cost raise mirrored to M2.
+
+        A mirror with spend we cannot read is not treated as zero spend: that would hand the run a
+        fresh budget. No spend recorded at all is a run that had spent nothing.
+        """
+        raw = stored.context.get("spent")
+        if raw is None and stored.context.get("cost_bonus_usd") is None:
+            return True
         try:
-            spent = Spend.model_validate(stored.context.get("spent") or {})
-        except ValueError:
-            return
-        await ctx.ledger.restore_if_empty(spent)
+            spent = Spend.model_validate(raw or {})
+            bonus = float(stored.context.get("cost_bonus_usd") or 0.0)
+            if not math.isfinite(bonus):
+                return False
+            await ctx.ledger.restore_if_empty(spent, bonus)
+        except (ValueError, TypeError):
+            log.warning("run_budget_mirror_unusable", run_id=stored.run_id)
+            return False
+        return True
+
+    async def _attempts_reset(self, run_id: str) -> None:
+        if self._attempts is not None:
+            try:
+                await self._attempts.reset(run_id)
+            except Exception as exc:  # the counter expires on its own
+                log.warning("attempts_reset_failed", run_id=run_id, error=type(exc).__name__)
+
+    def _discard(self, run: ActiveRun) -> None:
+        """Forget a run in this process: stop its tasks and drop it."""
+        for task in (run.task, run.expiry):
+            if task is not None and not task.done():
+                task.cancel()
+        run.task = run.expiry = None
+        self._runs.pop(run.run_id, None)
+
+    def _evict_finished(self) -> None:
+        """Finished runs stay readable for a while, then leave memory (M2 keeps the record)."""
+        now = self._clock()
+        for run in [r for r in self._runs.values() if r.status in TERMINAL]:
+            done = run.task is None or run.task.done()
+            if (
+                done
+                and run.finished_at is not None
+                and now - run.finished_at > self._finished_ttl_s
+            ):
+                self._runs.pop(run.run_id, None)
 
     async def _give_up(self, run: ActiveRun | None, stored: StoredRun, ctx: RunContext) -> str:
         """No usable checkpoint: fail the run with a fixed reason, in memory and in M2."""
@@ -437,17 +540,36 @@ class RunService:
             self._heartbeat = asyncio.create_task(self._renew_leases())
 
     async def _renew_leases(self) -> None:
-        """Keep the leases of the runs this replica drives; stop driving one that was taken over."""
-        assert self._leases is not None
+        """Keep the leases of the runs this replica drives; stop driving one that was taken over.
+
+        The loop must not die quietly (every run would silently lose its lease), so each pass is
+        guarded as a whole.
+        """
         while True:
             await asyncio.sleep(self._heartbeat_s)
-            for run in [r for r in self._runs.values() if r.leased]:
-                try:
-                    held = await self._leases.renew(run.run_id)
-                except Exception as exc:  # Redis hiccup: the TTL spans several beats
-                    log.warning("lease_renew_failed", run_id=run.run_id, error=type(exc).__name__)
-                    continue
+            try:
+                await self._renew_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.error("heartbeat_pass_failed", error=type(exc).__name__)
+
+    async def _renew_once(self) -> None:
+        assert self._leases is not None
+        self._evict_finished()
+        for run in [r for r in self._runs.values() if r.leased]:
+            try:
+                held = await self._leases.renew(run.run_id)
+                run.renew_failures = 0
                 if not held:
+                    await self._abandon(run)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                run.renew_failures += 1
+                log.warning("lease_renew_failed", run_id=run.run_id, error=type(exc).__name__)
+                if run.renew_failures >= self._lease_failures_allowed:
+                    # give up before the TTL lets another replica start the same run
                     await self._abandon(run)
 
     async def _abandon(self, run: ActiveRun) -> None:
@@ -484,7 +606,8 @@ class RunService:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # never leak internals to the caller
-            log.error("run_crashed", run_id=run.run_id, error=type(exc).__name__, exc_info=True)
+            # no message and no traceback text: exceptions can quote the idea text or the profile
+            log.error("run_crashed", run_id=run.run_id, error=type(exc).__name__, where=_where(exc))
             run.status, run.error = RunStatus.FAILED, "internal error"
             await run.ctx.emitter.emit("run_failed", status="failed", reason=run.error)
         await self._persist(run)
@@ -496,6 +619,9 @@ class RunService:
                 self._pause(run, dict(pending.value))
                 return
         state = run.state_model.model_validate(snapshot.values)
+        self._apply_final(run, state)
+
+    def _apply_final(self, run: ActiveRun, state: BaseModel) -> None:
         run.step = getattr(state, "step", run.step)
         status = getattr(state, "status", RunStatus.SUCCEEDED)
         run.status = status if status in TERMINAL else RunStatus.SUCCEEDED
@@ -503,7 +629,10 @@ class RunService:
         if isinstance(state, ValidateState) and state.memo:
             self._remember(state)
 
-    def _pause(self, run: ActiveRun, payload: dict[str, Any]) -> None:
+    def _pause(
+        self, run: ActiveRun, payload: dict[str, Any], *, arm: bool = True
+    ) -> tuple[dict[str, Any], float, str]:
+        """Open a question or approval. ``arm=False`` leaves the expiry timer to the caller."""
         kind = payload.pop("type")
         if kind == "question":
             run.status, run.step, run.pending_question = (
@@ -519,6 +648,11 @@ class RunService:
                 payload,
             )
             timeout, value = self._config.approval_timeout_s, DECLINE
+        if arm:
+            self._arm(run, payload, timeout, value)
+        return payload, timeout, value
+
+    def _arm(self, run: ActiveRun, payload: dict[str, Any], timeout: float, value: str) -> None:
         run.expiry = asyncio.create_task(self._expire(run, payload, timeout, value))
 
     async def _expire(
@@ -541,13 +675,19 @@ class RunService:
     async def _persist(self, run: ActiveRun) -> None:
         """Mirror the run to M2 in M2's shape: ``context`` carries what M2 has no column for."""
         spent = await run.ctx.ledger.spent()
-        context = {
+        limits = await run.ctx.ledger.limits()
+        context: dict[str, Any] = {
             "step": run.step,
             "spent": spent.model_dump(),
+            "cost_bonus_usd": max(0.0, limits.max_cost_usd - run.ctx.config.limits.max_cost_usd),
             "pending_approval": run.pending_approval,
             "result": run.result,
             "error": run.error,
         }
+        if len(json.dumps(context, default=str)) > MAX_MIRROR_BYTES:
+            # M2 would refuse the row. The result is in the checkpoint and the live run; the
+            # mirror only needs to say where the run is.
+            context["result"], context["result_truncated"] = None, True
         await self._mirror(
             run.ctx,
             run.run_id,
@@ -559,6 +699,9 @@ class RunService:
             run.pending_question,
         )
         if run.status in TERMINAL:
+            if run.finished_at is None:
+                run.finished_at = self._clock()
+            await self._attempts_reset(run.run_id)
             await self._release(run)
 
     @staticmethod
@@ -584,3 +727,9 @@ class RunService:
             await ctx.clients.profile.put_run(run_id, record)
         except Exception as exc:  # the live run is the source of truth; M2 is a mirror
             log.warning("run_persist_failed", run_id=run_id, error=type(exc).__name__)
+
+
+def _where(exc: BaseException) -> str:
+    """Where an exception was raised (file:line), never what it says."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    return f"{Path(frames[-1].filename).name}:{frames[-1].lineno}" if frames else "unknown"

@@ -76,6 +76,14 @@ class EmulatedRedis:
         removed = [n for n in names if self.values.pop(n, None) is not None]
         return len(removed)
 
+    async def get(self, name: str) -> bytes | None:
+        value = self.values.get(name)
+        return None if value is None else value.encode()
+
+    async def incr(self, name: str) -> int:
+        self.values[name] = str(int(self.values.get(name, "0")) + 1)
+        return int(self.values[name])
+
     async def hgetall(self, name: str) -> dict[bytes, bytes]:
         return {k.encode(): str(v).encode() for k, v in self.hashes.get(name, {}).items()}
 
@@ -86,11 +94,24 @@ class EmulatedRedis:
     async def ttl(self, name: str) -> int:
         return self.ttls.get(name, -1)
 
-    async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> list[bytes]:
-        from .budget import RESERVE_SCRIPT
+    async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
+        from .budget import RESERVE_SCRIPT, RESTORE_SCRIPT
 
+        if script == RESTORE_SCRIPT and numkeys == 1:
+            name, tokens, pages, steps, cost, bonus, ttl = keys_and_args
+            if name in self.hashes:
+                return 0
+            self.hashes[str(name)] = {
+                "tokens": int(tokens),
+                "pages": int(pages),
+                "steps": int(steps),
+                "cost_usd": float(cost),
+                "cost_bonus_usd": float(bonus),
+            }
+            self.ttls[str(name)] = int(ttl)
+            return 1
         if script != RESERVE_SCRIPT or numkeys != 1:
-            raise NotImplementedError("EmulatedRedis only knows the budget reserve script")
+            raise NotImplementedError("EmulatedRedis only knows the budget scripts")
         key, *argv = keys_and_args
         e_tokens, e_pages, e_steps, e_cost, m_tokens, m_pages, m_steps, m_cost, tol, ttl = (
             float(a) for a in argv

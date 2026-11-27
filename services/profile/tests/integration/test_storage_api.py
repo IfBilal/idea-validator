@@ -386,6 +386,24 @@ def test_fifty_runs_list_in_pages_without_loss_or_repeat(client: TestClient) -> 
     assert seen == [f"run_{n:03d}" for n in range(50)]
 
 
+def test_an_oversized_run_row_is_refused(client: TestClient) -> None:
+    uid = user(client)
+    big = {"x": "a" * 70_000}
+    assert (
+        client.put(
+            "/internal/runs/run_1", json={**run_body(uid), "context": big}, headers=H
+        ).status_code
+        == 422
+    )
+    assert (
+        client.put(
+            "/internal/runs/run_1", json={**run_body(uid), "input": big}, headers=H
+        ).status_code
+        == 422
+    )
+    assert client.put("/internal/runs/run_1", json=run_body(uid), headers=H).status_code == 200
+
+
 def test_an_approval_is_decided_exactly_once(client: TestClient) -> None:
     body = {
         "run_id": "run_1",

@@ -11,6 +11,7 @@ which ``redis.asyncio.Redis`` satisfies.
 """
 
 from collections.abc import Awaitable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -44,6 +45,22 @@ return over
 """
 
 
+# Restore only into a hash that does not exist: the check and the write are one atomic step.
+RESTORE_SCRIPT = """
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+redis.call('HSET', KEYS[1], 'tokens', ARGV[1], 'pages', ARGV[2], 'steps', ARGV[3],
+           'cost_usd', ARGV[4], 'cost_bonus_usd', ARGV[5])
+redis.call('EXPIRE', KEYS[1], ARGV[6])
+return 1
+"""
+
+
+@dataclass(frozen=True)
+class StepClaim:
+    free: bool  # a re-run of a step that was already charged: do not charge again
+    reruns: int  # how many times this step's claim was taken over after a crash
+
+
 class RedisLike(Protocol):
     def hincrby(self, name: str, key: str, amount: int) -> Awaitable[Any]: ...
     def hincrbyfloat(self, name: str, key: str, amount: float) -> Awaitable[Any]: ...
@@ -55,6 +72,8 @@ class RedisLike(Protocol):
         self, name: str, value: str, *, ex: int | None = None, get: bool = False
     ) -> Awaitable[Any]: ...
     def delete(self, *names: str) -> Awaitable[Any]: ...
+    def get(self, name: str) -> Awaitable[Any]: ...
+    def incr(self, name: str) -> Awaitable[Any]: ...
 
 
 class Spend(Message):
@@ -129,34 +148,58 @@ class BudgetLedger:
         await self._redis.expire(self._key, self._ttl_s)
         return await self.spent()
 
-    async def claim_step(self, token: str, owner: str) -> bool:
-        """Mark a step as in flight; True when a *different* process left a claim behind.
+    async def claim_step(self, token: str, owner: str) -> "StepClaim":
+        """Mark a step as in flight and say whether it is a re-run that must not be charged.
 
-        A step that was running when its process died is re-run after recovery. The first run was
-        already charged by ``reserve``, so the re-run must not be charged again. A claim by the same
+        A step running when its process died is re-run after recovery. If it had already been
+        charged (``mark_paid``) the re-run is ``free``; if the process died between the claim and
+        the charge it is not, so a crash can never leave a free step behind. ``reruns`` counts the
+        takeovers of the claim so a poison step can be capped by the caller. A claim by the same
         ``owner`` is a second identical step in flight at once: real work, billed normally.
         The caller ``release_step``s on completion or error, but not when it is cancelled.
         """
         previous = await self._redis.set(self._claim_key(token), owner, ex=self._ttl_s, get=True)
-        if previous is None:
-            return False
-        return (previous.decode() if isinstance(previous, bytes) else str(previous)) != owner
+        text = previous.decode() if isinstance(previous, bytes) else previous
+        if text is None or text == owner:
+            return StepClaim(free=False, reruns=0)
+        key = f"{self._claim_key(token)}:reruns"
+        reruns = int(await self._redis.incr(key))
+        await self._redis.expire(key, self._ttl_s)
+        paid = await self._redis.get(f"{self._claim_key(token)}:paid") is not None
+        return StepClaim(free=paid, reruns=reruns)
+
+    async def mark_paid(self, token: str) -> None:
+        """The step has been charged: a re-run after a crash is free."""
+        await self._redis.set(f"{self._claim_key(token)}:paid", "1", ex=self._ttl_s)
 
     async def release_step(self, token: str) -> None:
-        await self._redis.delete(self._claim_key(token))
+        base = self._claim_key(token)
+        await self._redis.delete(base, f"{base}:paid", f"{base}:reruns")
 
     def _claim_key(self, token: str) -> str:
         return f"{self._key}:claim:{token}"
 
-    async def restore_if_empty(self, spent: Spend) -> bool:
-        """Put back spend saved elsewhere (M2's run mirror) when the Redis hash was lost.
+    async def restore_if_empty(self, spent: Spend, cost_bonus_usd: float = 0.0) -> bool:
+        """Put back the spend and cost raise mirrored to M2 after Redis lost them.
 
-        Never overwrites a ledger that already has spend, so M5 charges made since are kept.
+        One atomic step: it never overwrites a hash that exists, so M5 charges made since are kept.
         """
-        if spent == Spend() or await self.spent() != Spend():
+        if cost_bonus_usd < 0:
+            raise ValueError("a cost raise cannot be negative")
+        if spent == Spend() and cost_bonus_usd == 0:
             return False
-        await self.record(spent)
-        return True
+        done = await self._redis.eval(
+            RESTORE_SCRIPT,
+            1,
+            self._key,
+            spent.tokens,
+            spent.pages,
+            spent.steps,
+            repr(spent.cost_usd),
+            repr(cost_bonus_usd),
+            self._ttl_s,
+        )
+        return int(done) == 1
 
     async def reserve(self, estimate: Spend) -> Spend:
         """Atomically refuse (``BudgetExceeded``, nothing changed) or admit a step and count it.
@@ -256,10 +299,12 @@ class BudgetLedger:
 
 __all__ = [
     "DEFAULT_TTL_S",
+    "RESTORE_SCRIPT",
     "BudgetLedger",
     "BudgetLimits",
     "RedisLike",
     "Spend",
+    "StepClaim",
     "limits_from_config",
     "load_limits",
 ]

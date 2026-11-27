@@ -16,6 +16,7 @@ from common.tracing import Tracer
 from .api.routes import make_router
 from .clients.factory import build_clients
 from .config import Settings
+from .repositories.attempts import RedisAttempts
 from .repositories.checkpoints import postgres_saver
 from .repositories.events import RedisPublisher, RunEmitter
 from .repositories.leases import RedisLeases
@@ -126,6 +127,9 @@ async def _wire(settings: Settings, app: FastAPI, stack: AsyncExitStack) -> RunS
         run_source=clients.profile,
         resume_concurrency=settings.resume_concurrency,
         heartbeat_s=settings.lease_ttl_s / 3,
+        attempts=RedisAttempts(redis),
+        recovery_attempt_limit=settings.recovery_attempt_limit,
+        finished_ttl_s=settings.finished_ttl_s,
     )
 
 

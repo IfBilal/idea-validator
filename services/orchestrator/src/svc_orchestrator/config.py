@@ -17,6 +17,10 @@ class Settings(ServiceSettings):
     resume_concurrency: int = Field(default=4, ge=1, le=64)  # recovered runs executing at once
     recovery_interval_s: float = Field(default=30, ge=0)  # sweep for orphaned runs; 0 = once
     recovery_attempts: int = Field(default=5, ge=1, le=20)  # tries per pass while M2 is down
+    recovery_attempt_limit: int = Field(
+        default=3, ge=1, le=20
+    )  # restores of one run before giving up
+    finished_ttl_s: float = Field(default=24 * 3600, ge=0)  # finished runs stay readable in memory
 
     # Other modules, reached over HTTP only. Defaults are the in-cluster service names.
     profile_url: str = "http://profile:8000"

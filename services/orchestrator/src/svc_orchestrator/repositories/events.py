@@ -33,6 +33,10 @@ def events_key(run_id: str) -> str:
     return f"run:{run_id}:events"
 
 
+def seq_key(run_id: str) -> str:
+    return f"run:{run_id}:seq"
+
+
 class EventPublisher(Protocol):
     async def publish(self, event: RunEvent) -> None: ...
 
@@ -65,10 +69,23 @@ class InMemoryPublisher:
 class EventRedis(Protocol):
     def pipeline(self, transaction: bool = True) -> Any: ...
     def lrange(self, name: str, start: int, end: int) -> Awaitable[Any]: ...
+    def lindex(self, name: str, index: int) -> Awaitable[Any]: ...
+    def get(self, name: str) -> Awaitable[Any]: ...
+
+
+def _as_int(raw: Any) -> int:
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
 
 
 class RedisPublisher:
-    """Publishes to the run's channel and keeps the events for replay."""
+    """Publishes to the run's channel and keeps the events for replay.
+
+    ``run:{id}:seq`` holds the highest sequence number on its own, so the sequence still continues
+    if the event list is lost, and a poll can read just the tail of the list instead of all of it.
+    """
 
     def __init__(self, redis: EventRedis) -> None:
         self._redis = redis
@@ -79,11 +96,17 @@ class RedisPublisher:
         pipe.rpush(key, payload)
         pipe.ltrim(key, -MAX_STORED_EVENTS, -1)
         pipe.expire(key, EVENTS_TTL_S)
+        pipe.set(seq_key(event.run_id), event.seq, ex=EVENTS_TTL_S)
         pipe.publish(channel_for(event.run_id), payload)  # after the store: replay never misses it
         await pipe.execute()
 
     async def read(self, run_id: str, after: int = 0) -> list[RunEvent]:
-        raw = await self._redis.lrange(events_key(run_id), 0, -1)
+        latest = await self.last_seq(run_id)
+        if after >= latest:
+            return []  # the common poll: nothing new, and the list is not touched
+        # at most ``latest - after`` events are newer; they are the tail of the list
+        count = min(latest - after, MAX_STORED_EVENTS)
+        raw = await self._redis.lrange(events_key(run_id), -count, -1)
         events: list[RunEvent] = []
         for item in raw:
             try:
@@ -96,7 +119,13 @@ class RedisPublisher:
         return events
 
     async def last_seq(self, run_id: str) -> int:
-        return max((e.seq for e in await self.read(run_id)), default=0)
+        counter = _as_int(await self._redis.get(seq_key(run_id)))
+        tail = await self._redis.lindex(events_key(run_id), -1)
+        try:
+            stored = RunEvent.model_validate_json(tail).seq if tail else 0
+        except ValidationError:
+            stored = 0
+        return max(counter, stored)
 
 
 class RunEmitter:

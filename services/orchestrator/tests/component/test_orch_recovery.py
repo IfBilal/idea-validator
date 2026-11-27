@@ -7,15 +7,20 @@ releasing its leases.
 """
 
 import asyncio
+import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph.state import CompiledStateGraph
 
 from common.budget import Spend
-from common.errors import Conflict, UpstreamError
+from common.errors import Conflict, NotFound, UpstreamError
 from svc_orchestrator.models.api import StartRun
-from svc_orchestrator.models.state import RunStatus
+from svc_orchestrator.models.discover_state import DiscoverState
+from svc_orchestrator.models.state import RunStatus, ValidateState
+from svc_orchestrator.repositories.attempts import InMemoryAttempts
 from svc_orchestrator.repositories.leases import InMemoryLeases
 from svc_orchestrator.repositories.serde import checkpoint_serde
 from svc_orchestrator.services.recovery import recovery_loop
@@ -38,6 +43,7 @@ class Cluster:
         self.world = world or FakeWorld()
         self.saver = MemorySaver(serde=checkpoint_serde())
         self.leases: dict[str, tuple[str, float]] = {}
+        self.attempts: dict[str, int] = {}
         self.clock = Clock()
         self.rig_options = rig_options
         self.first: Rig | None = None
@@ -58,6 +64,8 @@ class Cluster:
             checkpointer=self.saver,
             config=rig.config,
             leases=InMemoryLeases(self.leases, owner, ttl_s=60, clock=self.clock),
+            attempts=InMemoryAttempts(self.attempts),
+            clock=self.clock,
             event_log=rig.publisher,
             run_source=rig.clients.profile,
             **options,
@@ -737,5 +745,380 @@ async def test_the_mirror_uses_m2_s_run_shape(cluster: Any) -> None:
     assert record["state"] == RunStatus.AWAITING_INPUT.value
     assert record["input"]["idea_id"] == "idea_shape"
     assert record["pending_question"]["question_id"]
-    assert set(record["context"]) == {"step", "spent", "pending_approval", "result", "error"}
+    assert set(record["context"]) == {
+        "step",
+        "spent",
+        "cost_bonus_usd",
+        "pending_approval",
+        "result",
+        "error",
+    }
     assert record["context"]["spent"]["steps"] > 0
+
+
+# ---- hardening: poison runs, tampered checkpoints, split brain, leaks ----------------------------
+class StubGraph:
+    """Stands in for the compiled graph when a test needs a specific checkpoint snapshot."""
+
+    def __init__(
+        self, values: Any, tasks: tuple[Any, ...] = (), next_: tuple[str, ...] = ()
+    ) -> None:
+        self.snapshot = SimpleNamespace(values=values, tasks=tasks, next=next_)
+
+    async def aget_state(self, config: Any) -> Any:
+        return self.snapshot
+
+
+def stub_checkpoint(service: RunService, values: Any, **kw: Any) -> None:
+    graph = StubGraph(values, **kw)
+    service._graph_for = lambda kind, ctx: graph  # type: ignore[method-assign, assignment, return-value]
+
+
+_construct: Any = ValidateState.model_construct  # skips validation, like a bad checkpoint
+
+
+def mirror_row(run_id: str, **over: Any) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "user_id": "u1",
+        "kind": "validate",
+        "state": "running",
+        "input": {"idea_text": "x"},
+        "context": {},
+        "pending_question": None,
+        **over,
+    }
+
+
+def valid_state(run_id: str, **over: Any) -> ValidateState:
+    fields: dict[str, Any] = {
+        "run_id": run_id,
+        "user_id": "u1",
+        "idea_id": "i1",
+        "idea_text": "x",
+        "status": RunStatus.SUCCEEDED,
+        "card": {"verdict": "GO"},
+        **over,
+    }
+    return ValidateState.model_validate(fields)
+
+
+async def test_a_run_that_keeps_killing_its_process_is_given_up_on(cluster: Any) -> None:
+    c = cluster(asking_world(), limits={"max_steps": 500})
+    hook = Blocker("POST /score-all", only_first=False)
+    c.world.before = hook
+    first = c.replica("r0")
+    run_id = await first.start(body())
+    await asyncio.wait_for(hook.entered.wait(), 5)
+    await c.crash(first)
+    outcomes = []
+    for n in range(1, 4):  # every replica resumes it and dies on it again
+        replica = c.replica(f"r{n}", recovery_attempt_limit=2)
+        outcomes.append(await replica.recover())
+        await asyncio.sleep(0.05)
+        await c.crash(replica)
+    assert outcomes == [{"resumed": 1}, {"resumed": 1}, {"failed": 1}]
+    last = c.replica("final")
+    assert await last.recover() == {}  # failed in M2: no longer listed
+    assert c.world.runs[run_id]["state"] == "failed"
+    assert c.world.runs[run_id]["context"]["error"] == RECOVERY_FAILED
+
+
+async def test_a_recovered_run_that_pauses_safely_gets_its_attempts_back(cluster: Any) -> None:
+    c = cluster(asking_world())
+    service = c.replica("r0")
+    run_id = await paused_run(service)
+    for n in range(1, 6):  # far more restarts than the limit, each one safe
+        await c.crash(service)
+        service = c.replica(f"r{n}", recovery_attempt_limit=2)
+        assert await service.recover() == {"paused": 1}
+    assert (await service.get(run_id)).state == "awaiting_input"
+
+
+async def test_a_run_that_finishes_after_recovery_clears_its_attempts(cluster: Any) -> None:
+    c = cluster(asking_world())
+    before = c.replica("a")
+    run_id = await paused_run(before)
+    await c.crash(before)
+    after = c.replica("b")
+    await after.recover()
+    question = (await after.get(run_id)).pending_question
+    assert question is not None
+    await after.answer(run_id, question["question_id"], 50)
+    await after.wait(run_id)
+    assert c.attempts.get(run_id) is None
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"status": RunStatus.RUNNING},  # not terminal, yet nothing left to run
+        {"status": RunStatus.CREATED},
+        {"status": RunStatus.AWAITING_INPUT},
+        {"status": RunStatus.SUCCEEDED, "card": None},  # "succeeded" with no result
+        {"status": RunStatus.FAILED, "card": None},
+    ],
+)
+async def test_a_finished_looking_checkpoint_must_be_terminal_and_hold_a_card(
+    cluster: Any, state: dict[str, Any]
+) -> None:
+    c = cluster()
+    c.world.runs["run_x"] = mirror_row("run_x")
+    service = c.replica("b")
+    stub_checkpoint(service, valid_state("run_x", **state))
+    assert await service.recover() == {"failed": 1}
+    view = await service.get("run_x")
+    assert (view.state, view.result, view.error) == ("failed", None, RECOVERY_FAILED)
+
+
+async def test_a_terminal_checkpoint_with_a_card_is_settled(cluster: Any) -> None:
+    c = cluster()
+    c.world.runs["run_x"] = mirror_row("run_x")
+    service = c.replica("b")
+    stub_checkpoint(service, valid_state("run_x"))
+    assert await service.recover() == {"finished": 1}
+    view = await service.get("run_x")
+    assert (view.state, view.result) == ("succeeded", {"verdict": "GO"})
+
+
+async def test_a_discover_run_is_settled_without_a_validate_card_rule(cluster: Any) -> None:
+    c = cluster()
+    c.world.runs["run_d"] = mirror_row("run_d", kind="discover", input={"niche": "x", "count": 1})
+    service = c.replica("b")
+    state = DiscoverState(
+        run_id="run_d",
+        user_id="u1",
+        niche="x",
+        count=1,
+        status=RunStatus.SUCCEEDED,
+        card={"ideas": []},
+    )
+    stub_checkpoint(service, state)
+    assert await service.recover() == {"finished": 1}
+
+
+async def test_a_state_built_without_validation_is_revalidated_and_refused(cluster: Any) -> None:
+    c = cluster()
+    c.world.runs["run_x"] = mirror_row("run_x")
+    service = c.replica("b")
+    tampered = _construct(  # langgraph falls back to this on a bad checkpoint
+        run_id="run_x",
+        user_id="u1",
+        idea_id=12345,
+        idea_text=None,
+        status=RunStatus.SUCCEEDED,
+        card={"verdict": "GO"},
+    )
+    stub_checkpoint(service, tampered)
+    assert await service.recover() == {"failed": 1}
+    assert (await service.get("run_x")).error == RECOVERY_FAILED
+
+
+async def test_a_construct_state_missing_required_fields_is_refused(cluster: Any) -> None:
+    c = cluster()
+    c.world.runs["run_x"] = mirror_row("run_x")
+    service = c.replica("b")
+    stub_checkpoint(service, _construct(run_id="run_x", user_id="u1"))
+    assert await service.recover() == {"failed": 1}
+
+
+async def test_a_checkpoint_for_another_user_is_refused(cluster: Any) -> None:
+    c = cluster()
+    c.world.runs["run_x"] = mirror_row("run_x", user_id="owner")
+    service = c.replica("b")
+    stub_checkpoint(service, valid_state("run_x", user_id="someone-else"))
+    assert await service.recover() == {"failed": 1}
+    assert c.world.runs["run_x"]["user_id"] == "owner"
+
+
+async def test_a_failed_persist_while_pausing_leaves_no_timer_and_no_owner(cluster: Any) -> None:
+    c = cluster(asking_world())
+    before = c.replica("a")
+    run_id = await paused_run(before)
+    await c.crash(before)
+    after = c.replica("b", question_timeout_s=0.05)
+
+    async def boom(run: Any) -> None:
+        raise ConnectionError("redis is down")
+
+    after._persist = boom
+    assert await after.recover() == {"error": 1}
+    assert run_id not in after._runs  # no half-restored run
+    assert not [t for t in asyncio.all_tasks() if "_expire" in repr(t.get_coro())]
+    await asyncio.sleep(0.15)  # a timer that survived would have resumed the run by now
+    assert c.world.count("verdict", "POST /verdict") == 0
+    assert f"run:{run_id}:lease" not in c.leases and run_id not in c.leases  # free to retry
+
+
+async def test_the_error_path_stops_a_resumed_task(cluster: Any) -> None:
+    c = cluster(asking_world())
+    service = c.replica("b")
+    c.world.runs["run_x"] = mirror_row("run_x")
+    started = asyncio.Event()
+
+    async def forever() -> None:
+        started.set()
+        await asyncio.sleep(60)
+
+    run_state = valid_state("run_x", status=RunStatus.RUNNING, card=None)
+    stub_checkpoint(service, run_state, next_=("scorers",))
+    service._drive_recovered = lambda run: forever()
+    assert await service.recover() == {"resumed": 1}
+    await asyncio.wait_for(started.wait(), 5)
+    task = service._runs["run_x"].task
+    assert task is not None and not task.done()
+    service._discard(service._runs["run_x"])
+    await asyncio.sleep(0)
+    assert task.cancelled() or task.cancelling()
+    assert "run_x" not in service._runs
+
+
+async def test_a_single_renew_failure_does_not_abandon_a_run_but_two_in_a_row_do(
+    cluster: Any,
+) -> None:
+    c = cluster(asking_world())
+    service = c.replica("a", heartbeat_s=0.01, lease_failures_allowed=2)
+    run_id = await paused_run(service)
+    real = service._leases
+    assert real is not None
+    calls = {"n": 0}
+
+    class Flaky:
+        async def acquire(self, rid: str) -> bool:
+            return bool(await real.acquire(rid))
+
+        async def release(self, rid: str) -> None:
+            await real.release(rid)
+
+        async def renew(self, rid: str) -> bool:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ConnectionError("blip")
+            if calls["n"] < 5:
+                return bool(await real.renew(rid))
+            raise ConnectionError("redis is down")
+
+    service._leases = Flaky()
+    for _ in range(300):
+        if run_id not in service._runs:
+            break
+        await asyncio.sleep(0.01)
+    assert calls["n"] >= 6 and run_id not in service._runs  # survived the blip, not the outage
+
+
+async def test_the_heartbeat_loop_survives_an_unexpected_error(cluster: Any) -> None:
+    c = cluster(asking_world())
+    service = c.replica("a", heartbeat_s=0.01)
+    await paused_run(service)
+    calls = {"n": 0}
+    original = service._abandon
+
+    async def bad(run: Any) -> None:
+        calls["n"] += 1
+        raise RuntimeError("boom")
+
+    service._abandon = bad
+    c.leases.clear()  # every renew now reports the lease as lost -> _abandon raises
+    await asyncio.sleep(0.15)
+    assert calls["n"] >= 2  # it kept trying: the loop did not die
+    assert service._heartbeat is not None and not service._heartbeat.done()
+    service._abandon = original
+
+
+async def test_an_unusable_budget_mirror_fails_the_run_instead_of_resetting_spend(
+    cluster: Any,
+) -> None:
+    c = cluster(asking_world())
+    before = c.replica("a")
+    run_id = await paused_run(before)
+    c.world.runs[run_id]["context"]["spent"] = {"steps": "lots"}
+    await c.crash(before)
+    after = c.replica("b", fresh_redis=True)
+    assert await after.recover() == {"failed": 1}
+
+
+async def test_a_mirror_without_spend_is_a_run_that_had_none(cluster: Any) -> None:
+    c = cluster()
+    c.world.runs["run_x"] = mirror_row("run_x")
+    service = c.replica("b")
+    stub_checkpoint(service, valid_state("run_x"))
+    assert await service.recover() == {"finished": 1}
+    assert (await service.get("run_x")).spent["steps"] == 0
+
+
+async def test_an_approved_cost_raise_survives_a_redis_loss(cluster: Any) -> None:
+    c = cluster(asking_world())
+    before = c.replica("a")
+    run_id = await paused_run(before)
+    run = before._runs[run_id]
+    await run.ctx.ledger.raise_cost_limit(0.01)
+    await before._persist(run)
+    raised = (await before.get(run_id)).budget["max_cost_usd"]
+    await c.crash(before)
+    after = c.replica("b", fresh_redis=True)
+    await after.recover()
+    assert (await after.get(run_id)).budget["max_cost_usd"] == pytest.approx(raised)
+    assert c.world.runs[run_id]["context"]["cost_bonus_usd"] == pytest.approx(0.01)
+
+
+async def test_an_oversized_result_is_left_out_of_the_mirror_not_sent_to_be_refused(
+    cluster: Any,
+) -> None:
+    c = cluster(asking_world())
+    service = c.replica("a")
+    run_id = await paused_run(service)
+    run = service._runs[run_id]
+    run.result = {"blob": "x" * 70_000}
+    await service._persist(run)
+    context = c.world.runs[run_id]["context"]
+    assert context["result"] is None and context["result_truncated"] is True
+    assert len(json.dumps(context)) < 64 * 1024
+    assert (await service.get(run_id)).result == run.result  # the live run still has it
+
+
+async def test_finished_runs_leave_memory_after_their_ttl(cluster: Any) -> None:
+    c = cluster()
+    service = c.replica("a", finished_ttl_s=3600)
+    done = await service.start(body())
+    await service.wait(done)
+    c.clock.now += 3599
+    other = await service.start(body(idea_id="idea_2"))
+    await service.wait(other)
+    assert done in service._runs  # not yet
+    c.clock.now += 2
+    third = await service.start(body(idea_id="idea_3"))
+    await service.wait(third)
+    assert done not in service._runs and other in service._runs
+    with pytest.raises(NotFound):
+        await service.get(done)
+
+
+async def test_a_paused_run_is_never_evicted(cluster: Any) -> None:
+    c = cluster(asking_world())
+    service = c.replica("a", finished_ttl_s=1)
+    run_id = await paused_run(service)
+    c.clock.now += 10_000
+    await service.recover()
+    other = await service.start(body(idea_id="idea_2"))
+    await service.wait(other)
+    assert run_id in service._runs
+
+
+async def test_a_crashing_run_does_not_log_the_idea_text(
+    cluster: Any, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secret = "MY-SECRET-STARTUP-IDEA-7731"
+
+    async def boom(self: Any, *args: Any, **kwargs: Any) -> Any:
+        raise ValueError(f"bad input {secret}")
+
+    monkeypatch.setattr(CompiledStateGraph, "ainvoke", boom)
+    c = cluster()
+    service = c.replica("a")
+    run_id = await service.start(body(idea_text=f"{secret} a CLI"))
+    await service.wait(run_id)
+    out = capsys.readouterr()
+    assert "run_crashed" in out.out + out.err
+    assert secret not in out.out + out.err
+    view = await service.get(run_id)
+    assert (view.state, view.error) == ("failed", "internal error")

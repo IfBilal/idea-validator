@@ -15,6 +15,7 @@ from redis.asyncio import Redis
 from svc_orchestrator.config import Settings
 from svc_orchestrator.main import build_app
 from svc_orchestrator.models.api import StartRun
+from svc_orchestrator.repositories.attempts import RedisAttempts
 from svc_orchestrator.repositories.checkpoints import postgres_saver, psycopg_url
 from svc_orchestrator.repositories.events import RedisPublisher, RunEmitter
 from svc_orchestrator.repositories.leases import RedisLeases
@@ -59,6 +60,7 @@ class Stack:
             checkpointer=saver,
             config=rig.config,
             leases=RedisLeases(self.redis, owner, ttl_s=60),
+            attempts=RedisAttempts(self.redis),
             event_log=rig.publisher,
             run_source=rig.clients.profile,
             **options,
@@ -253,3 +255,29 @@ async def test_the_lifespan_wires_leases_events_and_survives_an_unreachable_m2(
         assert runs._leases is not None and runs._events is not None and runs._source is not None
         await asyncio.sleep(0.2)  # the recovery task has failed once and ended
     # shutting down cancelled nothing it should not have: no exception escaped
+
+
+async def test_the_sequence_survives_losing_the_event_list_on_real_redis(stack: Stack) -> None:
+    publisher = RedisPublisher(stack.redis)
+    emitter = RunEmitter("run_seq", publisher)
+    for _ in range(5):
+        await emitter.emit("heartbeat")
+    await stack.redis.delete("run:run_seq:events")
+    assert await publisher.last_seq("run_seq") == 5
+    again = RunEmitter("run_seq", publisher)
+    again.resume_from(await publisher.last_seq("run_seq"))
+    assert (await again.emit("heartbeat")).seq == 6
+    assert [e.seq for e in await publisher.read("run_seq", 4)] == [6]
+
+
+async def test_a_poison_run_is_given_up_on_real_redis(stack: Stack) -> None:
+    before = await stack.replica("a")
+    run_id = await paused(before)
+    await stack.crash(before)
+    for n in range(3):  # three safe restores each reset the count
+        replica = await stack.replica(f"ok{n}", recovery_attempt_limit=1)
+        assert await replica.recover() == {"paused": 1}
+        await stack.crash(replica)
+    await stack.redis.set(f"run:{run_id}:recoveries", 5)  # as if it had crashed five times
+    last = await stack.replica("last")
+    assert await last.recover() == {"failed": 1}

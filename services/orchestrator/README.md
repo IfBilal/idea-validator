@@ -29,7 +29,7 @@ memory and runs do not survive a restart), `CONFIG_DIR` (mounted `budgets.yaml`)
 `QUESTION_TIMEOUT_S`, `PROFILE_URL`, `KB_URL`, `ANALYST_URL`, `SCOUTS_URL`, `VALIDATORS_URL`,
 `VERDICT_URL`, `CRITIC_URL`.
 Recovery: `LEASE_TTL_S` (60), `RESUME_CONCURRENCY` (4), `RECOVERY_INTERVAL_S` (30; 0 = one pass at startup),
-`RECOVERY_ATTEMPTS` (5).
+`RECOVERY_ATTEMPTS` (5), `RECOVERY_ATTEMPT_LIMIT` (3), `FINISHED_TTL_S` (86400).
 
 ## Surviving a restart
 Runs are not lost when the pod restarts (docs/harness/07 §1). `RunService.recover()` runs in the
@@ -54,6 +54,34 @@ background at startup (`services/recovery.py`):
    completed are memoised in the checkpoint and cost nothing).
 5. Events are stored in a bounded Redis list (`run:{id}:events`, 2000 entries, 7 days) before they are
    published; the emitter continues after the last stored `seq`, and `GET /runs/{id}/events` replays them.
+
+Hardening (docs/harness/13):
+- **Poison runs.** Every restore counts in Redis (`run:{id}:recoveries`); past `RECOVERY_ATTEMPT_LIMIT` (3) the run
+  is failed with the fixed reason. The count resets once the run is safely paused or finished. A step claimed
+  by a dead process may be re-run free at most twice (`MAX_STEP_RERUNS`); then it stops the run as
+  `budget_stopped` (`exceeded: ["reruns"]`). A step is free only after it was charged (`mark_paid`), so a
+  crash between claim and charge never leaves an unbilled step.
+- **Checkpoint trust.** A restored state is validated again from its plain data (LangGraph falls back to an
+  unvalidated `model_construct` when it cannot read one), its `run_id` and `user_id` must equal the mirror's,
+  and a graph with nothing left to run must be terminal (and hold a card for validate/what-if) or the run is
+  failed, never shown as `succeeded` with no result.
+- **No split brain.** A pause is mirrored to M2 before its expiry timer starts; any error while restoring
+  cancels that run's task and timer and frees its lease.
+- **Leases.** The heartbeat abandons a run after `lease_failures_allowed` (2) consecutive failed renewals, before
+  the TTL lets another replica take it, and the loop survives any error inside a pass.
+- **Budget mirror.** Spend and the approved cost raise (`cost_bonus_usd`) are restored atomically (only into a
+  missing hash). A mirror with unreadable spend fails the run instead of giving it a fresh budget. The
+  mirror leaves `result` out (`result_truncated`) when its context passes 60 KB; M2 caps `input`, `context` and
+  `pending_question` at 64 KB each.
+- **Events.** `run:{id}:seq` holds the last sequence number, so it continues even if the list is lost, and a poll
+  reads only the tail of the list (nothing when there is nothing new).
+- **Memory.** Finished runs leave memory `FINISHED_TTL_S` (24 h) after they end; M2 keeps the record.
+- **Logs.** A crashed run logs the exception type and the file:line only, never its message or a traceback
+  (they can quote the idea text).
+- **Access control.** `GET /runs/{id}/events` does not check ownership (M3 never compares `user_id`): the gateway
+  must confirm the run belongs to the caller through M2 before it proxies events or any other run call. M2's
+  `/internal/*` is reachable only by the gateway and the orchestrator (the NetworkPolicy edges
+  `gateway -> profile` and `orchestrator -> profile` in scripts/gen_k8s.py, unchanged) and needs the internal token.
 
 The loop sweeps again every `RECOVERY_INTERVAL_S`, which adopts the runs of a crashed replica once its leases
 lapse (at most `LEASE_TTL_S` later). While M2 is down a pass is retried with a doubling delay.
