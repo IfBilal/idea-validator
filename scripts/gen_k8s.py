@@ -101,6 +101,20 @@ JOBS: dict[str, dict[str, Any]] = {
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
     },
+    # M6i seed: restores the newest snapshot baked into the ingestion image through M6 /ingest.
+    # `manual`: kept out of the kustomization (it is applied by `make seed`, which first builds
+    # the image), so a plain `make deploy` on a repo with no snapshot yet does not fail a Job.
+    "seed": {
+        "image": "ingestion",
+        "command": ["python", "-m", "ingestion", "restore", "/app/data/snapshots"],
+        "secrets": ["INGEST_TOKEN"],  # same Secret key as the kb entry in SERVICES
+        "token": True,
+        "calls": ["kb"],
+        "manual": True,
+        "backoff_limit": 2,
+        # exit 2 bad config, 3 bad/missing snapshot, 4 rows dropped: a retry cannot fix these
+        "fail_fast_codes": [2, 3, 4],
+    },
 }
 # scheduled one-shot runs (docs/harness/10 section 4). They reach M5 and Postgres only: the internet
 # is M5's alone (CLAUDE.md rule 4). Schedules mirror config/sources.yaml. The credential-gated
@@ -412,14 +426,20 @@ def _peers(names: list[str], key: str) -> list[dict[str, Any]]:
 
 def _job(name: str) -> str:
     spec = JOBS[name]
+    env: list[dict[str, Any]] = [
+        {"name": f"{callee.upper()}_URL", "value": _url(callee)}
+        for callee in spec["calls"]
+        if callee != "postgres"
+    ]
+    env += [
+        {"name": k, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k}}}
+        for k in [*(["INTERNAL_TOKEN"] if spec.get("token") else []), *spec["secrets"]]
+    ]
     container = {
         "name": name,
         "image": f"{NAMESPACE}/{spec['image']}:{IMAGE_TAG}",
         "command": spec["command"],
-        "env": [
-            {"name": k, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k}}}
-            for k in spec["secrets"]
-        ],
+        "env": env,
         "resources": RESOURCES,
         "securityContext": {
             "allowPrivilegeEscalation": False,
@@ -428,19 +448,21 @@ def _job(name: str) -> str:
         },
         "volumeMounts": [{"name": "tmp", "mountPath": TMP_MOUNT}],
     }
-    job = {
+    if spec.get("manual"):  # built locally per commit: scripts/seed.sh pins SHA tags
+        container["imagePullPolicy"] = "Always"
+    job: dict[str, Any] = {
         "apiVersion": "batch/v1",
         "kind": "Job",
         "metadata": _meta(name),
         "spec": {
-            "backoffLimit": 6,
+            "backoffLimit": spec.get("backoff_limit", 6),
             "ttlSecondsAfterFinished": 3600,
             "template": {
                 "metadata": {"labels": {"app": name}},
                 "spec": {
                     "serviceAccountName": "app",
                     "automountServiceAccountToken": False,
-                    "restartPolicy": "OnFailure",
+                    "restartPolicy": "Never" if spec.get("fail_fast_codes") else "OnFailure",
                     "securityContext": {
                         "runAsNonRoot": True,
                         "runAsUser": 10001,
@@ -453,6 +475,19 @@ def _job(name: str) -> str:
             },
         },
     }
+    if spec.get("fail_fast_codes"):
+        job["spec"]["podFailurePolicy"] = {
+            "rules": [
+                {
+                    "action": "FailJob",
+                    "onExitCodes": {
+                        "containerName": name,
+                        "operator": "In",
+                        "values": spec["fail_fast_codes"],
+                    },
+                }
+            ]
+        }
     return _dump(job)
 
 
@@ -694,7 +729,7 @@ def _kustomization() -> str:
         ["namespace.yaml", "serviceaccount.yaml"]
         + [f"data/{n}.yaml" for n in DATA]
         + [f"services/{n}.yaml" for n in SERVICES]
-        + [f"jobs/{n}.yaml" for n in JOBS]
+        + [f"jobs/{n}.yaml" for n, spec in JOBS.items() if not spec.get("manual")]
         + [f"cronjobs/{n}.yaml" for n in CRONJOBS]
         + [
             "ingress.yaml",
@@ -763,8 +798,9 @@ def render() -> dict[str, str]:
         files[f"k8s/base/services/{name}.yaml"] = _deployment(name)
     for name in DATA:
         files[f"k8s/base/data/{name}.yaml"] = _statefulset(name)
-    for name in JOBS:
-        files[f"k8s/base/jobs/{name}.yaml"] = _job(name)
+    for name, spec in JOBS.items():
+        folder = "k8s/jobs" if spec.get("manual") else "k8s/base/jobs"
+        files[f"{folder}/{name}.yaml"] = _job(name)
     for name in CRONJOBS:
         files[f"k8s/base/cronjobs/{name}.yaml"] = _cronjob(name)
     return files
