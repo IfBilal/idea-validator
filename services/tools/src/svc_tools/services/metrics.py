@@ -21,3 +21,16 @@ class PrometheusFetchMetrics:
 
     def outcome(self, source: str, outcome: str) -> None:
         self._outcomes.labels(source=source, outcome=outcome).inc()
+
+
+class PrometheusLlmMetrics:
+    def __init__(self, registry: CollectorRegistry) -> None:
+        self._tokens = Counter(
+            "llm_tokens_total", "LLM tokens", ["alias", "direction"], registry=registry
+        )
+        self._cost = Counter("llm_cost_usd_total", "LLM spend in USD", ["alias"], registry=registry)
+
+    def usage(self, alias: str, tokens_in: int, tokens_out: int, cost_usd: float) -> None:
+        self._tokens.labels(alias=alias, direction="in").inc(tokens_in)
+        self._tokens.labels(alias=alias, direction="out").inc(tokens_out)
+        self._cost.labels(alias=alias).inc(cost_usd)

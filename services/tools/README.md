@@ -2,7 +2,7 @@
 
 The **only** way any module reads the internet (NetworkPolicy gives egress only to pods labelled
 `app: tools`). Scouts, agents and ingestion call `POST /fetch`; hosted-LLM calls will go through
-`POST /llm/v1/chat/completions` (next PR, LiteLLM).
+`POST /llm/v1/chat/completions` (OpenAI-compatible adapter, ADR-008).
 
 | | |
 |---|---|
@@ -40,7 +40,27 @@ Refusals are 403 with `error.details.reason`: `DOMAIN_NOT_ALLOWED`, `INVALID_URL
 | `CONFIG_DIR` | Directory with the mounted `sources.yaml` (default `/etc/idea-validator`) |
 | `RUN_MAX_PAGES`, `RUN_MAX_BYTES` | Per-run fetch budget (defaults 60 pages, 120 MB) |
 
+## Bounds on hostile input (measured, round 2)
+- Normalisation is done in chunks and stops at the cap: one character can expand 18x under NFKC (U+FDFA), and a 2.1 MB body
+  of them took 30 s before; it is about 1.6 s now.
+- Sanitising runs in a worker thread (`asyncio.to_thread`), so a heavy page no longer freezes health probes or other requests.
+- A JSON body with more than 20,000 strings plus keys is sanitised as capped plain text instead of structured JSON.
+- One overall deadline (30 s) covers retries and redirects together (`UpstreamTimeout`).
+- A redirect hop is checked like a request: the destination host's source must be `enabled`, and the rate limit of the
+  destination host (not the first one) applies.
+- JSON that cannot be parsed into structure (truncated, or over the string limit) is sanitised as text only after its
+  string escapes are decoded in one pass, so an instruction hidden as unicode escapes cannot pass the pattern matcher.
+- Not done: a cache hit still returns the stored body even when the caller asked for a smaller `max_bytes`.
+
 ## Known limits
 - The sanitiser is a heuristic layer: obfuscations such as letter-spacing are not caught. Defence in depth is that
   fetched text is only ever shown to models as data, scorers never obey it, and the critic checks every claim.
 - The run budget is in memory until the shared Redis ledger (`common.budget`) is wired in.
+
+## `POST /llm/v1/chat/completions`
+Body: `{run_id, agent, model (alias), messages[1..50], max_tokens 1..4096 (800), temperature 0..2 (0), response_format json|text}`.
+Reply: `{content, tokens_in, tokens_out, cost_usd, latency_ms, provider, model}` plus OpenAI-shaped `choices` and `usage`.
+- **Aliases** live in `config/llm.yaml` (`hosted-default`, `hosted-cheap`): provider host (must be on the allow-list, checked at start-up), model, price per million tokens and `api_key_env`. **Keys come from environment variables (K8s Secret), never from files or git**, and are sent only to that provider.
+- **Same network guard as `/fetch`:** URL policy, SSRF check and pinned address; compressed replies refused; 2 MB reply cap; retries (2) on 5xx and timeouts only; 429 is passed on with `retry_after`; provider 4xx become a generic 502 that never echoes the provider's body.
+- **Budget:** per run (`LLM_RUN_MAX_TOKENS` 250000, `LLM_RUN_MAX_COST_USD` 0.25, the largest values in `config/budgets.yaml`; M3 enforces the exact per-kind numbers). A pre-flight check refuses a call whose worst case would cross the cap (402 `BUDGET_EXCEEDED`), actual cost is charged exactly (Decimal), and a run that went over is stopped.
+- **Never logged:** prompts, completions, keys. Metrics: `llm_tokens_total{alias,direction}`, `llm_cost_usd_total{alias}`.

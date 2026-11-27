@@ -1,0 +1,19 @@
+# M5 LLM proxy: model aliases. Provider hosts MUST be on the allow-list in sources.yaml (checked at start-up).
+# API keys are read from the environment variable named in api_key_env (a K8s Secret), never from this file.
+# Prices are USD per million tokens and drive the per-run cost accounting (config/budgets.yaml caps spend).
+version: "l1"
+aliases:
+  hosted-default:
+    provider: groq
+    base_url: https://api.groq.com/openai/v1
+    model: llama-3.3-70b-versatile
+    api_key_env: GROQ_API_KEY
+    price_in_per_mtok: 0.59
+    price_out_per_mtok: 0.79
+  hosted-cheap:
+    provider: groq
+    base_url: https://api.groq.com/openai/v1
+    model: llama-3.1-8b-instant
+    api_key_env: GROQ_API_KEY
+    price_in_per_mtok: 0.05
+    price_out_per_mtok: 0.08

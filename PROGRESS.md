@@ -6,8 +6,8 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Phase 2-5 in progress (foundation, gateway, M5, M9/M10, M12 merged; M2 storage, M5 hardening and LLM proxy in review)** |
-| Current task | Dev B: orchestrator (M3), ideation (M8) resume after the usage-limit reset; then M7, Discover, gateway run endpoints. Dev A: P0-T06/T08, P1-T03..T10, scouts/ingestion/KB (M4/M6i/M6) |
+| Current phase | **Phases 2-5 mostly built: gateway, M2, M5 (+LLM proxy), M8, M9/M10, M12 and the k8s base are merged; M3 orchestrator (#27), M7 analyst (#35) and gateway runs (#41) are in review** |
+| Current task | Dev B: finish reviews of #27/#35/#41, then Discover graph + challenge/what-if, M13 eval harness, behaviour tests, verdict tuning. Dev A: M6 KB (#29), scouts + ingestion (#30), UI (#33), Jenkins (#32), docker-compose (#31); atomic budget ledger in common/budget.py |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
@@ -65,9 +65,11 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | P2-T07 rest, P2-T08 M2 storage + Redis verdict cache | #15 | 2026-11-27 | open, approved except sync |
 | P2-T01..T05 M11 verdict engine | #12 | 2026-11-26 | 24 golden vectors, 99% coverage, verdict-guardian reviewed twice |
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
-| P0-T07 pr-checks workflow repaired | this PR | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
+| P0-T07 pr-checks workflow repaired | #16 | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
 | P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
-| P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 | 2026-11-26 | layering enforced by import-linter |
+| M5 hardening round 2 (adversarial findings on #22/#23) | this PR | 2026-11-27 | NFKC 30 s -> 1.6 s, redirect to disabled source, overall deadline, /llm worst-case estimate + TraceRecord |
+| P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
+| P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
 ## Blocked / Needs human
 - [x] GitHub repo + branch protection (done 2026-11-26; add required status checks once CI works)
