@@ -208,7 +208,7 @@ def test_endpoints_stay_closed_when_no_token_is_configured() -> None:
 
 
 def test_a_non_ascii_token_is_a_401_not_a_500(client: TestClient) -> None:
-    headers = {"X-Internal-Token": "tök".encode()}  # raw bytes: not representable as ASCII
+    headers: Any = {"X-Internal-Token": "tök".encode()}  # raw bytes: not representable as ASCII
     assert client.get("/config", headers=headers).status_code == 401
 
 

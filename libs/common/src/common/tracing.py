@@ -6,6 +6,7 @@ Tracing must never break a run, so sink failures are logged and swallowed.
 
 import json
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -17,6 +18,7 @@ from .redaction import redact
 from .schemas.trace import TraceKind, TraceRecord
 
 MAX_PAYLOAD_CHARS = 4096
+DEFAULT_MAX_RUNS = 10_000  # step counters kept per process; the least recently used run is dropped
 
 Sink = Callable[[TraceRecord], None]
 
@@ -53,15 +55,26 @@ class SpanHandle:
 
 
 class Tracer:
-    def __init__(self, service: str, sink: Sink | None = None) -> None:
+    def __init__(
+        self, service: str, sink: Sink | None = None, max_runs: int = DEFAULT_MAX_RUNS
+    ) -> None:
         self._service = service
         self._sink = sink
-        self._counters: dict[str, int] = {}
+        self.max_runs = max_runs
+        # bounded: a long-lived service sees an unbounded number of run ids
+        self._counters: OrderedDict[str, int] = OrderedDict()
         self._log = get_logger("trace")
 
+    @property
+    def tracked_runs(self) -> int:
+        return len(self._counters)
+
     def _next_step(self, run_id: str) -> int:
-        self._counters[run_id] = self._counters.get(run_id, 0) + 1
-        return self._counters[run_id]
+        step = self._counters.pop(run_id, 0) + 1
+        self._counters[run_id] = step  # re-inserted last = most recently used
+        while len(self._counters) > self.max_runs:
+            self._counters.popitem(last=False)
+        return step
 
     @contextmanager
     def span(
