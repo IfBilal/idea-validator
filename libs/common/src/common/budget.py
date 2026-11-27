@@ -24,6 +24,25 @@ DEFAULT_TTL_S = 7 * 24 * 3600
 _COST_TOLERANCE = 1e-9  # HINCRBYFLOAT accumulates binary float noise (0.01 * 5 != 0.05)
 _FIELDS = ("tokens", "pages", "steps", "cost_usd")
 
+# Check and charge in ONE atomic Redis step. A read followed by a separate write lets parallel steps
+# all pass the check and overshoot (max_steps=4 ended at 7 with four parallel searches). Only
+# ``steps`` is charged here: pages, tokens and cost are charged by M5 into the same hash, so
+# counting them again would double-bill.
+# ARGV: est tokens/pages/steps/cost, max tokens/pages/steps/cost, tolerance, ttl.
+RESERVE_SCRIPT = """
+local function n(field) return tonumber(redis.call('HGET', KEYS[1], field) or '0') or 0 end
+local over = {}
+if n('tokens') + tonumber(ARGV[1]) > tonumber(ARGV[5]) then over[#over + 1] = 'tokens' end
+if n('pages') + tonumber(ARGV[2]) > tonumber(ARGV[6]) then over[#over + 1] = 'pages' end
+if n('steps') + tonumber(ARGV[3]) > tonumber(ARGV[7]) then over[#over + 1] = 'steps' end
+local cap = tonumber(ARGV[8]) + n('cost_bonus_usd') + tonumber(ARGV[9])
+if n('cost_usd') + tonumber(ARGV[4]) > cap then over[#over + 1] = 'cost_usd' end
+if #over > 0 then return over end
+if tonumber(ARGV[3]) > 0 then redis.call('HINCRBY', KEYS[1], 'steps', ARGV[3]) end
+redis.call('EXPIRE', KEYS[1], ARGV[10])
+return over
+"""
+
 
 class RedisLike(Protocol):
     def hincrby(self, name: str, key: str, amount: int) -> Awaitable[Any]: ...
@@ -31,6 +50,7 @@ class RedisLike(Protocol):
     def hgetall(self, name: str) -> Awaitable[Any]: ...
     def expire(self, name: str, time: int) -> Awaitable[Any]: ...
     def ttl(self, name: str) -> Awaitable[Any]: ...
+    def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Awaitable[Any]: ...
 
 
 class Spend(Message):
@@ -104,6 +124,42 @@ class BudgetLedger:
             await self._redis.hincrbyfloat(self._key, "cost_usd", spend.cost_usd)
         await self._redis.expire(self._key, self._ttl_s)
         return await self.spent()
+
+    async def reserve(self, estimate: Spend) -> Spend:
+        """Atomically refuse (``BudgetExceeded``, nothing changed) or admit a step and count it.
+
+        Replaces ``exceeded_fields`` + ``record`` for a step about to run: with parallel steps the
+        old pair could admit more than the limit. Returns the new totals.
+        """
+        lim = self._base_limits
+        raw = await self._redis.eval(
+            RESERVE_SCRIPT,
+            1,
+            self._key,
+            estimate.tokens,
+            estimate.pages,
+            estimate.steps,
+            repr(estimate.cost_usd),
+            lim.max_tokens,
+            lim.max_pages,
+            lim.max_steps,
+            repr(lim.max_cost_usd),
+            repr(_COST_TOLERANCE),
+            self._ttl_s,
+        )
+        over = [f.decode() if isinstance(f, bytes) else str(f) for f in (raw or [])]
+        spent = await self.spent()
+        if over:
+            raise BudgetExceeded(
+                f"run {self.run_id} would exceed its budget: {', '.join(over)}",
+                {
+                    "exceeded": over,
+                    "spent": spent.model_dump(),
+                    "limits": (await self.limits()).model_dump(),
+                    "estimate": estimate.model_dump(),
+                },
+            )
+        return spent
 
     async def spent(self) -> Spend:
         raw: Mapping[Any, Any] = await self._redis.hgetall(self._key)

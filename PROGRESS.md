@@ -65,6 +65,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | M5 hardening round 2 (adversarial findings on #22/#23) | this PR | 2026-11-27 | NFKC 30 s -> 1.6 s, redirect to disabled source, overall deadline, /llm worst-case estimate + TraceRecord |
 | P1-T05 Kustomize base (generated), P1-T07 NetworkPolicies from the call graph | this PR | 2026-11-27 | kubeconform strict 57/57, kube-linter clean, server dry run clean; datastores ran under restricted PSA with data surviving restarts; edges enforced live. UI, CronJobs and Jobs still to add |
 | P1-T06 secrets, P1-T08 deploy step, P1-T09 smoke test, migrate Job | this PR | 2026-11-27 | all 13 services + 4 datastores running on kind, 0 restarts; `make smoke` passes (register, login, profile round trip through the ingress). Jenkins and rollback (P1-T08 rest) still open |
+| P2-T13 (rest) atomic budget ledger (`BudgetLedger.reserve`, Lua) used by the orchestrator | this PR | 2026-11-27 | real-Redis race test: 40 parallel reservations admit exactly the limit; same scenarios pass on the in-memory emulation |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
@@ -84,7 +85,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 
 ## Tracked follow-ups (not blocking a merge; do not lose them)
 **M3 orchestrator (from the #27 review)**
-1. Budget check and charge are not atomic: with 4 parallel evidence searches `max_steps=4` can end at 7. `common/budget.py` needs a Lua compare-and-reserve (Dev A takes it); the in-memory test fake never yields, so add a yielding fake or a real-Redis concurrency test.
+1. ~~Budget check and charge are not atomic~~ DONE 2026-11-27: `BudgetLedger.reserve` is one Lua check-and-charge; StepRunner uses it; verified against real Redis (old sequence admitted 40 of 40 for a limit of 10, new admits exactly 10).
 2. No restart recovery: `RunService._runs` is in memory; nothing re-attaches to the Postgres checkpointer after a pod restart (docs/harness/07 §1). Rehydrate from the M2 run mirror. Without `DATABASE_URL` the checkpointer is `MemorySaver`; in a cluster it must fail (`ENVIRONMENT=production` already does).
 3. Spec deviations are listed openly in `services/orchestrator/README.md` (no M12 `/rail/input`, no M8 `/skeptic` so the -0.5 challenge penalty cannot apply yet, stability only traced, approval only for deep search, clarify after scorers, `scorer_concurrency` unused).
 4. Ownership: M3 never compares `user_id` (GET/answer/approve are by run id and predictable question/approval ids). Acceptable only because M1 is the sole caller; the gateway run endpoints (P5-T07) must enforce it and have a cross-user test.
