@@ -6,6 +6,9 @@
 ## Status
 | Field | Value |
 |---|---|
+| Current phase | **Phase 0-2 foundation merged (PR #12); in progress: M2 storage (this PR) + gateway, then Phase 5** |
+| Current task | Dev B: M2 storage + cache in review (P2-T07, P2-T08), next gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (P1-T04 k8s_up merged in #13, not verified end to end) |
+| Gateway (P5-T07/T08, PR #41) | Run, idea, compare, challenge, what-if and SSE endpoints in review. Review rounds done: ownership 404s, idempotent run starts, stream caps, scrubbed M3 output, fail-closed stream open (503), run-scoped approval/question ids, closed verdict labels with card/row reconciliation. Open: M3 must accept `run_id` from the gateway and serve `GET /runs/{id}/events?after=` and `POST /runs/{id}/cancel`; M3 only runs `validate` so far. |
 | Current phase | **Phases 2-5 mostly built: gateway, M2, M5 (+LLM proxy), M8, M9/M10, M12 and the k8s base are merged; M3 orchestrator (#27), M7 analyst (#35) and gateway runs (#41) are in review** |
 | Current task | Dev B: finish reviews of #27/#35/#41, then Discover graph + challenge/what-if, M13 eval harness, behaviour tests, verdict tuning. Dev A: M6 KB (#29), scouts + ingestion (#30), UI (#33), Jenkins (#32), docker-compose (#31); atomic budget ledger in common/budget.py |
 | Last green main commit | — |
