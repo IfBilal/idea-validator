@@ -47,7 +47,7 @@ sources:
     topics: [saas, devtools, productivity, education, edtech, ai, llm, fintech, healthtech, developer-tools, nocode, automation, analytics, chrome-extension, self-hosted]
     min_stars: 50
   reddit:
-    enabled: true
+    enabled: false                  # needs OAuth app credentials (ADR-009); keyless sources only until then
     hosts: [oauth.reddit.com, www.reddit.com]
     rate_limit_per_min: 60
     cache_ttl_s: 21600
