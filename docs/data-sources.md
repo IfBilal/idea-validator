@@ -48,6 +48,35 @@ Yes: **GraphQL API v2** with a free developer token. Procedure: sign in at produ
 `PRODUCTHUNT_TOKEN`. Third-party sources say the API may not be used commercially without permission: coursework is
 non-commercial, but read the terms page and record the date here. Optional, `enabled: false` until the token exists.
 
+## Terms actually read (2026-11-27) and the decision on scraping Reddit and Product Hunt
+The owner asked to collect Reddit and Product Hunt with browser automation, accepting the terms risk. What the providers' own
+pages say, read in a browser on 2026-11-27:
+
+- **Reddit** (`support.reddithelp.com`, article "Responsible Builder Policy", read in full): "Approval is required: you must request
+  access and get explicit approval before accessing any Reddit data through our API"; "you must not misrepresent or mask how or why
+  you are accessing Reddit data"; and, under *No Unapproved Commercialization or AI Training*, "this extends to commercial and
+  **non-commercial** mining, **scraping**, or using data for purposes like ads targeting or to **train machine learning or AI
+  models**". Researchers must not keep copies beyond the immediate project. So scraping Reddit is prohibited outright, and so is
+  training on it without approval, and this project fine-tunes a model (M10t).
+- **Product Hunt** (`producthunt.com/terms-of-service`): **not read**. Every request from an automated browser, even for the terms
+  page, is answered with a Cloudflare "Just a moment..." challenge (HTTP 403), and the Internet Archive has no copy. Passing a bot
+  challenge is evading an access control, which we do not do, so a human must read the terms in a normal browser. The rate-limit
+  page (V, above) is the only first-party Product Hunt text verified.
+
+**Decision (owner request reviewed):** no scraping of Reddit or Product Hunt, no logins, no challenge evasion.
+1. It is not needed: the 3-source minimum is met by Hacker News, GitHub and Lobsters (ADR-009).
+2. It would not be allowed to feed the model: Reddit forbids AI training use even with API access, so Reddit-derived cards must
+   be **excluded from every fine-tuning set** (`finetune.build_candidates` filters `source != "reddit"`), and are retrieval-only.
+3. The risks are real and the benefit is zero: bans for the owner's IP/accounts, a coursework submission built on prohibited data,
+   and a bot challenge that makes Product Hunt unreliable to automate anyway.
+What the owner can create so both sources can still be added through their **official** interfaces (a person must sign in; paste the
+values into the git-ignored `.env`, never into git):
+- Product Hunt: sign in, open `https://www.producthunt.com/v2/oauth/applications`, create an application, copy the **developer
+  token** -> `PRODUCTHUNT_TOKEN`. Then read the terms page in a normal browser and record the date here.
+- Reddit: sign in, create a "script" app at `https://www.reddit.com/prefs/apps`, and submit the access request through Reddit's
+  developer support form (purpose: university coursework, read-only, no storage of usernames, about 60 requests/min, no model
+  training on Reddit data). If approved: `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`. Reddit may refuse; nothing depends on it.
+
 ## Why a third keyless source (decision, see ADR-009)
 Reddit approval is outside our control and Product Hunt needs an account, so the "≥ 3 sources" requirement must not hinge on
 either. Lobsters (curated tech stories, tags, discussion) and Stack Exchange (questions with real pain points, tags, scores)
