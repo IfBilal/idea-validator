@@ -59,6 +59,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
 | P0-T07 pr-checks workflow repaired | #16 | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
 | P1-T04 k8s_up.sh | #13 | 2026-11-27 | merged, NOT verified end to end (inotify limit, see Blocked) |
+| M5 hardening round 2 (adversarial findings on #22/#23) | this PR | 2026-11-27 | NFKC 30 s -> 1.6 s, redirect to disabled source, overall deadline, /llm worst-case estimate + TraceRecord |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 

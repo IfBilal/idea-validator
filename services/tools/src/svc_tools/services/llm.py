@@ -8,7 +8,6 @@ actual cost is charged afterwards, and a run that went over is stopped.
 """
 
 import json
-import math
 from collections.abc import Awaitable, Callable, Mapping
 from decimal import Decimal
 from typing import Any, Protocol
@@ -21,6 +20,7 @@ from common.errors import (
     ValidationFailed,
 )
 from common.logging import get_logger
+from common.tracing import Tracer
 
 from ..config_llm import Alias, LlmConfig
 from ..models.llm import LlmRequest, LlmResponse
@@ -77,8 +77,13 @@ class LlmBudget:
             )
 
 
-def _estimate(text_chars: int) -> int:
-    return max(1, math.ceil(text_chars / 4))
+def _estimate(text_bytes: int) -> int:
+    """Upper bound on tokens: one per UTF-8 byte (CJK/emoji approach it; English is ~4x less).
+
+    It only feeds the pre-flight refusal and the fallback when a provider reports no usage, so
+    overestimating fails closed; the exact usage the provider reports is what gets charged.
+    """
+    return max(1, text_bytes)
 
 
 def _count(value: Any, fallback: int) -> int:
@@ -106,11 +111,26 @@ class LlmService:
         sleep: Callable[[float], Awaitable[None]],
         clock: Callable[[], float],
         metrics: LlmMetrics | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self._config, self._policy, self._poster, self._keys = config, policy, poster, keys
         self._budget, self._sleep, self._clock, self._metrics = budget, sleep, clock, metrics
+        self._tracer = tracer
 
     async def complete(self, req: LlmRequest) -> LlmResponse:
+        if self._tracer is None:
+            return await self._complete(req)
+        # the record keeps sizes and cost only: prompts and completions never go into a trace
+        summary = {"alias": req.model, "messages": len(req.messages), "output_cap": req.max_tokens}
+        with self._tracer.span(req.agent, "llm_call", run_id=req.run_id, input=summary) as span:
+            out = await self._complete(req)
+            span.model = out.model
+            span.set_usage(
+                tokens_in=out.tokens_in, tokens_out=out.tokens_out, cost_usd=float(out.cost_usd)
+            )
+            return out
+
+    async def _complete(self, req: LlmRequest) -> LlmResponse:
         alias = self._config.aliases.get(req.model)
         if alias is None:
             raise ValidationFailed("unknown model alias", {"alias": req.model})
@@ -118,8 +138,7 @@ class LlmService:
         if not key:
             raise UpstreamError("model alias is not configured", {"alias": req.model})
 
-        chars = sum(len(m.content) for m in req.messages)
-        est_in = _estimate(chars)
+        est_in = _estimate(sum(len(m.content.encode()) for m in req.messages))
         self._budget.preflight(req.run_id, _cost(alias, est_in, req.max_tokens))
 
         checked = await self._policy.check(f"{alias.base_url.rstrip('/')}/chat/completions")
@@ -131,7 +150,7 @@ class LlmService:
 
         content, usage = self._parse(raw)
         tokens_in = _count(usage.get("prompt_tokens"), est_in)
-        tokens_out = _count(usage.get("completion_tokens"), _estimate(len(content)))
+        tokens_out = _count(usage.get("completion_tokens"), _estimate(len(content.encode())))
         cost = _cost(alias, tokens_in, tokens_out)
         log.info(
             "llm_call", alias=req.model, agent=req.agent, run_id=req.run_id,

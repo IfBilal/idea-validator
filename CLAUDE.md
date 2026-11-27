@@ -133,7 +133,7 @@ and continue with any other unblocked task):
 | Cache | Redis 7 (TTL keys only) |
 | Orchestration (M3) | **LangGraph** `StateGraph` + Postgres checkpointer · `interrupt()` for questions (U5) and approvals (U4) · parallel branches for the 4 scorers |
 | Agents (M8, M9, M12) | **PydanticAI** agents with typed `output_type`, temperature 0 for scorers/critic, `TestModel`/`FunctionModel` in tests |
-| LLM gateway (M5) | **LiteLLM** inside the tool-layer, OpenAI-compatible `/llm/v1/chat/completions`, cost per call, provider via env |
+| LLM gateway (M5) | **Thin OpenAI-compatible adapter** inside the tool-layer (ADR-008): same SSRF guard and pinned address as `/fetch`, prices from `config/llm.yaml`, cost per call, keys from env; LiteLLM stays pluggable behind the `Poster` protocol |
 | Vector store / RAG | **Qdrant** native hybrid (dense + sparse BM25, RRF fusion) + cross-encoder rerank · **FastEmbed** (`bge-small-en-v1.5`), models baked into images |
 | Niches (M7) | HDBSCAN + c-TF-IDF (BERTopic-style), monthly trend slopes |
 | Scoring model (M10) | **Qwen2.5-1.5B-Instruct** + QLoRA via **Unsloth + TRL/PEFT** on Colab/Kaggle → merged → GGUF Q4_K_M → **llama.cpp server** (JSON-schema constrained) behind a FastAPI wrapper |

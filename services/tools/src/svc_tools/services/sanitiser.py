@@ -74,6 +74,8 @@ _EXTRA_INVISIBLE = frozenset("\u3164\u115f\u1160\u2800\u180e\u034f\u00ad")
 _STRIPPED_CATEGORIES = frozenset({"Cf", "Cc", "Co", "Cn", "Cs"})
 _KEEP = frozenset("\n\t")
 MAX_INPUT_FACTOR = 4  # input is cut to max_chars * 4 before any pattern runs
+NORMALISE_CHUNK = 4096
+_ASCII_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 MAX_HTML_CHARS = 1_000_000
 MAX_HTML_DEPTH = 200
 # Cyrillic and Greek look-alikes folded to Latin on a detection copy only (the text itself is kept)
@@ -186,7 +188,26 @@ def _tidy(text: str) -> str:
     return text.strip()
 
 
+def _normalise_bounded(text: str, limit: int) -> str:
+    """NFKC in chunks, stopping at ``limit`` output characters.
+
+    One character can expand to 18 (U+FDFA), so capping the *input* is not enough: normalising a
+    capped but hostile text first and cutting afterwards cost 11 s for 0.9 MB.
+    """
+    out: list[str] = []
+    total = 0
+    for start in range(0, len(text), NORMALISE_CHUNK):
+        chunk = unicodedata.normalize("NFKC", text[start : start + NORMALISE_CHUNK])
+        out.append(chunk)
+        total += len(chunk)
+        if total >= limit:
+            break
+    return "".join(out)[:limit]
+
+
 def _strip_invisible(text: str) -> str:
+    if text.isascii():  # fast path: only control characters can be invisible in ASCII
+        return _ASCII_CONTROLS.sub("", text)
     return "".join(
         ch
         for ch in text
@@ -229,8 +250,8 @@ def sanitise(
     """
     if content_type and content_type.lower().startswith(_HTML_TYPES):
         text = _html_to_text(text)
-    text = text[: max_chars * MAX_INPUT_FACTOR]
-    raw = _strip_invisible(unicodedata.normalize("NFKC", text))
+    limit = max_chars * MAX_INPUT_FACTOR
+    raw = _strip_invisible(_normalise_bounded(text[:limit], limit))
     text = _tidy(raw)
     spans = _find_spans(text.translate(_CONFUSABLES))  # 1:1 fold, so offsets still line up
     if not spans:
