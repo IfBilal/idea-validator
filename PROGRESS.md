@@ -6,8 +6,8 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Phase 0/1/2 work is in review (PR #12); next up: M2 rest, then Phase 5** |
-| Current task | Waiting for Dev A to review and merge PR #12. Dev A next: P0-T06..T08, P1-T03..T10 |
+| Current phase | **Phase 0-2 foundation merged (PR #12); in progress: M2 storage (this PR) + gateway, then Phase 5** |
+| Current task | Dev B: M2 storage + cache in review (P2-T07, P2-T08), next gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (PR #13 k8s_up in review) |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
@@ -56,7 +56,8 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P1-T02 13 stub services | #12 | 2026-11-26 | all 13 images build |
 | P2-T01..T05 M11 verdict engine | #12 | 2026-11-26 | 24 golden vectors, 99% coverage, verdict-guardian reviewed twice |
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
-| P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 | 2026-11-26 | layering enforced by import-linter |
+| P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
+| P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
 ## Blocked / Needs human
 - [x] GitHub repo + branch protection (done 2026-11-26; add required status checks once CI works)
