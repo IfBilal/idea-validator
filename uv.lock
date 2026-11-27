@@ -9,6 +9,7 @@ members = [
     "idea-validator-common",
     "idea-validator-critic",
     "idea-validator-evaluation",
+    "idea-validator-finetune",
     "idea-validator-gateway",
     "idea-validator-ideation",
     "idea-validator-kb",
@@ -663,6 +664,25 @@ dependencies = [
 requires-dist = [
     { name = "idea-validator-common", editable = "libs/common" },
     { name = "idea-validator-verdict", editable = "services/verdict" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "idea-validator-finetune"
+version = "0.1.0"
+source = { editable = "jobs/finetune" }
+dependencies = [
+    { name = "httpx" },
+    { name = "idea-validator-common" },
+    { name = "idea-validator-scorer" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "idea-validator-common", editable = "libs/common" },
+    { name = "idea-validator-scorer", editable = "services/scorer" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
