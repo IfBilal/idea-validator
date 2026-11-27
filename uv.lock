@@ -8,6 +8,7 @@ members = [
     "idea-validator-analyst",
     "idea-validator-common",
     "idea-validator-critic",
+    "idea-validator-evaluation",
     "idea-validator-gateway",
     "idea-validator-ideation",
     "idea-validator-kb",
@@ -646,6 +647,23 @@ dependencies = [
 requires-dist = [
     { name = "idea-validator-common", editable = "libs/common" },
     { name = "uvicorn", specifier = ">=0.32" },
+]
+
+[[package]]
+name = "idea-validator-evaluation"
+version = "0.1.0"
+source = { editable = "jobs/evaluation" }
+dependencies = [
+    { name = "idea-validator-common" },
+    { name = "idea-validator-verdict" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "idea-validator-common", editable = "libs/common" },
+    { name = "idea-validator-verdict", editable = "services/verdict" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
