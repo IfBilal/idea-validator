@@ -48,6 +48,8 @@ Refusals are 403 with `error.details.reason`: `DOMAIN_NOT_ALLOWED`, `INVALID_URL
 - One overall deadline (30 s) covers retries and redirects together (`UpstreamTimeout`).
 - A redirect hop is checked like a request: the destination host's source must be `enabled`, and the rate limit of the
   destination host (not the first one) applies.
+- JSON that cannot be parsed into structure (truncated, or over the string limit) is sanitised as text only after its
+  string escapes are decoded in one pass, so an instruction hidden as unicode escapes cannot pass the pattern matcher.
 - Not done: a cache hit still returns the stored body even when the caller asked for a smaller `max_bytes`.
 
 ## Known limits

@@ -111,6 +111,40 @@ def _parse_json(decoded: str) -> Any:
         return None
 
 
+_JSON_ESCAPE = re.compile(
+    r"\\(?:u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][c-fC-F][0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|([\"\\\\/bfnrt]))"
+)
+_SIMPLE_ESCAPES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
+
+
+def _decode_json_escapes(text: str) -> str:
+    """Decode JSON string escapes in one pass (so ``\\\\u0069`` stays literal, as in real JSON).
+
+    A JSON body that cannot be parsed into structure (truncated, or too many strings) is
+    sanitised as text; without this, ``\\u0069gnore previous instructions`` would pass the pattern
+    matcher and be decoded later by whatever reads it, a model included.
+    """
+
+    def decode(match: re.Match[str]) -> str:
+        if match.group(1):
+            high, low = int(match.group(1), 16), int(match.group(2), 16)
+            return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+        if match.group(3):
+            return chr(int(match.group(3), 16))
+        return _SIMPLE_ESCAPES[match.group(4)]
+
+    return _JSON_ESCAPE.sub(decode, text)
+
+
 def _too_many_strings(value: Any) -> bool:
     """Cheap, iterative count of strings and keys (no regex), so the limit costs microseconds."""
     seen = 0
@@ -319,7 +353,8 @@ class FetchService:
             if parsed is not None:
                 data, removed = _sanitise_json(parsed)
             else:
-                result = sanitise(decoded, content_type)
+                source = _decode_json_escapes(decoded) if content_type.endswith("json") else decoded
+                result = sanitise(source, content_type)
                 text, removed = result.text, result.removed_patterns
         return FetchResponse(
             url=url,
