@@ -18,7 +18,7 @@ traffic only from its callers and may reach only its callees; every service may 
 internet egress (TCP 443, private ranges excluded).
 
 Secrets are never committed: `app-secrets` (keys `INTERNAL_TOKEN`, `JWT_SECRET`, `DATABASE_URL`, `GROQ_API_KEY`,
-`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) is created by `scripts/create_secrets.sh` (P1-T06) from the git-ignored `.env`.
-Each service receives only the keys it uses. Requests/limits are placeholders until `scripts/measure_resources.sh` (P11-T01).
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `REDIS_URL`, `TOOLS_REDIS_PASSWORD`, `TOOLS_REDIS_URL`) is created by `scripts/create_secrets.sh` (P1-T06) from the git-ignored `.env`.
+Each service receives only the keys it uses. There are two Redis instances, both with a password: `redis` (gateway, profile, orchestrator, kb) and `redis-tools` (only the internet-facing `tools`), so a compromised tool layer cannot read or poison the verdict cache, rate limits or run budgets. Redis URLs carry the password, so they are Secret keys, never literals. The public ingress forwards only the API prefixes (`/api/health|auth|profile|validate|...`): `/metrics` and `/ready` stay cluster-internal. Requests/limits are placeholders until `scripts/measure_resources.sh` (P11-T01).
 Images are `idea-validator/<service>:unset` in the base; the overlay or the deploy script sets the commit SHA.
 Not yet here: the UI Deployment and the `/` ingress route (P1-T03), CronJobs and Jobs (migrate, seed, scouts, ingestion).

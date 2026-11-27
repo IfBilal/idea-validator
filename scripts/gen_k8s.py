@@ -53,7 +53,7 @@ CALLS: dict[str, list[str]] = {
         "redis",
     ],
     "scouts": ["tools", "postgres"],
-    "tools": ["redis"],
+    "tools": ["redis-tools"],  # its own instance: the internet-facing layer must not share keys
     "kb": ["postgres", "qdrant", "redis"],
     "analyst": ["kb"],
     "ideation": ["tools", "kb", "analyst"],
@@ -67,7 +67,18 @@ CALLS: dict[str, list[str]] = {
 URL_ENV = {("scorer", "tools"): "LLM_URL"}
 DATA = {
     "postgres": {"image": "postgres:16.10-alpine", "port": 5432, "storage": "2Gi"},
-    "redis": {"image": "redis:7.4.6-alpine", "port": 6379, "storage": "256Mi"},
+    "redis": {
+        "image": "redis:7.4.6-alpine",
+        "port": 6379,
+        "storage": "256Mi",
+        "password": "REDIS_PASSWORD",
+    },
+    "redis-tools": {
+        "image": "redis:7.4.6-alpine",
+        "port": 6379,
+        "storage": "256Mi",
+        "password": "TOOLS_REDIS_PASSWORD",
+    },
     "qdrant": {"image": "qdrant/qdrant:v1.15.5", "port": 6333, "storage": "2Gi"},
 }
 IMAGE_TAG = "unset"  # the overlay / deploy script sets the commit SHA; never "latest"
@@ -99,8 +110,6 @@ def _port(name: str) -> list[int]:
 
 
 def _url(callee: str) -> str:
-    if callee == "redis":
-        return "redis://redis:6379/0"
     if callee == "qdrant":
         return "http://qdrant:6333"
     if callee == "postgres":
@@ -115,6 +124,18 @@ def _env(name: str) -> list[dict[str, Any]]:
     ]
     for callee in sorted(edges()[name]):
         if callee == "postgres":
+            continue
+        if callee in (
+            "redis",
+            "redis-tools",
+        ):  # the URL carries the password: a Secret, never a literal
+            key = "REDIS_URL" if callee == "redis" else "TOOLS_REDIS_URL"
+            env.append(
+                {
+                    "name": "REDIS_URL",
+                    "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}},
+                }
+            )
             continue
         var = URL_ENV.get((name, callee), f"{callee.upper()}_URL")
         env.append({"name": var, "value": _url(callee)})
@@ -237,10 +258,28 @@ def _statefulset(name: str) -> str:
         }
         extra_volumes = [{"name": "run", "emptyDir": {}}, {"name": "tmp", "emptyDir": {}}]
         memory = "512Mi"
-    elif name == "redis":
+    elif name.startswith("redis"):
         user = 999
+        secret = {"name": "app-secrets", "key": d["password"]}
         container = {
-            "args": ["--save", "60", "1", "--appendonly", "no", "--dir", "/data"],
+            "args": [
+                "--requirepass",
+                "$(REDIS_PASSWORD)",
+                "--save",
+                "60",
+                "1",
+                "--appendonly",
+                "no",
+                "--dir",
+                "/data",
+            ],
+            "env": [
+                {"name": "REDIS_PASSWORD", "valueFrom": {"secretKeyRef": secret}},
+                {
+                    "name": "REDISCLI_AUTH",
+                    "valueFrom": {"secretKeyRef": secret},
+                },  # redis-cli reads it: probes authenticate
+            ],
             "readinessProbe": {"exec": {"command": ["redis-cli", "ping"]}, "periodSeconds": 5},
             "livenessProbe": {"exec": {"command": ["redis-cli", "ping"]}, "periodSeconds": 10},
             "volumeMounts": [{"name": "data", "mountPath": "/data"}],
@@ -434,7 +473,7 @@ def _simple() -> dict[str, str]:
             "namespace": NAMESPACE,
             "annotations": {
                 "nginx.ingress.kubernetes.io/use-regex": "true",
-                "nginx.ingress.kubernetes.io/rewrite-target": "/$2",
+                "nginx.ingress.kubernetes.io/rewrite-target": "/$1$2",
             },
         },
         "spec": {
@@ -444,7 +483,7 @@ def _simple() -> dict[str, str]:
                     "http": {
                         "paths": [
                             {
-                                "path": "/api(/|$)(.*)",
+                                "path": "/api/(health|auth|profile|validate|discover|runs|ideas|versions|compare|history|events)(.*)",
                                 "pathType": "ImplementationSpecific",
                                 "backend": {
                                     "service": {"name": "gateway", "port": {"name": "http"}}
@@ -454,7 +493,7 @@ def _simple() -> dict[str, str]:
                     }
                 }
             ],
-        },  # `/` -> ui is added with the UI shell (P1-T03)
+        },  # only the public API prefixes: /metrics, /ready and anything else stay cluster-internal. `/` -> ui comes with P1-T03
     }
     hpa = {
         "apiVersion": "autoscaling/v2",

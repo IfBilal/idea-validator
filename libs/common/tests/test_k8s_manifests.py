@@ -90,7 +90,7 @@ def test_no_secret_values_and_no_latest_tags_are_committed() -> None:
 
 def test_datastores_are_pinned_stateful_and_persistent() -> None:
     sets = {o["metadata"]["name"]: o for o in _all_objects() if o["kind"] == "StatefulSet"}
-    assert set(sets) == {"postgres", "redis", "qdrant"}
+    assert set(sets) == {"postgres", "redis", "redis-tools", "qdrant"}
     for name, s in sets.items():
         image = s["spec"]["template"]["spec"]["containers"][0]["image"]
         assert image.count(":") == 1 and not image.endswith((":latest", ":16", ":7")), name
@@ -176,3 +176,59 @@ def test_the_dev_overlay_builds() -> None:
         "NetworkPolicy",
         "Ingress",
     } <= kinds
+
+
+def test_the_internet_facing_tool_layer_has_its_own_redis() -> None:
+    """tools handles hostile content: a compromise must not reach the verdict cache or run budgets."""
+    gen = _gen()
+    assert "redis-tools" in gen.edges()["tools"] and "redis" not in gen.edges()["tools"]
+    policies = _policies()
+
+    def allowed_callers(name: str) -> set[str]:
+        return {
+            r["podSelector"]["matchLabels"]["app"]
+            for rule in policies[f"np-{name}"]["spec"]["ingress"]
+            for r in rule["from"]
+        }
+
+    assert allowed_callers("redis-tools") == {"tools"}
+    assert "tools" not in allowed_callers("redis")
+
+
+def test_every_redis_requires_a_password_taken_from_a_secret() -> None:
+    sets = [
+        o
+        for o in _all_objects()
+        if o["kind"] == "StatefulSet" and o["metadata"]["name"].startswith("redis")
+    ]
+    assert len(sets) == 2
+    for sts in sets:
+        container = sts["spec"]["template"]["spec"]["containers"][0]
+        assert "--requirepass" in container["args"]
+        env = {e["name"]: e for e in container["env"]}
+        for var in ("REDIS_PASSWORD", "REDISCLI_AUTH"):  # the second one authenticates the probes
+            assert "secretKeyRef" in env[var]["valueFrom"], var
+        assert "value" not in env["REDIS_PASSWORD"]
+
+
+def test_redis_urls_carry_the_password_so_they_come_from_a_secret_never_a_literal() -> None:
+    for dep in _deployments():
+        for env in dep["spec"]["template"]["spec"]["containers"][0]["env"]:
+            if env["name"] == "REDIS_URL":
+                assert "secretKeyRef" in env["valueFrom"], dep["metadata"]["name"]
+    tools = next(d for d in _deployments() if d["metadata"]["name"] == "tools")
+    env = {e["name"]: e for e in tools["spec"]["template"]["spec"]["containers"][0]["env"]}
+    assert env["REDIS_URL"]["valueFrom"]["secretKeyRef"]["key"] == "TOOLS_REDIS_URL"
+
+
+def test_the_public_ingress_does_not_expose_ops_endpoints() -> None:
+    import re
+
+    (ing,) = [o for o in _all_objects() if o["kind"] == "Ingress"]
+    paths = [p["path"] for rule in ing["spec"]["rules"] for p in rule["http"]["paths"]]
+    assert all(p.startswith("/api") for p in paths)
+    pattern = re.compile(paths[0])
+    for allowed in ("/api/auth/login", "/api/profile", "/api/health", "/api/validate/x"):
+        assert pattern.match(allowed), allowed
+    for hidden in ("/api/metrics", "/api/ready", "/api/internal/anything", "/api/", "/api"):
+        assert not pattern.match(hidden), hidden
