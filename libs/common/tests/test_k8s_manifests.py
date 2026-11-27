@@ -62,8 +62,9 @@ def test_every_deployment_is_hardened(dep: dict[str, Any]) -> None:
     spec = dep["spec"]["template"]["spec"]
     assert spec["automountServiceAccountToken"] is False
     assert spec["serviceAccountName"] == "app"
+    is_ui = dep["metadata"]["name"] == "ui"  # nginx-unprivileged: its own uid, /healthz, no /ready
     pod = spec["securityContext"]
-    assert pod["runAsNonRoot"] is True and pod["runAsUser"] == 10001
+    assert pod["runAsNonRoot"] is True and pod["runAsUser"] == (101 if is_ui else 10001)
     assert pod["seccompProfile"]["type"] == "RuntimeDefault"
     strategy = dep["spec"]["strategy"]["rollingUpdate"]
     assert (strategy["maxUnavailable"], strategy["maxSurge"]) == (0, 1)
@@ -74,8 +75,8 @@ def test_every_deployment_is_hardened(dep: dict[str, Any]) -> None:
     assert not container["image"].endswith(":latest") and ":" in container["image"]
     for key in ("requests", "limits"):
         assert {"cpu", "memory"} <= set(container["resources"][key])
-    assert container["livenessProbe"]["httpGet"]["path"] == "/health"
-    assert container["readinessProbe"]["httpGet"]["path"] == "/ready"
+    assert container["livenessProbe"]["httpGet"]["path"] == ("/healthz" if is_ui else "/health")
+    assert container["readinessProbe"]["httpGet"]["path"] == ("/healthz" if is_ui else "/ready")
     assert any(v["name"] == "tmp" for v in spec["volumes"]), "read-only root needs a /tmp volume"
 
 
@@ -140,7 +141,7 @@ def test_only_the_tool_layer_can_reach_the_internet() -> None:
     assert [p["port"] for p in spec["egress"][0]["ports"]] == [443]
 
 
-def test_the_ingress_controller_reaches_only_the_gateway() -> None:
+def test_the_ingress_controller_reaches_only_the_gateway_and_the_ui() -> None:
     policies = _policies()
     sources = [
         name
@@ -149,7 +150,37 @@ def test_the_ingress_controller_reaches_only_the_gateway() -> None:
         for src in rule.get("from", [])
         if "namespaceSelector" in src
     ]
-    assert sorted(set(sources)) == ["np-gateway"]
+    assert sorted(set(sources)) == ["np-gateway", "np-ui"]
+
+
+def test_the_ui_is_reachable_only_from_the_ingress_controller_and_calls_nothing() -> None:
+    spec = _policies()["np-ui"]["spec"]
+    assert spec["policyTypes"] == ["Ingress", "Egress"] and spec["egress"] == []
+    (rule,) = spec["ingress"]
+    assert rule["ports"] == [{"protocol": "TCP", "port": 8080}]
+    (src,) = rule["from"]
+    assert src["namespaceSelector"]["matchLabels"] == {
+        "kubernetes.io/metadata.name": "ingress-nginx"
+    }
+    for name, pol in _policies().items():  # nobody else may call the UI (or be told it exists)
+        if name != "np-ui":
+            assert all(
+                p.get("podSelector", {}).get("matchLabels", {}).get("app") != "ui"
+                for rule in pol["spec"].get("egress", [])
+                for p in rule["to"]
+            ), name
+
+
+def test_the_ui_ingress_serves_root_without_the_api_rewrite() -> None:
+    (ing,) = [
+        o
+        for o in _all_objects()
+        if o["kind"] == "Ingress" and o["metadata"]["name"] == "idea-validator-ui"
+    ]
+    assert "annotations" not in ing["metadata"], "rewrite-target would turn / into a rewritten path"
+    (path,) = [p for r in ing["spec"]["rules"] for p in r["http"]["paths"]]
+    assert path["path"] == "/" and path["pathType"] == "Prefix"
+    assert path["backend"]["service"] == {"name": "ui", "port": {"name": "http"}}
 
 
 @pytest.mark.skipif(shutil.which("kubectl") is None, reason="needs kubectl (kustomize built in)")
@@ -225,7 +256,11 @@ def test_redis_urls_carry_the_password_so_they_come_from_a_secret_never_a_litera
 def test_the_public_ingress_does_not_expose_ops_endpoints() -> None:
     import re
 
-    (ing,) = [o for o in _all_objects() if o["kind"] == "Ingress"]
+    (ing,) = [
+        o
+        for o in _all_objects()
+        if o["kind"] == "Ingress" and o["metadata"]["name"] == "idea-validator"
+    ]
     paths = [p["path"] for rule in ing["spec"]["rules"] for p in rule["http"]["paths"]]
     assert all(p.startswith("/api") for p in paths)
     pattern = re.compile(paths[0])
