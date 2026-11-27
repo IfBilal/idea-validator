@@ -37,8 +37,13 @@ stateDiagram-v2
   BUDGET_STOPPED --> [*]
   CANCELLED --> [*]
 ```
-Run state persisted in `app.runs` after every transition (crash-safe; on restart M3 resumes RUNNING runs from the
-last completed step using memoised outputs).
+Run state persisted in `app.runs` after every transition (crash-safe). On restart M3 lists the non-terminal runs
+(`GET /internal/runs?state=created,running,awaiting_input,awaiting_approval`), takes a per-run Redis lease
+(single flight across replicas) and rehydrates each from its LangGraph checkpoint: a paused run gets its question or
+approval back, a running run continues from its last checkpoint (bounded concurrency; a step that was in flight is
+not charged twice; memoised steps cost nothing), a run with no readable checkpoint becomes FAILED with the fixed
+reason "the run could not be recovered after a restart". Stored events (`run:{id}:events`) are replayed by
+`GET /runs/{id}/events?after=` and the event sequence continues. Details: services/orchestrator/README.md.
 
 ## 2. Validate state machine
 ```mermaid

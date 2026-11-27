@@ -67,13 +67,37 @@ def test_channel_name_is_run_colon_id() -> None:
     assert channel_for("run_9") == "run:run_9"
 
 
+class FakePipe:
+    def __init__(self, sent: list[tuple[str, str]]) -> None:
+        self.sent = sent
+
+    def rpush(self, *args: Any) -> None: ...
+    def set(self, *args: Any, **kwargs: Any) -> None: ...
+    def ltrim(self, *args: Any) -> None: ...
+    def expire(self, *args: Any) -> None: ...
+
+    def publish(self, channel: str, message: str) -> None:
+        self.sent.append((channel, message))
+
+    async def execute(self) -> list[Any]:
+        return []
+
+
 class FakeRedis:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
-    async def publish(self, channel: str, message: str) -> int:
-        self.sent.append((channel, message))
-        return 1
+    def pipeline(self, transaction: bool = True) -> FakePipe:
+        return FakePipe(self.sent)
+
+    async def lrange(self, name: str, start: int, end: int) -> list[bytes]:
+        return []
+
+    async def lindex(self, name: str, index: int) -> bytes | None:
+        return None
+
+    async def get(self, name: str) -> None:
+        return None
 
 
 async def test_redis_publisher_publishes_json_on_the_run_channel() -> None:

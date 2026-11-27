@@ -35,5 +35,38 @@
   },
   "gguf_sha256": "5af24a5adda23933b2eadd683e83a75bbff14e71dbc337ec79d0d6e049bcc08e",
   "gguf_bytes": 986048160,
-  "export_path": "merged bf16 -> f16 GGUF -> llama-quantize Q4_K_M"
+  "export_path": "merged bf16 -> f16 GGUF -> llama-quantize Q4_K_M",
+  "production_length_prompts": {
+    "note": "SYNTHETIC but production-shaped: 6 evidence quotes of ~300 chars, rubric anchors, profile for feasibility/learning",
+    "prompt_tokens": {
+      "min": 862,
+      "mean": 886,
+      "max": 937
+    },
+    "threads_4": {
+      "latency_s": {
+        "p50": 7.206435099999908,
+        "p95": 9.84464739500022
+      },
+      "n": 14,
+      "rss_mb_max": 1926.69140625,
+      "rss_mb_mean": 1887.0421875,
+      "prompt_tokens_mean": null,
+      "threads": 4,
+      "valid_object_rate": 1.0
+    },
+    "threads_6": {
+      "latency_s": {
+        "p50": 6.585643100000198,
+        "p95": 9.451778645000195
+      },
+      "n": 14,
+      "rss_mb_max": 1927.93359375,
+      "rss_mb_mean": 1888.2729166666666,
+      "prompt_tokens_mean": null,
+      "threads": 6,
+      "valid_object_rate": 1.0
+    },
+    "sizing_note": "Pod with 1-2 CPUs will be ~2-3x slower than this 4-6 thread desktop: plan for 15-25 s per score; M9 should call the scorer for the 6 dimensions concurrently and treat scorer replicas/slots as the capacity knob"
+  }
 }

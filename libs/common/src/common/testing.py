@@ -49,6 +49,7 @@ class EmulatedRedis:
     def __init__(self) -> None:
         self.hashes: dict[str, dict[str, float]] = {}
         self.ttls: dict[str, int] = {}
+        self.values: dict[str, str] = {}
 
     async def hincrby(self, name: str, key: str, amount: int) -> int:
         h = self.hashes.setdefault(name, {})
@@ -60,6 +61,29 @@ class EmulatedRedis:
         h[key] = float(h.get(key, 0.0)) + float(amount)
         return float(h[key])
 
+    async def set(
+        self, name: str, value: str, *, ex: int | None = None, get: bool = False
+    ) -> bytes | bool | None:
+        previous = self.values.get(name)
+        self.values[name] = value
+        if ex is not None:
+            self.ttls[name] = int(ex)
+        if get:
+            return None if previous is None else previous.encode()
+        return True
+
+    async def delete(self, *names: str) -> int:
+        removed = [n for n in names if self.values.pop(n, None) is not None]
+        return len(removed)
+
+    async def get(self, name: str) -> bytes | None:
+        value = self.values.get(name)
+        return None if value is None else value.encode()
+
+    async def incr(self, name: str) -> int:
+        self.values[name] = str(int(self.values.get(name, "0")) + 1)
+        return int(self.values[name])
+
     async def hgetall(self, name: str) -> dict[bytes, bytes]:
         return {k.encode(): str(v).encode() for k, v in self.hashes.get(name, {}).items()}
 
@@ -70,11 +94,24 @@ class EmulatedRedis:
     async def ttl(self, name: str) -> int:
         return self.ttls.get(name, -1)
 
-    async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> list[bytes]:
-        from .budget import RESERVE_SCRIPT
+    async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
+        from .budget import RESERVE_SCRIPT, RESTORE_SCRIPT
 
+        if script == RESTORE_SCRIPT and numkeys == 1:
+            name, tokens, pages, steps, cost, bonus, ttl = keys_and_args
+            if name in self.hashes:
+                return 0
+            self.hashes[str(name)] = {
+                "tokens": int(tokens),
+                "pages": int(pages),
+                "steps": int(steps),
+                "cost_usd": float(cost),
+                "cost_bonus_usd": float(bonus),
+            }
+            self.ttls[str(name)] = int(ttl)
+            return 1
         if script != RESERVE_SCRIPT or numkeys != 1:
-            raise NotImplementedError("EmulatedRedis only knows the budget reserve script")
+            raise NotImplementedError("EmulatedRedis only knows the budget scripts")
         key, *argv = keys_and_args
         e_tokens, e_pages, e_steps, e_cost, m_tokens, m_pages, m_steps, m_cost, tol, ttl = (
             float(a) for a in argv

@@ -2,11 +2,17 @@
 
 M1 turns the Redis channel ``run:{run_id}`` into the SSE stream. Publishing is best-effort: a broken
 event bus must never fail a run.
+
+Every event is also appended to a bounded Redis list (``run:{run_id}:events``) *before* it is
+published, so a client that reconnects, or M3 itself after a restart, can read what happened:
+``GET /runs/{id}/events?after=<seq>`` and the emitter's sequence continuing where it stopped.
 """
 
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import Any, Protocol
+
+from pydantic import ValidationError
 
 from common.logging import get_logger
 from common.schemas import RunEvent
@@ -15,12 +21,30 @@ from common.schemas.trace import RunEventType
 log = get_logger("events")
 
 
+MAX_STORED_EVENTS = 2000  # a run emits a few hundred; the cap only bounds a runaway one
+EVENTS_TTL_S = 7 * 24 * 3600  # same as the budget ledger
+
+
 def channel_for(run_id: str) -> str:
     return f"run:{run_id}"
 
 
+def events_key(run_id: str) -> str:
+    return f"run:{run_id}:events"
+
+
+def seq_key(run_id: str) -> str:
+    return f"run:{run_id}:seq"
+
+
 class EventPublisher(Protocol):
     async def publish(self, event: RunEvent) -> None: ...
+
+
+class EventLog(Protocol):
+    async def read(self, run_id: str, after: int = 0) -> list[RunEvent]: ...
+
+    async def last_seq(self, run_id: str) -> int: ...
 
 
 class InMemoryPublisher:
@@ -35,17 +59,73 @@ class InMemoryPublisher:
     def events_of(self, run_id: str) -> list[RunEvent]:
         return [e for e in self.events if e.run_id == run_id]
 
+    async def read(self, run_id: str, after: int = 0) -> list[RunEvent]:
+        return [e for e in self.events_of(run_id) if e.seq > after]
 
-class PubSubRedis(Protocol):
-    def publish(self, channel: str, message: str) -> Awaitable[Any]: ...
+    async def last_seq(self, run_id: str) -> int:
+        return max((e.seq for e in self.events_of(run_id)), default=0)
+
+
+class EventRedis(Protocol):
+    def pipeline(self, transaction: bool = True) -> Any: ...
+    def lrange(self, name: str, start: int, end: int) -> Awaitable[Any]: ...
+    def lindex(self, name: str, index: int) -> Awaitable[Any]: ...
+    def get(self, name: str) -> Awaitable[Any]: ...
+
+
+def _as_int(raw: Any) -> int:
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
 
 
 class RedisPublisher:
-    def __init__(self, redis: PubSubRedis) -> None:
+    """Publishes to the run's channel and keeps the events for replay.
+
+    ``run:{id}:seq`` holds the highest sequence number on its own, so the sequence still continues
+    if the event list is lost, and a poll can read just the tail of the list instead of all of it.
+    """
+
+    def __init__(self, redis: EventRedis) -> None:
         self._redis = redis
 
     async def publish(self, event: RunEvent) -> None:
-        await self._redis.publish(channel_for(event.run_id), event.model_dump_json())
+        payload, key = event.model_dump_json(), events_key(event.run_id)
+        pipe = self._redis.pipeline(transaction=True)
+        pipe.rpush(key, payload)
+        pipe.ltrim(key, -MAX_STORED_EVENTS, -1)
+        pipe.expire(key, EVENTS_TTL_S)
+        pipe.set(seq_key(event.run_id), event.seq, ex=EVENTS_TTL_S)
+        pipe.publish(channel_for(event.run_id), payload)  # after the store: replay never misses it
+        await pipe.execute()
+
+    async def read(self, run_id: str, after: int = 0) -> list[RunEvent]:
+        latest = await self.last_seq(run_id)
+        if after >= latest:
+            return []  # the common poll: nothing new, and the list is not touched
+        # at most ``latest - after`` events are newer; they are the tail of the list
+        count = min(latest - after, MAX_STORED_EVENTS)
+        raw = await self._redis.lrange(events_key(run_id), -count, -1)
+        events: list[RunEvent] = []
+        for item in raw:
+            try:
+                event = RunEvent.model_validate_json(item)
+            except ValidationError:
+                log.warning("stored_event_malformed", run_id=run_id)
+                continue
+            if event.run_id == run_id and event.seq > after:
+                events.append(event)
+        return events
+
+    async def last_seq(self, run_id: str) -> int:
+        counter = _as_int(await self._redis.get(seq_key(run_id)))
+        tail = await self._redis.lindex(events_key(run_id), -1)
+        try:
+            stored = RunEvent.model_validate_json(tail).seq if tail else 0
+        except ValidationError:
+            stored = 0
+        return max(counter, stored)
 
 
 class RunEmitter:
@@ -55,6 +135,12 @@ class RunEmitter:
         self.run_id = run_id
         self._publisher = publisher
         self._seq = 0
+
+    def resume_from(self, seq: int) -> None:
+        """Continue after ``seq`` (the last stored event) so a restart never repeats a number."""
+        if seq < 0:
+            raise ValueError("a sequence number cannot be negative")
+        self._seq = max(self._seq, seq)
 
     async def emit(self, type_: RunEventType, **payload: Any) -> RunEvent:
         self._seq += 1

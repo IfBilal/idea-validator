@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
@@ -15,11 +16,15 @@ from common.tracing import Tracer
 from .api.routes import make_router
 from .clients.factory import build_clients
 from .config import Settings
+from .repositories.attempts import RedisAttempts
 from .repositories.checkpoints import postgres_saver
 from .repositories.events import RedisPublisher, RunEmitter
+from .repositories.leases import RedisLeases
+from .services.recovery import recovery_loop
 from .services.run_config import load_run_config
 from .services.run_context import RunContext
 from .services.runs import RunService
+from .services.steps import PROCESS_ID
 
 RUN_KINDS = ("validate", "discover", "challenge", "whatif")
 
@@ -47,9 +52,21 @@ def build_app(settings: Settings, *, service: RunService | None = None) -> FastA
                 app.state.runs = service
             else:
                 app.state.runs = await _wire(settings, app, stack)
+            recovery = None
+            if service is None:  # an injected service is driven by the test, not recovered
+                recovery = asyncio.create_task(
+                    recovery_loop(
+                        app.state.runs,
+                        interval_s=settings.recovery_interval_s,
+                        attempts=settings.recovery_attempts,
+                    )
+                )
             try:
                 yield
             finally:
+                if recovery is not None:
+                    recovery.cancel()
+                    await asyncio.gather(recovery, return_exceptions=True)
                 await app.state.runs.aclose()
 
     async def redis_up() -> bool:
@@ -105,6 +122,14 @@ async def _wire(settings: Settings, app: FastAPI, stack: AsyncExitStack) -> RunS
         checkpointer=saver,
         config=config,
         question_timeout_s=settings.question_timeout_s,
+        leases=RedisLeases(redis, PROCESS_ID, ttl_s=settings.lease_ttl_s),
+        event_log=publisher,
+        run_source=clients.profile,
+        resume_concurrency=settings.resume_concurrency,
+        heartbeat_s=settings.lease_ttl_s / 3,
+        attempts=RedisAttempts(redis),
+        recovery_attempt_limit=settings.recovery_attempt_limit,
+        finished_ttl_s=settings.finished_ttl_s,
     )
 
 
