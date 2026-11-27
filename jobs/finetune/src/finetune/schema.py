@@ -44,6 +44,9 @@ class Meta(BaseModel):
     rubric_version: str
     evidence_ids: list[str] = []
     synthetic: bool = False
+    idea_text: str | None = None
+    draft_model: str | None = None
+    source: str | None = None
     checked_by: str | None = None
     checked_at: str | None = None
     original_label: float | None = None

@@ -1,0 +1,19 @@
+# GPU venv only (never the root uv workspace). Install order matters:
+#   uv venv --python 3.12 ft-venv
+#   uv pip install --python ft-venv/Scripts/python.exe torch --index-url https://download.pytorch.org/whl/cu128
+#   uv pip install --python ft-venv/Scripts/python.exe -r jobs/finetune/requirements-gpu.txt
+# Exact versions used for the recorded run are written to runs/<run>.json and requirements-gpu.lock.txt.
+transformers>=4.56,<5
+peft>=0.17
+accelerate>=1.10
+bitsandbytes>=0.47
+datasets>=4.0
+matplotlib>=3.9
+numpy
+sentencepiece
+protobuf
+gguf
+huggingface_hub
+-e libs/common
+-e services/scorer
+-e jobs/finetune

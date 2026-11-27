@@ -1,0 +1,7 @@
+# training outputs, synthetic dry-run data and weights never go to git
+out/
+data/synthetic/
+*.gguf
+*.safetensors
+*.bin
+*.pt
