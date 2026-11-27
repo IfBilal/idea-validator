@@ -67,6 +67,8 @@
       "enum": [
         "hackernews",
         "github",
+        "lobsters",
+        "stackexchange",
         "reddit",
         "producthunt",
         "yc"

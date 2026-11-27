@@ -78,6 +78,7 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | P1-T06 secrets, P1-T08 deploy step, P1-T09 smoke test, migrate Job | this PR | 2026-11-27 | all 13 services + 4 datastores running on kind, 0 restarts; `make smoke` passes (register, login, profile round trip through the ingress). Jenkins and rollback (P1-T08 rest) still open |
 | P2-T13 (rest) atomic budget ledger (`BudgetLedger.reserve`, Lua) used by the orchestrator | this PR | 2026-11-27 | real-Redis race test: 40 parallel reservations admit exactly the limit; same scenarios pass on the in-memory emulation |
 | P0-T06/T08 dev compose stack + Makefile targets, P1-T07 netpol_test (issues #31, #32 part) | this PR | 2026-11-27 | `make up` healthy, `make migrate` creates the app schema, `make netpol-test` passes on the live stack with a negative control; seed/eval/replay say which task they wait for |
+| ADR-009 sources in the schemas: lobsters and stackexchange added to Source, both JSON schemas and the data model | this PR | 2026-11-27 | a test pins the same set in every place; prerequisite for #29 and #30 |
 | P2-T07 (part), P2-T09 (part) M2 auth + profiles | #12 (merged) | 2026-11-26 | layering enforced by import-linter |
 | P2-T07 (rest) ideas, versions, verdicts, runs, approvals, compare; P2-T08 Redis verdict cache | in review | 2026-11-27 | keys built by `common.cache_keys`; hit/miss counters on `/metrics` |
 
