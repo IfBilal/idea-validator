@@ -50,6 +50,7 @@ def build(
             v[key] = make()
 
     keep("INTERNAL_TOKEN", lambda: rand(24))
+    keep("INGEST_TOKEN", lambda: rand(24))  # only the ingestion job and kb get it
     keep("JWT_SECRET", lambda: rand(32))
     keep("POSTGRES_USER", lambda: "idea")
     keep("POSTGRES_PASSWORD", lambda: rand(16))

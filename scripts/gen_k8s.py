@@ -25,7 +25,7 @@ SERVICES: dict[str, dict[str, Any]] = {
     "orchestrator": {"module": "m3", "replicas": 2, "secrets": ["DATABASE_URL"]},
     "scouts": {"module": "m4", "replicas": 1, "secrets": ["DATABASE_URL"]},
     "tools": {"module": "m5", "replicas": 2, "secrets": ["GROQ_API_KEY"]},
-    "kb": {"module": "m6", "replicas": 2, "secrets": ["DATABASE_URL"]},
+    "kb": {"module": "m6", "replicas": 2, "secrets": ["DATABASE_URL", "INGEST_TOKEN"]},
     "analyst": {"module": "m7", "replicas": 1, "secrets": []},
     "ideation": {"module": "m8", "replicas": 1, "secrets": []},
     "validators": {"module": "m9", "replicas": 2, "secrets": []},
