@@ -41,9 +41,12 @@ def make_router(settings: Settings) -> APIRouter:
             raise ValidationFailed(
                 "limit is above the allowed maximum", {"max_limit": settings.scout_max_limit}
             )
+        limit = min(body.limit or settings.scout_max_limit, settings.scout_max_limit)
+        # ids are minted here: a caller id is only kept when it carries our prefix
+        run_id = body.run_id if body.run_id and body.run_id.startswith("scout_") else None
         try:
             async with asyncio.timeout(settings.scout_timeout_s):
-                return await runner.run(body.source, limit=body.limit, run_id=body.run_id)
+                return await runner.run(body.source, limit=limit, run_id=run_id)
         except UnknownSource as exc:
             raise NotFound(str(exc)) from exc
         except AlreadyRunning as exc:

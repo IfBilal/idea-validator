@@ -1,33 +1,46 @@
 """Test doubles: an in-memory ``RawStore`` and a scripted ``Fetcher`` (no network, no database)."""
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from prometheus_client import CollectorRegistry
+
 from svc_scouts.models.items import RawItem
 from svc_scouts.models.runs import ApiRequest, Page, ScoutState
-from svc_scouts.models.sources import SourceCfg
+from svc_scouts.models.sources import ScoutSources, SourceCfg
 from svc_scouts.services.context import Credentials, ScoutContext
+from svc_scouts.services.metrics import ScoutMetrics
+from svc_scouts.services.runner import ScoutRunner
 
 
 class MemoryStore:
     def __init__(self) -> None:
         self.rows: dict[tuple[str, str], dict[str, Any]] = {}
         self.states: dict[str, ScoutState] = {}
+        self.locked: set[str] = set()
+        self.now = NOW  # what ``fetched_at`` records
 
     async def upsert_items(self, items: Sequence[RawItem]) -> tuple[int, int, int]:
         added = updated = unchanged = 0
         for item in items:
             key = (item.source, item.url)
             row = self.rows.get(key)
-            fresh = {"body": item.body(), "hash": item.content_hash, "processed": False}
+            fresh = {
+                "body": item.body(),
+                "hash": item.content_hash,
+                "processed": False,
+                "fetched_at": self.now,
+            }
             if row is None:
                 self.rows[key] = fresh
                 added += 1
             elif row["hash"] == item.content_hash:
                 row["body"] = item.body()
+                row["fetched_at"] = self.now
                 unchanged += 1
             else:
                 self.rows[key] = fresh
@@ -39,6 +52,23 @@ class MemoryStore:
 
     async def save_state(self, source: str, state: ScoutState) -> None:
         self.states[source] = state.model_copy(deep=True)
+
+    @asynccontextmanager
+    async def lock(self, source: str) -> AsyncIterator[bool]:
+        if source in self.locked:
+            yield False
+            return
+        self.locked.add(source)
+        try:
+            yield True
+        finally:
+            self.locked.discard(source)
+
+    async def prune(self, cutoff: datetime) -> int:
+        old = [k for k, r in self.rows.items() if r["processed"] and r["fetched_at"] < cutoff]
+        for key in old:
+            del self.rows[key]
+        return len(old)
 
     async def ping(self) -> bool:
         return True
@@ -81,6 +111,35 @@ class FakeFetcher:
 
 
 NOW = datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = NOW
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def make_runner(
+    fetcher: Any,
+    *,
+    store: MemoryStore | None = None,
+    options: dict[str, Any] | None = None,
+    clock: Clock | None = None,
+    **kw: Any,
+) -> ScoutRunner:
+    """A runner for the ``hackernews`` source with in-memory parts (shared ``store`` allowed)."""
+    cfg = SourceCfg.model_validate(options or {"algolia_tags": ["show_hn"], "feeds": []})
+    return ScoutRunner(
+        sources=ScoutSources(sources={"hackernews": cfg}),
+        store=store or MemoryStore(),
+        fetcher=fetcher,
+        credentials=Credentials(),
+        metrics=ScoutMetrics(CollectorRegistry()),
+        clock=clock or Clock(),
+        **kw,
+    )
 
 
 def make_ctx(

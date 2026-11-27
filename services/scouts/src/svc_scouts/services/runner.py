@@ -1,16 +1,17 @@
 """Runs one source: breaker check, connector, store, state, metrics. No HTTP, no SQL here."""
 
+import asyncio
 import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 
 from common.logging import get_logger
-from svc_scouts.models.runs import RunReport, RunStatus
-from svc_scouts.models.sources import ScoutSources
+from svc_scouts.models.runs import RunReport, RunStatus, ScoutState
+from svc_scouts.models.sources import ScoutSources, SourceCfg
 
 from .breaker import BreakerState, CircuitBreaker
-from .connectors import ALIASES, CONNECTORS
+from .connectors import ALIASES, CONNECTORS, Connector
 from .context import Credentials, ScoutContext
 from .errors import AlreadyRunning, BudgetExhausted, ScoutError, UnknownSource
 from .metrics import ScoutMetrics
@@ -77,6 +78,21 @@ class ScoutRunner:
         if limit is not None and limit < 1:
             raise ValueError("limit must be >= 1")
 
+        # cross-process single flight: state is read, changed and written under this lock
+        async with self._store.lock(name) as acquired:
+            if not acquired:
+                raise AlreadyRunning(f"{name} is already running")
+            return await self._locked(name, cfg, connector, limit, report, started)
+
+    async def _locked(
+        self,
+        name: str,
+        cfg: SourceCfg,
+        connector: Connector,
+        limit: int | None,
+        report: RunReport,
+        started: float,
+    ) -> RunReport:
         state = await self._store.get_state(name)
         breaker = CircuitBreaker(state, threshold=self._threshold, cooldown_s=self._cooldown)
         now = self._clock()
@@ -91,7 +107,7 @@ class ScoutRunner:
             fetcher=self._fetcher,
             credentials=self._credentials,
             cursor=dict(state.cursor),
-            run_id=run_id,
+            run_id=report.run_id,
             limit=limit or self._default_limit,
             now=now,
         )
@@ -105,7 +121,36 @@ class ScoutRunner:
         except Exception as exc:  # a connector bug must not kill the CronJob without a record
             error = f"{type(exc).__name__}: unexpected error"
             log.error("scout_unexpected_error", source=name, exc_info=True)
+        except asyncio.CancelledError:
+            # a timeout or shutdown is a failed run: count it, keep what was read, then re-raise
+            await asyncio.shield(self._persist(name, ctx, state, breaker, now, "cancelled"))
+            raise
 
+        counts = await self._persist(name, ctx, state, breaker, now, error)
+        status: RunStatus
+        if error:
+            status = "partial" if ctx.items else "failed"
+        elif not ctx.items:
+            status = "empty"
+        else:
+            status = "ok"
+        report.requests, report.items, report.dropped = ctx.requests, len(ctx.items), ctx.dropped
+        report.added, report.updated, report.unchanged = counts
+        report.flagged = ctx.flagged
+        if status == "empty":
+            log.warning("scout_source_empty", source=name, probe=probe)
+        self._metrics.up.labels(name).set(0 if not breaker.allow(self._clock()) else 1)
+        return self._finish(report, status, started, error)
+
+    async def _persist(
+        self,
+        name: str,
+        ctx: ScoutContext,
+        state: ScoutState,
+        breaker: CircuitBreaker,
+        now: datetime,
+        error: str | None,
+    ) -> tuple[int, int, int]:
         counts = (0, 0, 0)
         if ctx.items:
             counts = await self._store.upsert_items(ctx.items)
@@ -116,23 +161,17 @@ class ScoutRunner:
         state.cursor = ctx.cursor
         state.last_run_at = now
         state.last_error = error
-        status: RunStatus
-        if error:
-            status = "partial" if ctx.items else "failed"
-        elif not ctx.items:
-            status = "empty"
-        else:
-            status = "ok"
-        state.last_status = status
+        state.last_status = (
+            "failed"
+            if error and not ctx.items
+            else "partial"
+            if error
+            else "empty"
+            if not ctx.items
+            else "ok"
+        )
         await self._store.save_state(name, state)
-
-        report.requests, report.items, report.dropped = ctx.requests, len(ctx.items), ctx.dropped
-        report.added, report.updated, report.unchanged = counts
-        report.flagged = ctx.flagged
-        if status == "empty":
-            log.warning("scout_source_empty", source=name, probe=probe)
-        self._metrics.up.labels(name).set(0 if not breaker.allow(self._clock()) else 1)
-        return self._finish(report, status, started, error)
+        return counts
 
     def _finish(
         self, report: RunReport, status: RunStatus, started: float, error: str | None

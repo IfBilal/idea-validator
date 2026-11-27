@@ -1,7 +1,10 @@
 """Postgres access for schema ``scouts``: ``raw_pages`` (read by M6i) and ``scout_state``."""
 
+import asyncio
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -118,6 +121,36 @@ class PgRawStore:
                     "last_error": state.last_error,
                 },
             )
+
+    @asynccontextmanager
+    async def lock(self, source: str) -> AsyncIterator[bool]:
+        """A session-level Postgres advisory lock on a dedicated autocommit connection."""
+        key = {"k": f"scouts:{source}"}
+        async with self._sessions() as session:
+            conn = await session.connection(execution_options={"isolation_level": "AUTOCOMMIT"})
+            got = bool(
+                (
+                    await conn.execute(text("SELECT pg_try_advisory_lock(hashtext(:k))"), key)
+                ).scalar()
+            )
+            try:
+                yield got
+            finally:
+                if got:
+                    try:
+                        await asyncio.shield(
+                            conn.execute(text("SELECT pg_advisory_unlock(hashtext(:k))"), key)
+                        )
+                    except Exception:
+                        await asyncio.shield(session.invalidate())  # a dead connection frees it
+
+    async def prune(self, cutoff: datetime) -> int:
+        async with self._sessions() as session, session.begin():
+            result = await session.execute(
+                text("DELETE FROM scouts.raw_pages WHERE processed AND fetched_at < :cutoff"),
+                {"cutoff": cutoff},
+            )
+            return int(result.rowcount)  # type: ignore[attr-defined]
 
     async def ping(self) -> bool:
         async with self._sessions() as session:

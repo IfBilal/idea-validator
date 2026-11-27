@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -128,6 +128,43 @@ async def test_state_round_trip_including_the_breaker_fields(store: PgRawStore) 
     assert await store.get_state("github") == state
     await store.save_state("github", ScoutState(cursor={"a": 1}))
     assert (await store.get_state("github")).cursor == {"a": 1}
+
+
+async def test_the_advisory_lock_is_exclusive_per_source_and_released(
+    store: PgRawStore, engine: AsyncEngine
+) -> None:
+    other = PgRawStore(async_sessionmaker(engine, expire_on_commit=False))
+    async with store.lock("github") as first:
+        assert first is True
+        async with other.lock("github") as second:
+            assert second is False  # a second process would be refused
+        async with other.lock("lobsters") as different:
+            assert different is True
+    async with other.lock("github") as again:
+        assert again is True  # released in finally
+
+
+async def test_prune_deletes_processed_old_rows_only(
+    store: PgRawStore, engine: AsyncEngine
+) -> None:
+    await store.upsert_items([item("https://e.com/1"), item("https://e.com/2")])
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE scouts.raw_pages SET processed = true, fetched_at = now() - interval '40 days' "
+                "WHERE url = 'https://e.com/1'"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE scouts.raw_pages SET fetched_at = now() - interval '40 days' WHERE url = 'https://e.com/2'"
+            )
+        )
+    cutoff = datetime.now(UTC) - timedelta(days=30)
+    assert await store.prune(cutoff) == 1
+    async with engine.connect() as conn:
+        left = (await conn.execute(text("SELECT url FROM scouts.raw_pages"))).scalars().all()
+    assert left == ["https://e.com/2"]  # unprocessed rows are never pruned
 
 
 async def test_ping(store: PgRawStore) -> None:

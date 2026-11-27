@@ -1,4 +1,4 @@
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 
 from common.config import ServiceSettings
 
@@ -19,6 +19,9 @@ class Settings(ServiceSettings):
     # M5 does not forward request headers or POST bodies today (GET only). The flag exists so the
     # authenticated connectors can be switched on the day M5 grows that contract.
     m5_forward_auth: bool = False
+    # Second switch: M5 must first bypass cache and logging for requests with headers/body, accept
+    # auth headers only for the credential's own host, and redact Authorization/access_token.
+    m5_supports_auth: bool = False
 
     fetch_timeout_s: float = 40.0  # M5 has its own 30 s deadline; this one must be larger
     fetch_retries: int = 1
@@ -28,3 +31,9 @@ class Settings(ServiceSettings):
     scout_timeout_s: float = 120.0  # wall-clock bound of one POST /scout
     default_limit: int = 1000  # CLI default when --limit is not given
     max_body_bytes: int = 4096
+
+    @model_validator(mode="after")
+    def _forwarding_needs_both_switches(self) -> "Settings":
+        if self.m5_forward_auth and not self.m5_supports_auth:
+            raise ValueError("M5_FORWARD_AUTH requires M5_SUPPORTS_AUTH=true (M5 hardening first)")
+        return self

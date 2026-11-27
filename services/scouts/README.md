@@ -27,6 +27,11 @@ Keys the human must create: see `docs/data-sources.md` (Reddit "script" app + ac
 Put them in the git-ignored `.env`; `scripts/create_secrets.py` copies them into the `app-secrets` Secret (empty = source off).
 Never in git, never logged (`SecretStr`, redacted `repr`).
 
+**Known limit (needs an M5 change first, tracked on M5):** before `M5_FORWARD_AUTH` may ever be enabled, M5 must bypass its cache and
+logging for requests that carry headers, a body or a non-GET method, accept auth headers only for the credential's own host, and redact
+`Authorization` / `access_token` everywhere. The flag refuses to start unless `M5_SUPPORTS_AUTH=true` is also set. Reddit and Product
+Hunt stay disabled in `sources.yaml` and their CronJobs are suspended until then.
+
 **Known limit (needs an M5 change):** today `/fetch` is GET-only and forwards no headers. Therefore Reddit (OAuth token POST, Bearer)
 and Product Hunt (POST GraphQL, Bearer) raise `UnsupportedRequest` until M5 accepts `method/headers/body` (the client sends them
 when `M5_FORWARD_AUTH=true`), and the optional GitHub token is dropped (keyless limits apply). Stack Exchange always gzips replies
@@ -54,6 +59,28 @@ Read with `SELECT id, source, url, fetched_at, body FROM scouts.raw_pages WHERE 
 
 `scouts.scout_state(source, cursor jsonb, failures, opened_at, last_run_at, last_status, last_error)` holds the resume cursor and the
 circuit breaker (CronJob pods are short-lived). Cursors advance only when a feed was read to its end, so a partial run resumes.
+
+## Safety rules of the stored data
+- Entities are never decoded (`&lt;` stays `&lt;`), markdown images become `[removed: image link]`, leftover `<tag` openers are neutralised.
+- `metadata` has a key whitelist, strings are capped at 64 chars, lists hold at most 30 scalars, nesting depth <= 2.
+- Item urls must be http(s) on a public host: localhost, `.local`/`.internal`, private/loopback/link-local/CGNAT addresses and numeric
+  tricks (`2130706433`, `0x7f000001`) are rejected. **Nobody may fetch a stored url outside M5.**
+- Public project identifiers only: no author, username, submitter or owner is stored (a test scans every fixture), see `docs/data-sources.md`.
+- Two HN stories with the same external url are both kept (the later one is keyed by its discussion url).
+
+## Cursor semantics
+A cursor moves only when a feed was read to its end. A budget stop, error, rate limit or Stack Exchange `backoff` leaves it where it was
+(rows read before the stop are still stored; the next run re-reads and upserts them idempotently). A timed-out or cancelled run counts
+as a failure for the circuit breaker and is persisted.
+
+## Single flight and retention
+Each run holds a Postgres advisory lock (`pg_try_advisory_lock(hashtext('scouts:<source>'))`) for its whole duration, so the CronJob and
+`POST /scout` (any pod) never run the same source at once, and breaker state is never updated concurrently. CronJobs use `backoffLimit: 0`
+(the breaker owns retries). Retention: `python -m scouts prune --older-than-days N` deletes **processed** rows older than N days
+(unprocessed rows are never deleted); run it from a Job or CronJob when the table grows.
+
+## Known limit
+The scouts use the shared `DATABASE_URL` role (no dedicated least-privilege database role yet).
 
 ## Failure handling
 - **Circuit breaker:** `BREAKER_THRESHOLD` (3) consecutive failed runs open it; runs are skipped (`circuit_open`, `scout_source_up=0`)

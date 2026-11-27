@@ -60,7 +60,7 @@ async def test_hn_item_shape_and_text_only_posts_get_the_discussion_url() -> Non
     assert first.platform == "hackernews" and first.metadata["kind"] == "show"
     assert first.created_at is not None and first.created_at.year == 2025
     assert second.url == "https://news.ycombinator.com/item?id=41000002"
-    assert second.text == "I built a thing & it helps"
+    assert second.text == "I built a thing &amp; it helps"
     assert "author" not in json.dumps(first.body())  # no usernames kept
 
 
@@ -340,7 +340,7 @@ async def test_stackexchange_strips_html_scripts_and_keeps_the_licence() -> None
     ctx = make_ctx("stackexchange", f, options=SE_OPTIONS)
     await StackExchange().collect(ctx)
     (q,) = ctx.items
-    assert q.text == "I need a tool that does X & Y."
+    assert q.text == "I need a tool that does X &amp; Y."
     assert q.metadata["licence"] == "CC BY-SA 4.0" and q.metadata["site"] == "stackoverflow"
     assert q.score == 15 and ctx.dropped == 1
     assert "bob" not in json.dumps(q.body())

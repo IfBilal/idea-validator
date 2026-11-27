@@ -490,7 +490,7 @@ def _cronjob(name: str) -> str:
     pod = {
         "serviceAccountName": "app",
         "automountServiceAccountToken": False,
-        "restartPolicy": "OnFailure",
+        "restartPolicy": "Never",
         "securityContext": {
             "runAsNonRoot": True,
             "runAsUser": 10001,
@@ -516,7 +516,7 @@ def _cronjob(name: str) -> str:
             "suspend": bool(spec.get("suspend", False)),
             "jobTemplate": {
                 "spec": {
-                    "backoffLimit": 2,
+                    "backoffLimit": 0,  # the circuit breaker owns retries, not Kubernetes
                     "activeDeadlineSeconds": 1200,
                     "ttlSecondsAfterFinished": 3600,
                     "template": {

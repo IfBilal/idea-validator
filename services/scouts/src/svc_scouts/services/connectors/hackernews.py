@@ -36,6 +36,13 @@ class FirebaseItem(Payload):
     deleted: bool = False
 
 
+def _story_url(ctx: ScoutContext, external: str | None, hn_id: str) -> str:
+    """The product url, or the discussion url when it is missing or a story already used it."""
+    if external and not ctx.seen(external):
+        return external
+    return f"{ITEM_URL}{hn_id}"
+
+
 def _kind(title: str, tag: str | None) -> str:
     low = title.lower()
     if low.startswith("ask hn") or tag == "ask_hn":
@@ -77,7 +84,7 @@ class HackerNews:
                 newest = max(newest, hit.created_at_i)
                 title = hit.title or ""
                 ctx.emit(
-                    url=hit.url or f"{ITEM_URL}{hit.objectID}",
+                    url=_story_url(ctx, hit.url, hit.objectID),
                     title=title,
                     text=hit.story_text or "",
                     created_at=from_epoch(hit.created_at_i),
@@ -116,7 +123,7 @@ class HackerNews:
                     ctx.dropped += 1
                     continue
                 ctx.emit(
-                    url=item.url or f"{ITEM_URL}{item.id}",
+                    url=_story_url(ctx, item.url, str(item.id)),
                     title=item.title,
                     text=item.text or "",
                     created_at=from_epoch(item.time),

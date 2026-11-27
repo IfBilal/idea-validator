@@ -78,9 +78,12 @@ class ScoutContext:
         if page.text:
             try:
                 return json.loads(page.text)
-            except ValueError as exc:
+            except (ValueError, RecursionError) as exc:
                 raise MalformedPayload(f"{self.source} body is not JSON") from exc
         raise MalformedPayload(f"{self.source} body is empty")
+
+    def seen(self, url: str) -> bool:
+        return url in self._seen
 
     def emit(self, **fields: Any) -> bool:
         """Validate and keep one item. A malformed item is dropped and counted, never raised.
@@ -89,7 +92,7 @@ class ScoutContext:
         """
         try:
             item = RawItem(source=self.source, **fields)
-        except (ValidationError, TypeError, ValueError):
+        except (ValidationError, TypeError, ValueError, RecursionError):
             self.dropped += 1
             return False
         if item.url in self._seen:

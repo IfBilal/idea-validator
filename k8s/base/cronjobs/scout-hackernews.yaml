@@ -17,7 +17,7 @@ spec:
   suspend: false
   jobTemplate:
     spec:
-      backoffLimit: 2
+      backoffLimit: 0
       activeDeadlineSeconds: 1200
       ttlSecondsAfterFinished: 3600
       template:
@@ -28,7 +28,7 @@ spec:
         spec:
           serviceAccountName: app
           automountServiceAccountToken: false
-          restartPolicy: OnFailure
+          restartPolicy: Never
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001

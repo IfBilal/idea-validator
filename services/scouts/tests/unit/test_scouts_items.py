@@ -77,7 +77,9 @@ def test_naive_dates_become_utc_and_offsets_are_converted() -> None:
 
 def test_markup_control_and_invisible_characters_are_removed() -> None:
     dirty = "<p>Hello​ <b>wor‮ld</b></p>\x00\x07 &amp; more"
-    assert clean_text(dirty, 100, strip_tags=True) == "Hello world & more"
+    assert (
+        clean_text(dirty, 100, strip_tags=True) == "Hello world &amp; more"
+    )  # entities stay encoded
 
 
 def test_injection_text_is_kept_as_inert_data_never_interpreted() -> None:

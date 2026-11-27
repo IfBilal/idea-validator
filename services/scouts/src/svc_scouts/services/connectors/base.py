@@ -43,7 +43,7 @@ def parse_rows[M: BaseModel](model: type[M], rows: list[Any], ctx: ScoutContext)
     for row in rows:
         try:
             yield model.model_validate(row)
-        except ValidationError:
+        except (ValidationError, RecursionError):
             ctx.dropped += 1
 
 
