@@ -77,8 +77,12 @@ use LangGraph `interrupt()`.
 - Cache key: `verdict:{idea_id}:{version}:{idea_hash}:p{profile}:r{rubrics}:w{weights}:e{engine}`.
 
 ## Spec deviations and known limits (stated openly)
-- No M12 `/rail/input` call at intake and no M8 `/skeptic` call, so `objections_accepted` is always empty and the
-  -0.5 challenge penalty cannot apply yet. The challenge step only checks score claims through M12 `/check`.
+- No M12 `/rail/input` call at intake. The Validate skeptic step is implemented but needs a structured (M8) idea in the
+  run state, which no endpoint passes yet; Discover applies objections during its debate instead. A free-text validate
+  therefore still sends an empty `objections_accepted`.
+- The M2 idea/version endpoints (`GET .../versions/{v}`, `POST .../versions`) are assumed shapes; M2 has not built them yet.
+- Discover's `deep_search` flag is accepted but children never scout (unattended runs cannot be asked for approval).
+- Discover ideas are not saved to M2 (`POST /internal/ideas`), only returned in the result.
 - Stability is only traced (from M11's `sensitivity` / `what_would_make_go`); there is no M11 `/whatif` call here.
 - Approval is requested only for deep search (scouting), not for other steps that could pass the budget.
 - CLARIFY runs after the scorers (it needs their effort estimate for the value-of-information call).
@@ -94,6 +98,31 @@ use LangGraph `interrupt()`.
 - Cache key versions cover M11, the profile and the idea only (scorer/critic versions are not exposed yet).
 - Parallel fan-outs check the step budget per call and can overshoot `max_steps` by the fan-out width; the
   atomic compare-and-reserve belongs in `common/budget.py` (owned by Dev A).
+
+## Discover, challenge and what-if (kinds of `POST /runs`)
+Bodies are validated strictly (see docs/harness/05 §3); ids are `[A-Za-z0-9_-]{1,64}`.
+```mermaid
+flowchart TD
+  request --> niches --> ideate --> gap_analyst --> skeptic --> critic
+  critic -->|new accepted non-fatal objections, survivors < count, round < 3| ideate
+  critic --> validate_survivors --> result
+```
+- **Discover**: M7 niches and gaps, then at most 3 debate rounds (hard cap in code and config; a configured value above 3 is a
+  startup error). Each round: M8 `/ideate` (count + 3), `/gap-analyst`, `/skeptic`, M12 `/objections/filter`. Drop rules: one
+  accepted fatal objection, two accepted objections on different dimensions, or no gap evidence (`idea_dropped` event with reason,
+  round and the evidence ids). The loop stops early with no new accepted non-fatal objections or enough survivors (A-20).
+  Survivors (fewest objections first, at most `count`) go through the Validate graph, 3 at a time, sharing the run budget, with
+  their accepted objections as M11 `objections_accepted`. They run unattended (no questions, no approvals): the effort comes from the
+  ideator's scope (S 60 / M 160 / L 400 h, the same table M8 uses). Ranking is plain code: verdict rank, then score, then
+  confidence (A-19); it never changes a verdict. `partial_result` events stream as children finish.
+- **Challenge**: M2 gives the stored card; M12 `/check` re-checks the claim. Supported means `defended`. Otherwise `removed`: M2
+  creates a new version (`challenge removed <claim>`), the claim's dimension abstains in the recorded M11 input and M11 recomputes.
+  If M11 fails after M2 created the version, the version exists without a card (the run fails).
+- **What-if**: M2 gives the base text and card, M8 `/rewrite` applies the chosen (or custom) change, M2 saves the new version, then the
+  Validate graph rescores it. Step outputs of the previous run of the same idea are reused when their input hash is unchanged
+  (in memory, lost on restart).
+- **Skeptic in Validate** (step 6): runs when the run state holds a structured idea (an M8 idea; no endpoint passes one yet): M8 `/skeptic`, M12 `/objections/filter`,
+  then M11 recomputes with the accepted objections. A free-text idea has no structure for M8, so the step is skipped for it.
 
 ## Layout and tests
 `api/` routes only, `services/` logic (no FastAPI imports), `repositories/` Redis and Postgres,
