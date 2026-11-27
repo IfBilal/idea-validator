@@ -4,7 +4,7 @@ TAG ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo dev)
 NS  := idea-validator
 SERVICES := gateway profile orchestrator scouts tools kb analyst ideation validators scorer verdict critic agentops
 
-.PHONY: dev-env secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images k8s-up deploy smoke netpol-test eval replay
+.PHONY: dev-env secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images jenkins k8s-up deploy smoke netpol-test eval replay
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
@@ -29,6 +29,8 @@ migrate: ## alembic upgrade on the compose Postgres (run `make up` first)
 	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head && uv run --package idea-validator-kb alembic -c services/kb/alembic.ini upgrade head
 seed: ## restore the newest data/snapshots/cards-*.jsonl.gz into the kind cluster via a seed Job (M6i, P3-T09)
 	./scripts/seed.sh $(TAG)
+jenkins: ## start Jenkins in Docker on 127.0.0.1:8085 (needs the kind cluster)
+	scripts/jenkins_up.sh
 images: ## build and push every module image to the local registry, tagged TAG (default: commit SHA)
 	for s in $(SERVICES); do docker build -q -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) . && docker push -q localhost:5001/$$s:$(TAG); done
 	@if [ -f services/ui/package.json ]; then docker build -q -t localhost:5001/ui:$(TAG) services/ui && docker push -q localhost:5001/ui:$(TAG); fi
