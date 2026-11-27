@@ -11,6 +11,10 @@ def _or_card(state: ValidateState, next_node: str) -> str:
     return "card" if state.stopped else next_node
 
 
+def after_rewrite(state: ValidateState) -> str:
+    return _or_card(state, "intake")
+
+
 def after_intake(state: ValidateState) -> str:
     return _or_card(state, "cache_check")
 
@@ -72,7 +76,8 @@ def after_verdict(state: ValidateState) -> str:
 def after_claims_check(state: ValidateState) -> str:
     if state.stopped:
         return "card"
-    return "recompute" if state.removed_claims and not state.recomputed else "stability"
+    changed = bool(state.removed_claims) or state.new_objections
+    return "recompute" if changed and not state.recomputed else "stability"
 
 
 def after_recompute(state: ValidateState) -> str:

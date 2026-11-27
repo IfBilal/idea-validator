@@ -306,3 +306,52 @@ def apply_claim_results(
 
 
 __all__ = ["GATE_FIELDS", "MAX_QUESTIONS", "UnknownSpec"]
+
+
+# ---- suggested changes and the what-if diff----------------------------------------------------
+MAX_CHANGES = 3
+
+
+def _score_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def change_candidates(what_would_make_go: list[Any]) -> list[dict[str, Any]]:
+    """M11 dimension deltas that are usable for M8 ``/suggest-changes`` (at most three)."""
+    out: list[dict[str, Any]] = []
+    for entry in what_would_make_go:
+        if not isinstance(entry, Mapping) or entry.get("dimension") not in DIMENSIONS:
+            continue
+        frm, to = _score_number(entry.get("from")), _score_number(entry.get("to"))
+        if frm is None or to is None or not 0 <= frm < to <= 5:
+            continue
+        out.append(
+            {
+                "dimension": entry["dimension"],
+                "from": frm,
+                "to": to,
+                "new_verdict": entry.get("new_verdict"),
+            }
+        )
+    return out[:MAX_CHANGES]
+
+
+def build_diff(base: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, Any]:
+    """Plain comparison of two cards; it only reads M11's outputs."""
+    before = {s["dimension"]: s.get("score") for s in base.get("scores") or []}
+    after = {s["dimension"]: s.get("score") for s in new.get("scores") or []}
+    rows: list[dict[str, Any]] = []
+    for dim in DIMENSIONS:
+        b, a = _score_number(before.get(dim)), _score_number(after.get(dim))
+        if b is not None and a is not None:
+            rows.append({"dimension": dim, "from": b, "to": a, "delta": round(a - b, 6)})
+    return {
+        "verdict_from": base.get("verdict"),
+        "verdict_to": new.get("verdict"),
+        "verdict_changed": base.get("verdict") != new.get("verdict"),
+        "score_from": base.get("score"),
+        "score_to": new.get("score"),
+        "dimensions": rows,
+    }

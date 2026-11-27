@@ -38,6 +38,12 @@ class ValidateState(BaseModel):
     title: str | None = None
     overrides: dict[str, float] = Field(default_factory=dict)  # values the user supplied up front
     unknowns: list[dict[str, Any]] = Field(default_factory=list)  # extra caller-declared unknowns
+    interactive: bool = True  # False for Discover children: no questions, no approvals
+    objections: list[dict[str, str]] = Field(default_factory=list)  # accepted: M11 input
+    structured_idea: dict[str, Any] | None = None  # an M8 idea: enables the skeptic step
+    whatif: dict[str, Any] | None = None  # {base_version, change_id | custom_change}
+    base_card: dict[str, Any] | None = None
+    change_note: str | None = None
 
     # --- progress -----------------------------------------------------------------------------
     step: str = "INTAKE"
@@ -81,6 +87,10 @@ class ValidateState(BaseModel):
     claim_results: list[dict[str, Any]] = Field(default_factory=list)
     removed_claims: list[str] = Field(default_factory=list)
     recomputed: bool = False
+    skeptic_done: bool = False
+    new_objections: bool = False  # the skeptic added objections: M11 must recompute
+    changes: list[dict[str, Any]] = Field(default_factory=list)
+    verdict_input: dict[str, Any] | None = None
     verdict_final: bool = False  # True only once the challenge settled the M11 verdict
     missing_inputs: list[str] = Field(default_factory=list)  # inputs we refuse to guess
     card: dict[str, Any] | None = None

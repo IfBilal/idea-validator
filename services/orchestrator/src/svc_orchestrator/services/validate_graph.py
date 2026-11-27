@@ -24,6 +24,7 @@ Route = Callable[[ValidateState], str]
 
 # node -> (step name shown to users, routing function, every node it may lead to)
 EDGES: dict[str, tuple[Route, list[str]]] = {
+    "rewrite": (routing.after_rewrite, ["intake", "card"]),
     "intake": (routing.after_intake, ["cache_check", "card"]),
     "cache_check": (routing.after_cache_check, ["evidence", "card"]),
     "evidence": (routing.after_evidence, ["deep_search_decision", "features", "card"]),
@@ -43,6 +44,7 @@ EDGES: dict[str, tuple[Route, list[str]]] = {
     "stability": (routing.after_stability, ["card"]),
 }
 STEP_NAMES = {
+    "rewrite": "REWRITE",
     "intake": "INTAKE",
     "cache_check": "CACHE_CHECK",
     "evidence": "EVIDENCE",
@@ -71,13 +73,16 @@ def build_validate_graph(
 ) -> CompiledStateGraph[ValidateState, None, ValidateState, ValidateState]:
     nodes = ValidateNodes(ctx)
     graph = StateGraph(ValidateState)
+    graph.add_node("rewrite", nodes.rewrite_entry)  # a no-op unless this is a what-if
     for name in STEP_NAMES:
+        if name == "rewrite":
+            continue
         node = getattr(nodes, name)
         if name in PAUSING:
             graph.add_node(name, nodes.guarded(STEP_NAMES[name], node, announce=False))
         else:
             graph.add_node(name, nodes.guarded(STEP_NAMES[name], node))
-    graph.add_edge(START, "intake")
+    graph.add_edge(START, "rewrite")
     for name, (route, targets) in EDGES.items():
         graph.add_conditional_edges(name, _traced(ctx, name, route), targets)
     graph.add_edge("card", END)

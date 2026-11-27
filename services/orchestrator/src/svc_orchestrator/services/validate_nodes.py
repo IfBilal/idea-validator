@@ -13,7 +13,7 @@ from langgraph.types import interrupt
 from pydantic import ValidationError
 
 from common.budget import Spend
-from common.errors import BudgetExceeded, DomainError, UpstreamError
+from common.errors import BudgetExceeded, DomainError, NotFound, UpstreamError
 from common.schemas import DimensionScore, EvidenceItem, Verdict
 from svc_orchestrator.models.api import UnknownSpec
 
@@ -71,6 +71,76 @@ class ValidateNodes:
 
     def _step(self, state: ValidateState, step: str, **kw: Any) -> Awaitable[Any]:
         return self.ctx.runner.run(state.memo, step, **kw)
+
+    # ---- REWRITE (what-if only) ------------------------------------------------------------
+    async def rewrite_entry(self, state: ValidateState) -> Update:
+        if state.whatif is None:
+            return {}  # a plain validate run: nothing to do, nothing announced
+        return await self.guarded("REWRITE", self.rewrite)(state)
+
+    async def rewrite(self, state: ValidateState) -> Update:
+        """Apply one change to the base version's text, save it as a new version (M2)."""
+        spec = state.whatif or {}
+        profile = self.ctx.clients.profile
+
+        async def load() -> Any:
+            found = await profile.get_idea_version(state.idea_id, int(spec["base_version"]))
+            return {"text": found.text, "card": found.card}
+
+        base = await self._step(
+            state,
+            "whatif_base",
+            tool="m2.get_idea_version",
+            inputs={"idea_id": state.idea_id, "version": spec["base_version"]},
+            call=load,
+            timeout_s=self.t.profile,
+            memoise=False,
+        )
+        change_text = spec.get("custom_change")
+        if change_text is None:
+            wanted = spec.get("change_id")
+            options = base.value["card"].get("changes") or []
+            match = next((c for c in options if c.get("change_id") == wanted), None)
+            if match is None:
+                raise NotFound(f"the base version has no proposed change {wanted!r}")
+            change_text = match["text"]
+
+        async def rewrite() -> Any:
+            done = await self.ctx.clients.ideation.rewrite(
+                self.ctx.run_id, base.value["text"], change_text
+            )
+            return {"new_text": done.new_text, "change_note": done.change_note}
+
+        written = await self._step(
+            state,
+            "rewrite",
+            tool="m8.rewrite",
+            inputs={"idea": base.value["text"], "change": change_text},
+            call=rewrite,
+            timeout_s=self.t.llm,
+        )
+
+        async def save() -> Any:
+            return await profile.create_idea_version(
+                state.idea_id, written.value["new_text"], written.value["change_note"]
+            )
+
+        saved = await self._step(
+            state,
+            "whatif_save",
+            tool="m2.create_idea_version",
+            inputs={"idea_id": state.idea_id, "text": written.value["new_text"]},
+            call=save,
+            timeout_s=self.t.profile,
+            memoise=False,
+        )
+        return {
+            "idea_text": written.value["new_text"],
+            "idea_version": saved.value,
+            "change_note": written.value["change_note"],
+            "base_card": base.value["card"],
+            "memo": written.memo_update,
+        }
 
     # ---- INTAKE ------------------------------------------------------------------------------
     async def intake(self, state: ValidateState) -> Update:
@@ -275,6 +345,17 @@ class ValidateNodes:
         )
         if not needs:
             return {"notes": notes, "memo": memo}
+        if not state.interactive:  # nobody to ask: skip rather than spend without consent
+            return {
+                "deep_search_done": True,
+                "wants_deep_search": False,
+                "notes": [
+                    *notes,
+                    "deep search skipped: it needs approval and this run is unattended"
+                    " (without approval nothing is spent)",
+                ],
+                "memo": memo,
+            }
         approval = {
             "approval_id": f"ap_{self.ctx.run_id}_deep_search",
             "action": SCOUT_ACTION,
@@ -447,12 +528,14 @@ class ValidateNodes:
             extra=state.scorer_extra,
             overrides=state.overrides,
             answers=state.answers,
-            objections=[],
+            objections=state.objections,
         )
 
     async def clarify_check(self, state: ValidateState) -> Update:
         if builders.effort_is_unknown(state.scorer_extra, state.overrides, state.answers):
             return await self._ask_for_effort(state)
+        if not state.interactive:
+            return {"pending_question": None}
         specs = builders.pending_unknowns(
             state.scorer_extra, state.overrides, state.unknowns, state.asked, state.vetted
         )
@@ -518,7 +601,11 @@ class ValidateNodes:
     async def _ask_for_effort(self, state: ValidateState) -> Update:
         """M11 requires the build hours. Ask once (within the cap); never send a made-up value."""
         field = "estimated_effort_hours"
-        if field in state.asked or len(state.asked) >= builders.MAX_QUESTIONS:
+        if (
+            not state.interactive
+            or field in state.asked
+            or len(state.asked) >= builders.MAX_QUESTIONS
+        ):
             self.ctx.runner.decision(
                 "missing_input", {"field": field}, {"verdict": None, "to": "card"}
             )
@@ -586,6 +673,7 @@ class ValidateNodes:
             "verdict": out.value,
             "recomputed": recomputed,
             "verdict_final": recomputed,  # a fresh verdict after removed claims is settled
+            "verdict_input": request,
             "memo": out.memo_update,
         }
 
@@ -618,7 +706,74 @@ class ValidateNodes:
         if removed:
             update["scores"] = [s.model_dump(mode="json") for s in new_scores]
             update["notes"] = [f"claims removed as unsupported: {', '.join(removed)}"]
+        if state.structured_idea and not state.skeptic_done:
+            await self._skeptic(state, new_scores, update)
         return update
+
+    async def _skeptic(
+        self, state: ValidateState, scores: list[DimensionScore], update: Update
+    ) -> None:
+        """Step 6: M8 objects, M12 keeps the evidence-backed ones, M11 recomputes with them."""
+        idea = state.structured_idea or {}
+        ref = str(idea.get("idea_ref", state.idea_id))
+        score_map = {ref: {s.dimension: s.score for s in scores if s.score is not None}}
+        update["skeptic_done"] = True
+        update["notes"] = list(update.get("notes", []))
+        try:
+
+            async def object_() -> Any:
+                found = await self.ctx.clients.ideation.skeptic(
+                    self.ctx.run_id, [idea], profile=state.profile, scores=score_map
+                )
+                return [o.model_dump(mode="json") for o in found]
+
+            raised = await self._step(
+                state,
+                "skeptic",
+                tool="m8.skeptic",
+                inputs={"idea": idea, "scores": score_map},
+                call=object_,
+                timeout_s=self.t.llm,
+            )
+            update["memo"] = {**update["memo"], **raised.memo_update}
+            if not raised.value:
+                return
+
+            async def filter_() -> Any:
+                result = await self.ctx.clients.critic.filter_objections(
+                    self.ctx.run_id, raised.value
+                )
+                return sorted(result.accepted_ids)
+
+            kept = await self._step(
+                state,
+                "objection_filter",
+                tool="m12.objections_filter",
+                inputs={"objections": raised.value},
+                call=filter_,
+                timeout_s=self.t.critic,
+            )
+            update["memo"] = {**update["memo"], **kept.memo_update}
+        except BudgetExceeded:
+            raise
+        except (
+            DomainError
+        ) as exc:  # the skeptic is extra scrutiny: failing it must not lose a verdict
+            update["degraded"] = True
+            update["notes"].append(f"skeptic step failed ({exc.message}); no objections applied")
+            return
+        accepted = [o for o in raised.value if o["objection_id"] in set(kept.value)]
+        if accepted:
+            known = {o["objection_id"] for o in state.objections}
+            fresh = [
+                {"dimension": o["dimension"], "objection_id": o["objection_id"]}
+                for o in accepted
+                if o["objection_id"] not in known
+            ]
+            update["objections"] = [*state.objections, *fresh]
+            update["new_objections"] = bool(fresh)
+            update["verdict_final"] = not update["removed_claims"] and not fresh
+            update["notes"].append(f"{len(accepted)} objection(s) accepted by the critic")
 
     # ---- STABILITY -----------------------------------------------------------------------------
     async def stability(self, state: ValidateState) -> Update:
@@ -632,7 +787,59 @@ class ValidateNodes:
                 "what_would_make_go": len(verdict.get("what_would_make_go") or []),
             },
         )
-        return {}
+        if not state.verdict or not state.verdict_final:
+            return {}
+        return await self._suggest_changes(state, state.verdict)
+
+    async def _suggest_changes(self, state: ValidateState, verdict: dict[str, Any]) -> Update:
+        """Step 7: turn M11's dimension deltas into concrete change texts (M8, text only)."""
+        candidates = builders.change_candidates(verdict.get("what_would_make_go") or [])
+        by_dim = {s["dimension"]: s for s in state.scores}
+        known = {e["evidence_id"]: e for e in state.evidence}
+        changes: list[dict[str, Any]] = []
+        notes: list[str] = []
+        memo: dict[str, Any] = {}
+        degraded = False
+        for cand in candidates:
+            cited = by_dim.get(cand["dimension"], {}).get("evidence_ids", [])
+            shown = [known[i] for i in cited if i in known][:20]
+
+            async def call(cand: dict[str, Any] = cand, shown: list[Any] = shown) -> Any:
+                found = await self.ctx.clients.ideation.suggest_changes(
+                    run_id=self.ctx.run_id,
+                    idea_text=state.idea_text,
+                    dimension=cand["dimension"],
+                    current=cand["from"],
+                    to=cand["to"],
+                    evidence=shown,
+                    profile=state.profile,
+                )
+                return [c.model_dump(mode="json") for c in found]
+
+            try:
+                out = await self._step(
+                    state,
+                    "suggest_changes",
+                    tool="m8.suggest_changes",
+                    inputs={"idea": state.idea_text, "delta": cand, "evidence": cited},
+                    call=call,
+                    timeout_s=self.t.llm,
+                )
+            except BudgetExceeded:
+                raise
+            except DomainError as exc:  # suggestions are a bonus: the verdict stands without them
+                degraded = True
+                notes.append(f"could not suggest a change for {cand['dimension']} ({exc.message})")
+                continue
+            memo.update(out.memo_update)
+            if out.value:
+                changes.append(
+                    {**out.value[0], **{k: cand[k] for k in ("from", "to", "new_verdict")}}
+                )
+        update: Update = {"changes": changes, "notes": notes, "memo": memo}
+        if degraded:
+            update["degraded"] = True
+        return update
 
     # ---- CARD ----------------------------------------------------------------------------------
     async def card(self, state: ValidateState) -> Update:
@@ -662,6 +869,13 @@ class ValidateNodes:
         }
         if state.missing_inputs:
             card["missing"] = list(state.missing_inputs)
+        if settled:
+            card["changes"] = list(state.changes)
+            card["verdict_input"] = state.verdict_input
+            if state.whatif is not None:
+                card["base_version"] = state.whatif["base_version"]
+                card["change_note"] = state.change_note
+                card["diff"] = builders.build_diff(state.base_card or {}, card)
         if state.stopped:
             card["stop_reason"] = state.stop_reason
             card["error"] = state.error
