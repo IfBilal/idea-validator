@@ -81,6 +81,15 @@ DATA = {
     },
     "qdrant": {"image": "qdrant/qdrant:v1.15.5", "port": 6333, "storage": "2Gi"},
 }
+# one-shot Jobs: image comes from a service, they call only what is listed (no trace edge)
+JOBS: dict[str, dict[str, Any]] = {
+    "migrate": {
+        "image": "profile",
+        "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
+        "secrets": ["DATABASE_URL"],
+        "calls": ["postgres"],
+    },
+}
 IMAGE_TAG = "unset"  # the overlay / deploy script sets the commit SHA; never "latest"
 RESOURCES = {  # placeholders until scripts/measure_resources.sh (P11-T01) sets them from measurements
     "requests": {"cpu": "50m", "memory": "128Mi"},
@@ -96,6 +105,8 @@ def edges() -> dict[str, list[str]]:
         if caller != "agentops":
             callees.add("agentops")
         out[caller] = sorted(callees)
+    for job, spec in JOBS.items():
+        out[job] = sorted(spec["calls"])
     return out
 
 
@@ -363,10 +374,56 @@ def _peers(names: list[str], key: str) -> list[dict[str, Any]]:
     return [{"podSelector": {"matchLabels": {"app": n}}} for n in names] if key else []
 
 
+def _job(name: str) -> str:
+    spec = JOBS[name]
+    container = {
+        "name": name,
+        "image": f"{NAMESPACE}/{spec['image']}:{IMAGE_TAG}",
+        "command": spec["command"],
+        "env": [
+            {"name": k, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k}}}
+            for k in spec["secrets"]
+        ],
+        "resources": RESOURCES,
+        "securityContext": {
+            "allowPrivilegeEscalation": False,
+            "readOnlyRootFilesystem": True,
+            "capabilities": {"drop": ["ALL"]},
+        },
+        "volumeMounts": [{"name": "tmp", "mountPath": TMP_MOUNT}],
+    }
+    job = {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": _meta(name),
+        "spec": {
+            "backoffLimit": 6,
+            "ttlSecondsAfterFinished": 3600,
+            "template": {
+                "metadata": {"labels": {"app": name}},
+                "spec": {
+                    "serviceAccountName": "app",
+                    "automountServiceAccountToken": False,
+                    "restartPolicy": "OnFailure",
+                    "securityContext": {
+                        "runAsNonRoot": True,
+                        "runAsUser": 10001,
+                        "runAsGroup": 10001,
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "containers": [container],
+                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                },
+            },
+        },
+    }
+    return _dump(job)
+
+
 def _netpols() -> str:
     docs: list[dict[str, Any]] = []
     edge = edges()
-    for name in [*SERVICES, *DATA]:
+    for name in [*SERVICES, *DATA, *JOBS]:
         callers = _callers(name)
         callees = edge.get(name, [])
         spec: dict[str, Any] = {
@@ -527,6 +584,7 @@ def _kustomization() -> str:
         ["namespace.yaml", "serviceaccount.yaml"]
         + [f"data/{n}.yaml" for n in DATA]
         + [f"services/{n}.yaml" for n in SERVICES]
+        + [f"jobs/{n}.yaml" for n in JOBS]
         + [
             "ingress.yaml",
             "hpa.yaml",
@@ -594,6 +652,8 @@ def render() -> dict[str, str]:
         files[f"k8s/base/services/{name}.yaml"] = _deployment(name)
     for name in DATA:
         files[f"k8s/base/data/{name}.yaml"] = _statefulset(name)
+    for name in JOBS:
+        files[f"k8s/base/jobs/{name}.yaml"] = _job(name)
     return files
 
 

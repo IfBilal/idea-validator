@@ -11,6 +11,18 @@ python scripts/gen_k8s.py   # regenerate manifests after editing the table
 kubectl kustomize --load-restrictor=LoadRestrictionsNone k8s/overlays/dev   # config/ lives outside k8s/, hence the flag
 ```
 
+## Run the whole stack on kind
+```
+make k8s-up        # once: cluster + Calico + ingress + metrics-server (needs fs.inotify.max_user_instances >= 512)
+make images TAG=dev          # build and push the 13 images to localhost:5001
+make deploy TAG=dev          # secrets (from .env) -> manifests -> datastores -> migrate Job -> all Deployments
+make smoke                   # register, login, save and read a profile through the ingress, ops endpoints hidden
+make k8s-verify              # registry, ingress, metrics-server and that Calico enforces NetworkPolicy
+```
+`make secrets` creates `app-secrets` on its own (random values are generated once and kept on re-runs, so the database
+password never changes under a running database; values are never printed). Every script pins `~/.kube/idea-validator.kubeconfig`
+and refuses any other context.
+
 What is enforced (and tested in `libs/common/tests/test_k8s_manifests.py`): non-root UID 10001, read-only root filesystem, all
 capabilities dropped, seccomp RuntimeDefault, no service-account token, probes on `/health` and `/ready`, rolling update with
 `maxUnavailable: 0`, no `:latest`, no Secret in git, one NetworkPolicy per workload derived from the call graph (a service accepts

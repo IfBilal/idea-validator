@@ -175,6 +175,7 @@ def test_the_dev_overlay_builds() -> None:
         "Service",
         "NetworkPolicy",
         "Ingress",
+        "Job",
     } <= kinds
 
 
@@ -232,3 +233,36 @@ def test_the_public_ingress_does_not_expose_ops_endpoints() -> None:
         assert pattern.match(allowed), allowed
     for hidden in ("/api/metrics", "/api/ready", "/api/internal/anything", "/api/", "/api"):
         assert not pattern.match(hidden), hidden
+
+
+def test_the_profile_image_carries_its_migrations() -> None:
+    text = (ROOT / "services" / "profile" / "Dockerfile").read_text()
+    assert "alembic.ini" in text and "migrations" in text, "the migrate Job runs from this image"
+
+
+def test_the_migrate_job_runs_alembic_from_the_profile_image_and_may_only_reach_postgres() -> None:
+    (job,) = [
+        o for o in _all_objects() if o["kind"] == "Job" and o["metadata"]["name"] == "migrate"
+    ]
+    spec = job["spec"]["template"]["spec"]
+    container = spec["containers"][0]
+    assert container["image"].startswith("idea-validator/profile:")
+    assert container["command"][:2] == ["alembic", "-c"] and container["command"][-2:] == [
+        "upgrade",
+        "head",
+    ]
+    assert spec["restartPolicy"] == "OnFailure" and job["spec"]["ttlSecondsAfterFinished"] > 0
+    assert container["securityContext"]["readOnlyRootFilesystem"] is True
+    names = {e["name"] for e in container["env"]}
+    assert "DATABASE_URL" in names and "GROQ_API_KEY" not in names and "INTERNAL_TOKEN" not in names
+    policy = _policies()["np-migrate"]["spec"]
+    reach = {
+        r["podSelector"]["matchLabels"]["app"] for rule in policy["egress"] for r in rule["to"]
+    }
+    assert reach == {"postgres"}
+    pg_in = {
+        r["podSelector"]["matchLabels"]["app"]
+        for rule in _policies()["np-postgres"]["spec"]["ingress"]
+        for r in rule["from"]
+    }
+    assert "migrate" in pg_in
