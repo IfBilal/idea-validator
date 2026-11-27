@@ -6,8 +6,8 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Phase 0-2 foundation merged (PR #12); in progress: M2 rest + gateway, then Phase 5** |
-| Current task | Dev B: M2 rest (P2-T07, P2-T08), gateway (P2-T09). Dev A: P0-T06..T08, P1-T03..T10 (PR #13 k8s_up in review) |
+| Current phase | **Phase 2-5 in progress (foundation, gateway, M5, M9/M10, M12 merged; M2 storage, M5 hardening and LLM proxy in review)** |
+| Current task | Dev B: orchestrator (M3), ideation (M8) resume after the usage-limit reset; then M7, Discover, gateway run endpoints. Dev A: P0-T06/T08, P1-T03..T10, scouts/ingestion/KB (M4/M6i/M6) |
 | Last green main commit | — |
 | Last Jenkins deploy | — |
 | Cards in KB | 0 / 1,500 (sources 0 / 3) |
@@ -22,7 +22,7 @@
 | Dev B (Decision, Agents & Analysis) | Bilal | 24i-3166 | IfBilal | M11, M2, M1 gateway, M3, M9, M8, M7, M12, M13 (eval) |
 
 ## Current task plan
-Everything below is in one PR (#12, one commit per task, merge with "Create a merge commit"). Next for Dev B once it is merged: M2 rest (ideas/versions/verdict/run/approval storage P2-T07, cache keys P2-T08), gateway auth + `/profile` + JWT + rate limits (P2-T09), then rubric examples and Phase 5 (M9 scorers, M3 graph). Rubric examples and the labelled verdict set can start from `main` now.
+Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M5 hardening #22, LLM proxy #23) -> M3 Validate graph + budget ledger (subagent, resumes after the limit reset) -> M8 agents (subagent) -> M7 analyst (needs M6) -> gateway run/ideas/SSE endpoints -> Discover graph + challenge/what-if -> M13 eval harness -> behaviour tests -> verdict tuning (needs the labelled set, see eval/labelled/) -> Phase 11/12. Blocked on Dev A: M6 KB, scouts/ingestion (data), Kustomize/Jenkins (deploy).
 
 ## Phase checklist
 | Phase | Status | Testing gate | Security gate |
@@ -55,6 +55,14 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 | P1-T01 service template + app factory | #12 | 2026-11-26 | Podman and Docker 29 builds verified |
 | P1-T02 13 stub services | #12 | 2026-11-26 | all 13 images build |
 | P2-T09 (rest) gateway: register/login/JWT, /profile, rate limits, CORS, security headers, 32 KiB body limit | in review | 2026-11-27 | 117 tests; limiter shared through Redis |
+| P0-T07 CI workflow (Dev A) + trivy pin | #16 | 2026-11-27 | merged; Trivy found real CVEs, base image bumped in #21 |
+| P2-T09 gateway: auth, JWT, /profile, Redis rate limits, headers, body limit | #17 | 2026-11-27 | security-reviewed; trusted-proxy hops, fail-closed limiter |
+| P2-T10, T11 M5 fetch pipeline: SSRF guard, robots, rate limits, cache, sanitiser | #18 | 2026-11-27 | merged before its security review finished; fixes in #22 |
+| P5-T01..T03 M9 scorers + M10 hosted wrapper | #20 | 2026-11-27 | built by a subagent, 662 tests; needs M5 /llm (#23) and M7 features to run end to end |
+| P5-T04 M12 critic + rails + approval evaluation | #19 | 2026-11-27 | Taimoor's review found a real hard-rule-2 gap (names must be in evidence), fixed |
+| M5 security hardening (ReDoS 12 s -> 0.0 s, compression, deadlines, cache, source-by-host) | #22 | 2026-11-27 | open |
+| P2-T12 M5 LLM proxy | #23 | 2026-11-27 | open, ADR-008 |
+| P2-T07 rest, P2-T08 M2 storage + Redis verdict cache | #15 | 2026-11-27 | open, approved except sync |
 | P2-T01..T05 M11 verdict engine | #12 | 2026-11-26 | 24 golden vectors, 99% coverage, verdict-guardian reviewed twice |
 | P2-T06 M2 tables + Alembic | #12 | 2026-11-26 | |
 | P0-T07 pr-checks workflow repaired | this PR | 2026-11-27 | actionlint clean; ui-tests, retrieval-gate, manifests jobs added with their artifacts (P1-T03, P3-T12, P1-T05) |
@@ -63,7 +71,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 
 ## Blocked / Needs human
 - [x] GitHub repo + branch protection (done 2026-11-26; add required status checks once CI works)
-- [ ] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
+- [x] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
 - [ ] **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
@@ -72,6 +80,8 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 - [ ] Ask instructor the open questions in `docs/harness/27_ASSUMPTIONS_AND_OPEN_QUESTIONS.md` §B
 
 ## Decisions made during build (link ADRs)
+- ADR-008 (M5 LLM proxy is a thin OpenAI-compatible adapter; LiteLLM stays pluggable).
+- Three recurring jobs run the Dev B routine (incoming PRs, outgoing PRs, development + subagents). Subagents: max 3, Sonnet, worktrees; usage limit resets 17:10 PKT and the development job resumes them.
 - ADR-001..007 (initial) in `docs/decisions/`
 - Ownership rebalance (before Phase 0): UI moved Dev B → Dev A; M7, M12, M8 Skeptic/Change Suggester moved Dev A → Dev B (see 18 §1, 27 §A).
 
