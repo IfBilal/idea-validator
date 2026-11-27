@@ -34,3 +34,11 @@ export type Profile = z.infer<typeof Profile>;
 
 export const EMAIL = z.string().trim().email("Enter a valid email address").max(254);
 export const PASSWORD = z.string().min(10, "Use at least 10 characters").max(200);
+
+export const ValidateAccepted = z.object({
+  run_id: z.string(),
+  idea_id: z.string(),
+  version: z.number().int(),
+});
+
+export const Accepted = z.object({}).passthrough();

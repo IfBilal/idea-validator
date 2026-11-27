@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { clearSession, getToken, safeRedirect, useIsAuthenticated } from "@/lib/auth";
 import { LoginPage, RegisterPage } from "@/routes/auth";
 import { ProfilePage } from "@/routes/profile";
+import { ValidatePage } from "@/routes/validate";
 
 function Shell() {
   const authed = useIsAuthenticated();
@@ -151,7 +152,7 @@ export const routeTree = rootRoute.addChildren([
     component: RegisterPage,
   }),
   protectedRoute("/profile", ProfilePage),
-  protectedRoute("/validate", () => <Placeholder title="Validate an idea" />),
+  protectedRoute("/validate", ValidatePage),
   protectedRoute("/discover", () => <Placeholder title="Discover ideas" />),
   protectedRoute("/ideas", () => <Placeholder title="My ideas" />),
 ]);
