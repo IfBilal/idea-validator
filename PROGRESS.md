@@ -82,6 +82,15 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 - ADR-001..007 (initial) in `docs/decisions/`
 - Ownership rebalance (before Phase 0): UI moved Dev B → Dev A; M7, M12, M8 Skeptic/Change Suggester moved Dev A → Dev B (see 18 §1, 27 §A).
 
+## Tracked follow-ups (not blocking a merge; do not lose them)
+**M3 orchestrator (from the #27 review)**
+1. Budget check and charge are not atomic: with 4 parallel evidence searches `max_steps=4` can end at 7. `common/budget.py` needs a Lua compare-and-reserve (Dev A takes it); the in-memory test fake never yields, so add a yielding fake or a real-Redis concurrency test.
+2. No restart recovery: `RunService._runs` is in memory; nothing re-attaches to the Postgres checkpointer after a pod restart (docs/harness/07 §1). Rehydrate from the M2 run mirror. Without `DATABASE_URL` the checkpointer is `MemorySaver`; in a cluster it must fail (`ENVIRONMENT=production` already does).
+3. Spec deviations are listed openly in `services/orchestrator/README.md` (no M12 `/rail/input`, no M8 `/skeptic` so the -0.5 challenge penalty cannot apply yet, stability only traced, approval only for deep search, clarify after scorers, `scorer_concurrency` unused).
+4. Ownership: M3 never compares `user_id` (GET/answer/approve are by run id and predictable question/approval ids). Acceptable only because M1 is the sole caller; the gateway run endpoints (P5-T07) must enforce it and have a cross-user test.
+5. Trace inputs are an `input_hash` only (docs/harness/13 §8). The cache key has no `user_id` (safe only while idea ids are globally unique, which M2 guarantees). Register `RunStatus` with LangGraph's msgpack allow-list before strict mode becomes the default.
+6. Not verified: real Redis/Postgres under true concurrency, and that M5/M4 write tokens, pages and cost into the same `budget:{run_id}` hash.
+
 ## Lessons / notes for future sessions
 - Docker is not installed system-wide. A rootless Docker 29 lives in `~/.local/docker-rootless` (start: `DOCKERD_ROOTLESS_ROOTLESSKIT_NET=pasta ~/.local/docker-rootless/bin/dockerd-rootless.sh`, then `DOCKER_HOST=unix:///run/user/1000/docker.sock`). Its published ports do not reach the host here; use Podman (`podman run -p`) for local databases and set `TEST_DATABASE_URL` / `TEST_REDIS_URL`. CI uses real Docker + testcontainers.
 - A bare `models/` line in `.gitignore` hid every Python `models/` package from git (found in review of #12). Ignore rules for ML weights must be anchored (`/models/`); `libs/common/tests/test_repo_hygiene.py` now fails if source files are ignored. Always verify a PR from a fresh clone (`git clone`, `uv sync --all-packages`, `make lint typecheck test`), not from your working tree.
