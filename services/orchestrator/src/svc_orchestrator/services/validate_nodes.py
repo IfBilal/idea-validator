@@ -31,6 +31,11 @@ SCOUT_SOURCES = ("hackernews", "github", "reddit")
 SCOUT_ACTION = "deep_search"
 
 
+def _norm(text: str) -> str:
+    """Whitespace-insensitive form of the idea text for memo hashes (like the cache key)."""
+    return " ".join(text.split())
+
+
 def _dump_verdict(verdict: Verdict) -> dict[str, Any]:
     return verdict.model_dump(mode="json", by_alias=True)
 
@@ -424,7 +429,11 @@ class ValidateNodes:
                 state,
                 "features",
                 tool="m7.features",
-                inputs={"idea": state.idea_text, "evidence_ids": ids, "profile": state.profile},
+                inputs={
+                    "idea": _norm(state.idea_text),
+                    "evidence_ids": ids,
+                    "profile": state.profile,
+                },
                 call=call,
                 timeout_s=self.t.features,
             )
@@ -459,7 +468,7 @@ class ValidateNodes:
                 "scorers",
                 tool="m9.score_all",
                 inputs={
-                    "idea": state.idea_text,
+                    "idea": _norm(state.idea_text),
                     "evidence_ids": sorted(allowed),
                     "features": state.features,
                     "profile": state.profile,
@@ -806,7 +815,7 @@ class ValidateNodes:
                     state,
                     "suggest_changes",
                     tool="m8.suggest_changes",
-                    inputs={"idea": state.idea_text, "delta": cand, "evidence": cited},
+                    inputs={"idea": _norm(state.idea_text), "delta": cand, "evidence": cited},
                     call=call,
                     timeout_s=self.t.llm,
                 )

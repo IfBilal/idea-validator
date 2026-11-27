@@ -147,6 +147,13 @@ _DEFAULT_LIMITS: dict[str, dict[str, Any]] = {
         "max_cost_usd": 0.05,
         "approval_threshold_usd": 0.05,
     },
+    "whatif": {
+        "max_tokens": 40000,
+        "max_pages": 10,
+        "max_steps": 60,
+        "max_cost_usd": 0.03,
+        "approval_threshold_usd": 0.03,
+    },
     "challenge": {
         "max_tokens": 10000,
         "max_pages": 0,
@@ -453,23 +460,25 @@ class Rig:
         self.redis = FakeRedis()
         self.publisher = InMemoryPublisher()
         self.records: list[TraceRecord] = []
-        section: dict[str, Any] = {
-            "max_retries": max_retries,
-            "timeouts_s": {"scorer": 2, "kb_search": 1, "verdict": 1, **(timeouts or {})},
-            **_DEFAULT_LIMITS[kind],
-            "debate": {"max_rounds": debate_max_rounds},
-            "validate_children_concurrency": children_concurrency,
-            "deep_search": {"max_pages": deep_search_pages, "est_cost_per_page_usd": 0.0008},
-            **(limits or {}),
+
+        def section(of: str) -> dict[str, Any]:
+            return {
+                "max_retries": max_retries,
+                "timeouts_s": {"scorer": 2, "kb_search": 1, "verdict": 1, **(timeouts or {})},
+                **_DEFAULT_LIMITS[of],
+                "debate": {"max_rounds": debate_max_rounds},
+                "validate_children_concurrency": children_concurrency,
+                "deep_search": {"max_pages": deep_search_pages, "est_cost_per_page_usd": 0.0008},
+                **(limits or {}),
+            }
+
+        document = {
+            **{k: section(k) for k in _DEFAULT_LIMITS},
+            "concurrency": {"scorers": 4},
+            "approval_timeout_s": approval_timeout_s,
         }
-        self.config = run_config_from(
-            {
-                kind: section,
-                "concurrency": {"scorers": 4},
-                "approval_timeout_s": approval_timeout_s,
-            },
-            kind,
-        )
+        self.configs = {k: run_config_from(document, k) for k in _DEFAULT_LIMITS}
+        self.config = self.configs[kind]
         self.clients = build_clients(
             URLS,
             self.config,
@@ -478,17 +487,18 @@ class Rig:
             transport=self.world.transport(),
         )
 
-    def context(self, run_id: str) -> Any:
+    def context(self, run_id: str, kind: str | None = None) -> Any:
         from common.budget import BudgetLedger
         from common.tracing import Tracer
 
         from .repositories.events import RunEmitter
         from .services.run_context import RunContext
 
+        config = self.configs[kind] if kind else self.config
         return RunContext(
             run_id=run_id,
-            config=self.config,
-            ledger=BudgetLedger(self.redis, run_id, self.config.limits),
+            config=config,
+            ledger=BudgetLedger(self.redis, run_id, config.limits),
             tracer=Tracer("orchestrator", sink=self.records.append),
             emitter=RunEmitter(run_id, self.publisher),
             clients=self.clients,

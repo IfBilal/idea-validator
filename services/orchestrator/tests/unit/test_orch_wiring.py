@@ -26,7 +26,7 @@ async def test_wiring_with_redis_builds_a_working_run_service(redis_url: str) ->
     async with AsyncExitStack() as stack:
         service = await _wire(settings, app, stack)
         assert await app.state.redis.ping()
-        ctx = service._factory("run_wired")
+        ctx = service._factory("run_wired", "validate")
         assert (await ctx.ledger.limits()).max_steps == 80
         await app.state.redis.delete("budget:run_wired")
         await service.aclose()
