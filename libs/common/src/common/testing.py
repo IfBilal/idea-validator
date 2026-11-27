@@ -8,6 +8,7 @@ otherwise testcontainers starts disposable ones (CI: needs a running Docker).
 
 import os
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -35,3 +36,66 @@ def redis_url() -> Iterator[str]:
     with RedisContainer("redis:7.4-alpine") as redis:
         host, port = redis.get_container_host_ip(), redis.get_exposed_port(6379)
         yield f"redis://{host}:{port}/0"
+
+
+class EmulatedRedis:
+    """In-memory stand-in for the Redis calls the budget ledger makes, including the reserve script.
+
+    ``eval`` only accepts ``RESERVE_SCRIPT`` and mirrors it step for step: libs/common/tests/
+    test_budget_reserve.py runs the same scenarios against this class and a real Redis, so the two
+    cannot drift apart. Single event loop, no awaits inside ``eval``: atomic like the real script.
+    """
+
+    def __init__(self) -> None:
+        self.hashes: dict[str, dict[str, float]] = {}
+        self.ttls: dict[str, int] = {}
+
+    async def hincrby(self, name: str, key: str, amount: int) -> int:
+        h = self.hashes.setdefault(name, {})
+        h[key] = int(h.get(key, 0)) + int(amount)
+        return int(h[key])
+
+    async def hincrbyfloat(self, name: str, key: str, amount: float) -> float:
+        h = self.hashes.setdefault(name, {})
+        h[key] = float(h.get(key, 0.0)) + float(amount)
+        return float(h[key])
+
+    async def hgetall(self, name: str) -> dict[bytes, bytes]:
+        return {k.encode(): str(v).encode() for k, v in self.hashes.get(name, {}).items()}
+
+    async def expire(self, name: str, seconds: int) -> bool:
+        self.ttls[name] = int(seconds)
+        return name in self.hashes
+
+    async def ttl(self, name: str) -> int:
+        return self.ttls.get(name, -1)
+
+    async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> list[bytes]:
+        from .budget import RESERVE_SCRIPT
+
+        if script != RESERVE_SCRIPT or numkeys != 1:
+            raise NotImplementedError("EmulatedRedis only knows the budget reserve script")
+        key, *argv = keys_and_args
+        e_tokens, e_pages, e_steps, e_cost, m_tokens, m_pages, m_steps, m_cost, tol, ttl = (
+            float(a) for a in argv
+        )
+        h = self.hashes.setdefault(str(key), {})
+
+        def n(field: str) -> float:
+            return float(h.get(field, 0))
+
+        over: list[bytes] = []
+        if n("tokens") + e_tokens > m_tokens:
+            over.append(b"tokens")
+        if n("pages") + e_pages > m_pages:
+            over.append(b"pages")
+        if n("steps") + e_steps > m_steps:
+            over.append(b"steps")
+        if n("cost_usd") + e_cost > m_cost + n("cost_bonus_usd") + tol:
+            over.append(b"cost_usd")
+        if over:
+            return over
+        if e_steps > 0:
+            h["steps"] = n("steps") + e_steps
+        self.ttls[str(key)] = int(ttl)
+        return over

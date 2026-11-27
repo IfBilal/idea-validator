@@ -301,3 +301,31 @@ async def test_memoise_false_always_calls_and_never_returns_a_memo_entry() -> No
     )
     assert again.value == {"n": 2}
     assert again.cache_hit is False
+
+
+async def test_parallel_steps_cannot_overshoot_the_step_budget() -> None:
+    """Four parallel evidence searches used to pass a separate check and end with 7 steps for a cap of 4."""
+    rig = Rig(max_steps=2)
+    calls: list[int] = []
+
+    def make(i: int) -> Any:
+        async def call() -> Any:
+            calls.append(i)
+            await asyncio.sleep(0)  # yield so the others reach the budget check meanwhile
+            return {"i": i}
+
+        return call
+
+    async def attempt(i: int) -> bool:
+        try:
+            await rig.runner.run(
+                {}, f"s{i}", agent="a", tool="t", inputs={"i": i}, call=make(i), timeout_s=1
+            )
+            return True
+        except BudgetExceeded:
+            return False
+
+    results = await asyncio.gather(*(attempt(i) for i in range(5)))
+    assert sum(results) == 2, f"{sum(results)} steps ran for a budget of 2"
+    assert len(calls) == 2, "a refused step must never make its call"
+    assert (await rig.ledger.spent()).steps == 2

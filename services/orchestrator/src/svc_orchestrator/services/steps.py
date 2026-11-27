@@ -98,11 +98,16 @@ class StepRunner:
             )
             return StepOutcome(memo[key], True, key, {})
 
-        if over := await self._ledger.exceeded_fields(estimate):
+        # One atomic check-and-charge: parallel steps can no longer all pass a separate check and
+        # overshoot. M3 charges one step per step it runs; M5 charges pages, tokens and cost.
+        try:
+            await self._ledger.reserve(estimate.model_copy(update={"steps": 1}))
+        except BudgetExceeded as exc:
+            over = exc.details["exceeded"]
             raise BudgetExceeded(
                 f"step {step} would exceed the run budget: {', '.join(over)}",
                 {"exceeded": over, "step": step, "estimate": estimate.model_dump()},
-            )
+            ) from exc
 
         await self._emitter.emit("agent_started", agent=agent, step=step, tool=tool)
         retries_var.set(0)
@@ -128,7 +133,7 @@ class StepRunner:
             raise
         finally:
             latency_ms = int((time.perf_counter() - started) * 1000)
-            spent = await self._ledger.record(Spend(steps=1))
+            spent = await self._ledger.spent()  # the step itself was charged by reserve() above
             limits = await self._ledger.limits()
             await self._emitter.emit(
                 "tool_call",
