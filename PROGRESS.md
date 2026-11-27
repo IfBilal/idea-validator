@@ -63,6 +63,7 @@ Everything below is in one PR (#12, one commit per task, merge with "Create a me
 - [ ] Dev A: fix `.github/workflows/pr-checks.yml` (fails with a workflow-file error; `mypy services libs jobs` line must become `uv run mypy`) (P0-T07)
 - [ ] LLM provider API key → local `.env` (never commit)
 - [ ] GitHub token; Reddit app credentials; Product Hunt developer token (request on Day 1)
+- [ ] **kind needs `sudo sysctl -w fs.inotify.max_user_instances=512`** on Taimoor's laptop (currently 128; kubelet/nodes fail to boot while minikube + civicpulse also run). Persist in /etc/sysctl.d/99-kind.conf, then re-run `make k8s-up` (P1-T04 not yet verified end to end)
 - [ ] Decide which laptop hosts kind + Jenkins (≥ 16 GB RAM)
 - [ ] Colab / Kaggle account for fine-tuning
 - [ ] Ask instructor the open questions in `docs/harness/27_ASSUMPTIONS_AND_OPEN_QUESTIONS.md` §B
