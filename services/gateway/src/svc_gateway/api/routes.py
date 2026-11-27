@@ -1,20 +1,40 @@
 """HTTP layer only: authenticate, rate-limit, validate, call a service, return the result."""
 
 import ipaddress
+import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi.responses import StreamingResponse
 
-from common.errors import RateLimited, Unauthorized
+from common.errors import RateLimited, Unauthorized, ValidationFailed
 from common.logging import get_logger
 from common.schemas import StudentProfile
 
 from ..clients.profile import ProfileClient
 from ..config import Settings
 from ..models.auth import Credentials, ProfileBody, RegisterOut, TokenOut
+from ..models.ideas import Comparison, IdeaPage, VersionCard, VersionSummary
+from ..models.runs import (
+    RUN_ID_PATTERN,
+    AnswerBody,
+    ApproveBody,
+    ChallengeBody,
+    DiscoverBody,
+    RunAccepted,
+    RunView,
+    StepAccepted,
+    ValidateAccepted,
+    ValidateBody,
+    WhatIfBody,
+)
 from ..ratelimit import RateLimiter, fingerprint
 from ..security import verify_token
 from ..services.auth import AuthFlow
+from ..services.ideas import IdeaFlow
+from ..services.runs import RunFlow
+
+MIN_COMPARE, MAX_COMPARE = 2, 5
 
 log = get_logger("gateway")
 
@@ -47,6 +67,8 @@ def make_router(
     auth: AuthFlow,
     profiles: ProfileClient,
     secret: str,
+    runs: RunFlow,
+    ideas: IdeaFlow,
 ) -> APIRouter:
     def ip_of(request: Request) -> str:
         return client_ip(request, settings.trusted_proxy_hops)
@@ -73,6 +95,27 @@ def make_router(
             raise
 
     User = Annotated[str, Depends(current_user)]
+    RunId = Annotated[str, Path(pattern=RUN_ID_PATTERN)]
+    IdeaId = Annotated[uuid.UUID, Path()]
+    Version = Annotated[int, Path(ge=1)]
+
+    async def user_limit(kind: str, limit: int, user_id: str) -> None:
+        try:
+            await limiter.hit(kind, user_id, limit)
+        except RateLimited:
+            log.warning("rate_limited", kind=kind, user=fingerprint(user_id))
+            raise
+
+    def parse_compare_ids(raw: str) -> list[str]:
+        parts = [p.strip() for p in raw.split(",")]
+        try:
+            ids = [str(uuid.UUID(p)) for p in parts]
+        except ValueError:
+            raise ValidationFailed("ids must be comma-separated idea ids") from None
+        if not MIN_COMPARE <= len(ids) <= MAX_COMPARE or len(set(ids)) != len(ids):
+            raise ValidationFailed(f"give {MIN_COMPARE} to {MAX_COMPARE} different idea ids")
+        return ids
+
     router = APIRouter(dependencies=[Depends(ip_limit)])
 
     @router.post("/auth/register", status_code=201, response_model=RegisterOut)
@@ -101,5 +144,71 @@ def make_router(
     @router.put("/profile", response_model=StudentProfile, response_model_exclude_none=True)
     async def put_profile(body: ProfileBody, user_id: User) -> dict[str, Any]:
         return await profiles.put_profile(user_id, body.model_dump())
+
+    # ---- runs ----------------------------------------------------------------------------
+    @router.post("/validate", status_code=202, response_model=ValidateAccepted)
+    async def validate(body: ValidateBody, user_id: User) -> ValidateAccepted:
+        await user_limit("user_runs", settings.user_runs_per_min, user_id)
+        return await runs.validate(user_id, body)
+
+    @router.post("/discover", status_code=202, response_model=RunAccepted)
+    async def discover(body: DiscoverBody, user_id: User) -> RunAccepted:
+        await user_limit("user_runs", settings.user_runs_per_min, user_id)
+        return await runs.discover(user_id, body)
+
+    @router.get("/runs/{run_id}", response_model=RunView)
+    async def get_run(run_id: RunId, user_id: User) -> RunView:
+        return await runs.get(user_id, run_id)
+
+    @router.post("/runs/{run_id}/answer", status_code=202, response_model=StepAccepted)
+    async def answer(run_id: RunId, body: AnswerBody, user_id: User) -> StepAccepted:
+        return await runs.answer(user_id, run_id, body)
+
+    @router.post("/runs/{run_id}/approve", status_code=202, response_model=StepAccepted)
+    async def approve(run_id: RunId, body: ApproveBody, user_id: User) -> StepAccepted:
+        return await runs.approve(user_id, run_id, body)
+
+    @router.get("/runs/{run_id}/events")
+    async def run_events(run_id: RunId, request: Request, user_id: User) -> StreamingResponse:
+        """Server-sent events. A browser ``EventSource`` cannot send ``Authorization``, so the UI
+        reads this with ``fetch`` and a stream reader (see the README)."""
+        await user_limit("user_sse", settings.sse_per_min, user_id)
+        frames = await runs.open_events(user_id, run_id, request.headers.get("last-event-id"))
+        return StreamingResponse(
+            frames,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    # ---- ideas ---------------------------------------------------------------------------
+    @router.get("/ideas", response_model=IdeaPage)
+    async def list_ideas(
+        user_id: User,
+        limit: Annotated[int, Query(ge=1, le=50)] = 20,
+        cursor: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    ) -> IdeaPage:
+        return await ideas.page(user_id, limit, cursor)
+
+    @router.get("/ideas/{idea_id}/versions", response_model=list[VersionSummary])
+    async def idea_versions(idea_id: IdeaId, user_id: User) -> list[VersionSummary]:
+        return await ideas.versions(user_id, str(idea_id))
+
+    @router.get("/ideas/{idea_id}/versions/{version}", response_model=VersionCard)
+    async def idea_version(idea_id: IdeaId, version: Version, user_id: User) -> VersionCard:
+        return await ideas.version(user_id, str(idea_id), version)
+
+    @router.get("/compare", response_model=Comparison)
+    async def compare(user_id: User, ids: Annotated[str, Query(max_length=300)]) -> Comparison:
+        return await ideas.compare(user_id, parse_compare_ids(ids))
+
+    @router.post("/ideas/{idea_id}/challenge", status_code=202, response_model=RunAccepted)
+    async def challenge(idea_id: IdeaId, body: ChallengeBody, user_id: User) -> RunAccepted:
+        await user_limit("user_runs", settings.user_runs_per_min, user_id)
+        return await runs.challenge(user_id, str(idea_id), body)
+
+    @router.post("/ideas/{idea_id}/whatif", status_code=202, response_model=RunAccepted)
+    async def whatif(idea_id: IdeaId, body: WhatIfBody, user_id: User) -> RunAccepted:
+        await user_limit("user_runs", settings.user_runs_per_min, user_id)
+        return await runs.whatif(user_id, str(idea_id), body)
 
     return router

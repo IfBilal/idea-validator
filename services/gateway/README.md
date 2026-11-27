@@ -14,22 +14,52 @@ Part of the Idea Validator system (docs/harness/03_ARCHITECTURE.md). One contain
 `repositories/` (DB/Redis access), `clients/` (typed clients for other modules), `models/`.
 Layering: `api -> services -> repositories/clients`; routes never touch the DB; services never import FastAPI.
 
-## Public endpoints (so far)
+## Public endpoints
+All need `Authorization: Bearer <jwt>` except `/auth/*`. The user is always the token's `sub`; bodies are
+validated with unknown fields refused. Errors use the standard envelope (`{"error":{code,message,details,request_id}}`).
 | | |
 |---|---|
-| `POST /auth/register` | `{email, password}` (password 10 to 128 chars, not a common password) -> 201 `{user_id}`; 409 duplicate email |
-| `POST /auth/login` | -> 200 `{access_token, token_type: "bearer", expires_in: 3600}`; one generic 401 for every failure |
-| `GET /profile`, `PUT /profile` | `Authorization: Bearer <jwt>`; each PUT creates a new version; the user comes from the token, never from the body |
+| `POST /auth/register`, `POST /auth/login` | see below |
+| `GET /profile`, `PUT /profile` | the profile (each PUT is a new version) |
+| `POST /validate` | `{idea_text (<=4000), title (<=200, required for a new idea), idea_id|null}` -> 202 `{run_id, idea_id, version}`. New idea: created in M2. Existing `idea_id`: a new version unless the text equals the latest version (then that version is reused) |
+| `POST /discover` | `{niche|null, count 1..10 (default 5), deep_search (default false)}` -> 202 `{run_id}` |
+| `GET /runs/{id}` | `{run_id, kind, state, progress, spent, budget, pending_question, pending_approval, result, error}`; `result` is M3's card verbatim |
+| `POST /runs/{id}/answer` | `{question_id, answer}` (a number, or a numeric string of at most 1000 characters; M3 asks numeric questions) -> 202 `{run_id, state}` |
+| `POST /runs/{id}/approve` | `{approval_id, decision: approve|decline}` -> 202 |
+| `GET /runs/{id}/events` | SSE, see below |
+| `GET /ideas?limit=1..50&cursor=` | `{items:[{idea_id,title,source,latest_version,latest_verdict,score,updated_at}], next_cursor}` |
+| `GET /ideas/{id}/versions`, `GET /ideas/{id}/versions/{v}` | history; the single version has `card` (the stored verdict card, `null` until validated) |
+| `GET /compare?ids=a,b,c` | 2 to 5 different idea ids -> `{ideas:[row], dimensions:[{dimension, scores:{idea_id:score|null}, delta}], verdicts:{idea_id:label|null}}` for the latest version of each. `delta` = highest minus lowest known score (presentation only) |
+| `POST /ideas/{id}/challenge` | `{version, claim_id}` -> 202 `{run_id}` (404 if the claim is not in the stored card, 409 if the version has no verdict) |
+| `POST /ideas/{id}/whatif` | `{version, change_id | custom_change (<=1000)}` (exactly one) -> 202 `{run_id}` |
 
-Runs, ideas and the SSE stream arrive with the orchestrator (Phase 5).
+**Deviation from docs/harness/05:** `/compare` takes `ids=a,b,c` (2..5) instead of `a=` and `b=` (no `:v`; M2 compares latest versions), and returns a list-based shape. `GET /ideas/{id}/versions/{v}` names the stored card `card`.
+
+**Ownership.** A foreign or unknown idea/run is always 404 with the same message; M2 enforces it (every read carries the token's user id) and the gateway records each run's owner in M2 (`PUT /internal/runs/{id}`) right after M3 starts it. Compare is all-or-nothing: one foreign id makes the whole request a 404.
+
+**Verdicts.** The gateway never computes or edits one. `result`/`card` are forwarded unchanged. A card with `verdict: null` and `partial: true` (M3's null-verdict contract: `needs_input`, `missing`, `stop_reason`, `error`) has no verdict even when the run state is `succeeded`; the UI must show "needs your input" or "stopped", never GO/PIVOT/NO-GO. `question` events and `pending_question` carry `field`, `required` and `range` as M3 sends them.
+
+### Event stream (SSE)
+`GET /runs/{id}/events` returns `text/event-stream`. Frames: `event: <type>`, `id: <seq>`, `data: <RunEvent JSON>`. Each event is validated as a `RunEvent` of that run; anything else is dropped.
+- **Auth with `fetch`, not `EventSource`:** `EventSource` cannot send an `Authorization` header, so the UI reads the stream with `fetch(url, {headers:{Authorization, "Last-Event-ID": lastSeq}})` and parses frames from `response.body.getReader()`. On disconnect it reconnects with the last `id` it saw.
+- **Resume:** `Last-Event-ID: n` replays events with `seq > n`, then goes live. A malformed or negative value means "from the start".
+- **Heartbeat** every 15 s (`event: heartbeat`, no `id`, so `Last-Event-ID` never moves on it).
+- **Closing:** after `run_completed`, `run_failed` or `budget_stopped`; after `SSE_MAX_S` (default 3600 s, reconnect to continue); or when the client goes away (the Redis subscription is always closed). For a run that already finished the stored events are replayed; if none are stored, one synthetic closing event (`payload.synthesised: true`) with the next `seq` is sent.
+- **Source:** Redis pub/sub `run:{run_id}` (taken before replay, so nothing is lost; duplicates and old seqs are dropped; a gap in the live sequence is filled from storage).
+- **Assumption about M3:** stored events are read from `GET /runs/{id}/events?after=<seq>` -> `{"events":[RunEvent,...]}`. The orchestrator does not offer it yet; a 404 or error there only means "no stored events" and the stream is live-only. Run kinds `discover`, `challenge`, `whatif` are sent to M3 `POST /runs` as `{kind, user_id, input}`; M3 currently accepts only `validate` and will answer 422 (surfaced as 422) until those flows land.
+
+### Rate limits
+Per IP on every route (`IP_PER_MIN`, default 100). Per user: starting runs (`validate`, `discover`, `challenge`, `whatif` share `USER_RUNS_PER_MIN`, default 10) and new event streams (`SSE_PER_MIN`, default 30). Over the limit: 429 with `Retry-After`; Redis down: 503.
 
 ## Config (environment / ConfigMap / Secret)
 | Variable | Meaning |
 |---|---|
 | `JWT_SECRET` | Secret, at least 32 characters; the gateway refuses to start without it |
+| `ORCHESTRATOR_URL` | M3 base URL; the gateway also needs `/ready` of M3 for its own `/ready` |
+| `USER_RUNS_PER_MIN` / `SSE_PER_MIN` / `SSE_HEARTBEAT_S` / `SSE_MAX_S` | Defaults 10 / 30 / 15 / 3600 |
 | `PROFILE_URL` | M2 base URL (cluster DNS), e.g. `http://profile.idea-validator.svc.cluster.local:8000` |
 | `INTERNAL_TOKEN` | Secret shared with M2 (`X-Internal-Token`) |
-| `REDIS_URL` | Rate-limit counters, shared by all gateway replicas (Secret) |
+| `REDIS_URL` | Rate-limit counters and the `run:{id}` event channels (Secret) |
 | `UI_ORIGIN` | The only origin CORS allows; one `scheme://host[:port]`, never `*` |
 | `TRUSTED_PROXY_HOPS` | `1` behind the ingress, `0` (default) when reached directly. The client IP for rate limits is the `X-Forwarded-For` entry that many places from the right; invalid values fall back to the TCP peer. **The ingress must overwrite the header** (ingress-nginx default), or the limits can be dodged |
 | `IP_PER_MIN` / `LOGIN_PER_MIN` / `REGISTER_PER_MIN` | Defaults 100 / 5 / 10 (login is also limited per email) |

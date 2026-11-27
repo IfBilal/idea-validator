@@ -10,21 +10,29 @@ from common.http import ServiceClient
 from common.service import create_app
 
 from .api.routes import make_router
+from .clients.events import EventBus, RedisEventBus
+from .clients.ideas import IdeaClient
+from .clients.orchestrator import OrchestratorClient
 from .clients.profile import ProfileClient
 from .config import Settings
 from .middleware import SECURITY_HEADERS, BodyLimitMiddleware, SecurityHeadersMiddleware
 from .ratelimit import RateLimiter, RedisRateLimiter
 from .security import MIN_SECRET_LENGTH
 from .services.auth import AuthFlow
+from .services.ideas import IdeaFlow
+from .services.runs import RunFlow
 
 
 def build_app(
     settings: Settings,
     limiter: RateLimiter | None = None,
     profiles: ProfileClient | None = None,
+    ideas: IdeaClient | None = None,
+    orchestrator: OrchestratorClient | None = None,
+    events: EventBus | None = None,
 ) -> FastAPI:
-    """Wire the gateway. ``limiter`` and ``profiles`` can be injected (tests); otherwise they are
-    built from the environment at start-up, and missing configuration stops the service."""
+    """Wire the gateway. Every dependency can be injected (tests); otherwise it is built from the
+    environment at start-up, and missing configuration stops the service."""
     holder: dict[str, object] = {}
 
     if (
@@ -35,35 +43,58 @@ def build_app(
     else:
         secret = settings.jwt_secret.get_secret_value()
 
+    def connect(url: str | None, name: str, token: str | None) -> ServiceClient:
+        if url is None:
+            raise ConfigError(f"{name} is not set")
+        return ServiceClient(url, timeout_s=settings.upstream_timeout_s, internal_token=token)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if secret is None:
             raise ConfigError(f"JWT_SECRET must be set and at least {MIN_SECRET_LENGTH} characters")
+        token = settings.internal_token.get_secret_value() if settings.internal_token else None
         redis: Redis | None = None
-        client: ServiceClient | None = None
-        active_limiter, active_profiles = limiter, profiles
-        if active_limiter is None:
+        owned: list[ServiceClient] = []
+        active_limiter, active_events = limiter, events
+        active_profiles, active_ideas, active_orch = profiles, ideas, orchestrator
+        if active_limiter is None or active_events is None:
             if settings.redis_url is None:
                 raise ConfigError("REDIS_URL is not set")
             redis = Redis.from_url(settings.redis_url.get_secret_value())
-            active_limiter = RedisRateLimiter(redis)
-        if active_profiles is None:
-            if settings.profile_url is None:
-                raise ConfigError("PROFILE_URL is not set")
-            token = settings.internal_token.get_secret_value() if settings.internal_token else None
-            client = ServiceClient(
-                settings.profile_url,
-                timeout_s=settings.upstream_timeout_s,
-                internal_token=token,
-            )
-            active_profiles = ProfileClient(client)
-        holder["redis"], holder["profiles"] = redis, active_profiles
+            active_limiter = active_limiter or RedisRateLimiter(redis)
+            active_events = active_events or RedisEventBus(redis)
+        if active_profiles is None or active_ideas is None:
+            m2 = connect(settings.profile_url, "PROFILE_URL", token)
+            owned.append(m2)
+            active_profiles = active_profiles or ProfileClient(m2)
+            active_ideas = active_ideas or IdeaClient(m2)
+        if active_orch is None:
+            m3 = connect(settings.orchestrator_url, "ORCHESTRATOR_URL", token)
+            owned.append(m3)
+            active_orch = OrchestratorClient(m3)
+        holder.update(redis=redis, profiles=active_profiles, orchestrator=active_orch)
         auth = AuthFlow(active_profiles, settings, secret)
-        app.include_router(make_router(settings, active_limiter, auth, active_profiles, secret))
+        run_flow = RunFlow(
+            active_ideas,
+            active_orch,
+            active_events,
+            settings.sse_heartbeat_s,
+            settings.sse_max_s,
+        )
+        router = make_router(
+            settings,
+            active_limiter,
+            auth,
+            active_profiles,
+            secret,
+            run_flow,
+            IdeaFlow(active_ideas),
+        )
+        app.include_router(router)
         try:
             yield
         finally:
-            if client is not None:
+            for client in owned:
                 await client.aclose()
             if redis is not None:
                 await redis.aclose()
@@ -71,6 +102,10 @@ def build_app(
     async def profile_up() -> bool:
         active = holder.get("profiles")
         return isinstance(active, ProfileClient) and await active.ready()
+
+    async def orchestrator_up() -> bool:
+        active = holder.get("orchestrator")
+        return isinstance(active, OrchestratorClient) and await active.ready()
 
     async def redis_up() -> bool:
         active = holder.get("redis")
@@ -82,7 +117,7 @@ def build_app(
         name="gateway",
         module="M1",
         settings=settings,
-        ready_checks={"redis": redis_up, "profile": profile_up},
+        ready_checks={"redis": redis_up, "profile": profile_up, "orchestrator": orchestrator_up},
         lifespan=lifespan,
         error_headers={k.decode(): v.decode() for k, v in SECURITY_HEADERS.items()},
     )

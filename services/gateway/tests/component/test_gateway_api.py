@@ -16,6 +16,7 @@ from svc_gateway.clients.profile import ProfileClient
 from svc_gateway.config import Settings
 from svc_gateway.main import build_app
 from svc_gateway.ratelimit import MemoryRateLimiter
+from svc_gateway.testing import FakeM2, FakeM3, ScriptedBus, clients
 
 SECRET = "s" * 40
 INTERNAL = "internal-token"
@@ -75,6 +76,14 @@ class FakeProfileService:
         return httpx.Response(404)
 
 
+def wired(settings: Settings, limiter: Any, profiles: ProfileClient) -> Any:
+    """The app with every upstream faked (the idea/run endpoints have their own test module)."""
+    ideas, orchestrator, _ = clients(FakeM2(), FakeM3())
+    return build_app(
+        settings, limiter, profiles, ideas=ideas, orchestrator=orchestrator, events=ScriptedBus()
+    )
+
+
 def make_app(m2: FakeProfileService, **overrides: Any) -> TestClient:
     settings = Settings(jwt_secret=SecretStr(SECRET), ui_origin="https://ui.test", **overrides)
     client = ServiceClient(
@@ -85,8 +94,7 @@ def make_app(m2: FakeProfileService, **overrides: Any) -> TestClient:
         transport=httpx.MockTransport(m2),
     )
     clock = datetime.now(UTC).timestamp
-    app = build_app(settings, MemoryRateLimiter(clock), ProfileClient(client))
-    return TestClient(app)
+    return TestClient(wired(settings, MemoryRateLimiter(clock), ProfileClient(client)))
 
 
 @pytest.fixture
@@ -448,6 +456,14 @@ def test_the_gateway_refuses_to_start_without_its_upstream_configuration() -> No
     no_profile = Settings(jwt_secret=secret, redis_url=SecretStr("redis://x"))
     with pytest.raises(ConfigError, match="PROFILE_URL"), TestClient(build_app(no_profile)):
         pass
+    no_orchestrator = Settings(
+        jwt_secret=secret, redis_url=SecretStr("redis://x"), profile_url="http://m2:8000"
+    )
+    with (
+        pytest.raises(ConfigError, match="ORCHESTRATOR_URL"),
+        TestClient(build_app(no_orchestrator)),
+    ):
+        pass
 
 
 # ---- review follow-ups: fail-closed limiter, headers on 500, per-email failures, logging, schema
@@ -472,7 +488,7 @@ def app_with_limiter(m2: FakeProfileService, limiter: Any) -> TestClient:
         transport=httpx.MockTransport(m2),
     )
     return TestClient(
-        build_app(settings, limiter, ProfileClient(client)), raise_server_exceptions=False
+        wired(settings, limiter, ProfileClient(client)), raise_server_exceptions=False
     )
 
 

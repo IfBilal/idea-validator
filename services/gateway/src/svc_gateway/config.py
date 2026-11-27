@@ -12,7 +12,8 @@ class Settings(ServiceSettings):
 
     service_name: str = "gateway"
     profile_url: str | None = None  # M2, e.g. http://profile.idea-validator.svc.cluster.local:8000
-    redis_url: SecretStr | None = None
+    orchestrator_url: str | None = None  # M3, e.g. http://orchestrator.idea-validator.svc:8000
+    redis_url: SecretStr | None = None  # rate-limit counters and the run event channels
     jwt_secret: SecretStr | None = None
     jwt_ttl_s: int = 3600
     ui_origin: str | None = None  # the only origin CORS allows
@@ -24,6 +25,11 @@ class Settings(ServiceSettings):
     ip_per_min: int = 100
     login_per_min: int = 5
     register_per_min: int = 10
+    # Starting a run costs money (LLM and fetch budget), so it has its own per-user limit.
+    user_runs_per_min: int = Field(default=10, ge=1)
+    sse_per_min: int = Field(default=30, ge=1)  # new event streams per user and minute
+    sse_heartbeat_s: float = Field(default=15.0, gt=0)
+    sse_max_s: float = Field(default=3600.0, gt=0)  # a stream is closed after this; clients resume
     upstream_timeout_s: float = 5.0
     min_password_length: int = 10
 
