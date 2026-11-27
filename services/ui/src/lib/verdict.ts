@@ -84,6 +84,19 @@ const WhatWouldMakeGo = z
   })
   .passthrough();
 
+const SuggestedChange = z
+  .object({
+    change_id: z.string(),
+    text: z.string(),
+    target_dimension: z.string().nullable().optional(),
+    rationale: z.string().nullable().optional(),
+    from: z.number().nullable().optional(),
+    to: z.number().nullable().optional(),
+    new_verdict: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type SuggestedChange = z.infer<typeof SuggestedChange>;
+
 const Settled = z
   .object({
     idea_id: z.string().optional(),
@@ -113,6 +126,7 @@ const Settled = z
     missing: z.array(z.string()).nullable().optional(),
     versions: z.record(z.string(), z.string()).nullable().optional(),
     // M3 additions to a validate result
+    changes: z.array(SuggestedChange).default([]),
     claims: z.array(Claim).default([]),
     evidence: z.record(z.string(), EvidenceItem).default({}),
     notes: z.array(z.string()).default([]),

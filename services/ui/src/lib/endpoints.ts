@@ -36,3 +36,18 @@ const RunDetail = z.object({ result: z.unknown().optional() }).passthrough();
 /** The run's stored result: a verdict card, or a partial card when no verdict could be given. */
 export const getRunResult = async (runId: string): Promise<unknown> =>
   (await apiFetch(`/runs/${encodeURIComponent(runId)}`, RunDetail)).result;
+
+import { RunAccepted } from "./schemas";
+
+const ideaPath = (ideaId: string) => `/ideas/${encodeURIComponent(ideaId)}`;
+
+/** Challenge one claim of a stored verdict version (U8). `key` makes a double click start one run. */
+export const startChallenge = (ideaId: string, body: { version: number; claim_id: string }, key: string) =>
+  apiFetch(`${ideaPath(ideaId)}/challenge`, RunAccepted, { method: "POST", json: body, headers: { "Idempotency-Key": key } });
+
+/** What-if: exactly one of change_id (a suggested change) or custom_change (free text, at most 1000 characters). */
+export const startWhatIf = (
+  ideaId: string,
+  body: { version: number; change_id: string } | { version: number; custom_change: string },
+  key: string,
+) => apiFetch(`${ideaPath(ideaId)}/whatif`, RunAccepted, { method: "POST", json: body, headers: { "Idempotency-Key": key } });

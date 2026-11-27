@@ -144,7 +144,7 @@ export function RegisterPage() {
             />
           )}
         </Field>
-        {mutation.isError && <Alert>{errorMessage(mutation.error)}</Alert>}
+        {mutation.isError && <Alert>{errorMessage(mutation.error, { conflict: "An account with this email already exists." })}</Alert>}
         <Button type="submit" disabled={mutation.isPending} className="w-full">
           {mutation.isPending ? "Creating account…" : "Create account"}
         </Button>

@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState, type FormEvent } from "react";
 import { ApprovalDialog, QuestionCard } from "@/components/Prompts";
 import { RunPanel } from "@/components/RunPanel";
+import { ResultActions } from "@/components/ResultActions";
 import { VerdictCard } from "@/components/VerdictCard";
 import { Button } from "@/components/ui/button";
 import { Alert, Field, Input } from "@/components/ui/form";
@@ -31,7 +32,7 @@ export function ValidatePage() {
   }
 
   const runId = start.data?.run_id ?? null;
-  if (runId) return <RunView runId={runId} />;
+  if (runId && start.data) return <RunView runId={runId} ideaId={start.data.idea_id} version={start.data.version} />;
 
   return (
     <section className="max-w-2xl space-y-4">
@@ -64,7 +65,7 @@ export function ValidatePage() {
   );
 }
 
-function RunView({ runId }: { runId: string }) {
+function RunView({ runId, ideaId, version }: { runId: string; ideaId: string; version: number }) {
   const { state, status } = useRun(runId);
   return (
     <section className="max-w-2xl space-y-4">
@@ -72,7 +73,7 @@ function RunView({ runId }: { runId: string }) {
       <RunPanel state={state} status={status} />
       {state.phase === "waiting_answer" && state.question && <QuestionCard key={state.question.questionId} runId={runId} question={state.question} />}
       {state.phase === "waiting_approval" && state.approval && <ApprovalDialog key={state.approval.approvalId} runId={runId} approval={state.approval} />}
-      {isTerminal(state.phase) && <FinalResult runId={runId} streamed={state.verdictCard} reason={state.reason} />}
+      {isTerminal(state.phase) && <FinalResult runId={runId} ideaId={ideaId} version={version} streamed={state.verdictCard} reason={state.reason} />}
     </section>
   );
 }
@@ -82,9 +83,9 @@ function RunView({ runId }: { runId: string }) {
  * Failed and stopped runs show it too. If the stored result is unavailable, a failed or stopped run
  * shows a no-verdict card built from the stop reason (never a verdict).
  */
-function FinalResult({ runId, streamed, reason }: { runId: string; streamed: unknown; reason?: string }) {
+function FinalResult({ runId, ideaId, version, streamed, reason }: { runId: string; ideaId: string; version: number; streamed: unknown; reason?: string }) {
   const result = useQuery({ queryKey: ["run-result", runId], queryFn: () => getRunResult(runId), enabled: streamed === undefined });
-  if (streamed !== undefined) return <VerdictCard raw={streamed} />;
+  if (streamed !== undefined) return <ResultActions ideaId={ideaId} version={version} raw={streamed} />;
   if (result.isPending) return <p role="status">Loading your result…</p>;
   const unavailable = result.isError || result.data === null || result.data === undefined;
   if (unavailable && reason !== undefined) {
@@ -92,5 +93,5 @@ function FinalResult({ runId, streamed, reason }: { runId: string; streamed: unk
   }
   if (result.isError) return <Alert>{errorMessage(result.error)}</Alert>;
   if (unavailable) return <Alert>No result was produced for this run.</Alert>;
-  return <VerdictCard raw={result.data} />;
+  return <ResultActions ideaId={ideaId} version={version} raw={result.data} />;
 }
