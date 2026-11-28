@@ -88,6 +88,15 @@ def test_dotenv_parsing_ignores_comments_and_quotes_and_never_needs_the_shell() 
     assert _mod().parse_dotenv(text) == {"GROQ_API_KEY": "gsk_q", "EMPTY": "", "OTHER": "a b"}
 
 
+def test_the_evaluation_account_gets_a_random_password_and_keeps_it_on_rerun() -> None:
+    first = _mod().build(existing={}, dotenv={}, rand=_counter())
+    assert "@" in first["EVAL_USER"] and len(first["EVAL_PASSWORD"]) >= 32
+    assert first["EVAL_PASSWORD"] != first["JWT_SECRET"]
+    second = _mod().build(existing=first, dotenv={}, rand=_counter())
+    assert second["EVAL_PASSWORD"] == first["EVAL_PASSWORD"]
+    assert first["EVAL_USER"].split("@")[0] not in first["EVAL_PASSWORD"]  # gateway password rule
+
+
 @pytest.mark.parametrize("flag", ["--from-literal", "echo $", "set -x"])
 def test_the_wrapper_never_puts_secrets_on_a_command_line_or_in_a_trace(flag: str) -> None:
     for name in ("create_secrets.sh", "create_secrets.py"):

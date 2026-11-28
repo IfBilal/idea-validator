@@ -37,7 +37,14 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
 
 @pytest.mark.parametrize(
     "name",
-    ["push_images.sh", "rollback_changed.sh", "run_eval.sh", "jenkins_up.sh", "check_eval.sh"],
+    [
+        "push_images.sh",
+        "rollback_changed.sh",
+        "run_eval.sh",
+        "jenkins_up.sh",
+        "check_eval.sh",
+        "eval_results.sh",
+    ],
 )
 def test_the_scripts_exist_parse_and_are_executable(name: str) -> None:
     path = SCRIPTS / name
@@ -312,7 +319,7 @@ def test_make_images_builds_every_image_push_images_checks() -> None:
     makefile = (ROOT / "Makefile").read_text()
     images = makefile.split("\nimages:", 1)[1].split("\nk8s-up:", 1)[0]
     push = (SCRIPTS / "push_images.sh").read_text()
-    for extra in ("ui", "ingestion"):
+    for extra in ("ui", "ingestion", "evaluation"):
         if f'services="$services {extra}"' in push:
             assert f"localhost:5001/{extra}:" in images, f"push check expects {extra}"
 
@@ -322,12 +329,21 @@ def test_make_images_builds_every_image_push_images_checks() -> None:
 
 def _eval_env(tmp_path: Path, context: str) -> tuple[dict[str, str], Path]:
     log = tmp_path / "calls.log"
-    env = _env(tmp_path, EVAL_MANIFEST=str(ROOT / "Makefile"), BASELINE=str(ROOT / "Makefile"))
+    env = _env(
+        tmp_path,
+        EVAL_MANIFEST=str(ROOT / "Makefile"),
+        EVAL_LABELLED=str(ROOT / "Makefile"),
+        EVAL_RESULTS_DIR=str(tmp_path / "results"),
+        BASELINE=str(ROOT / "Makefile"),
+        TAG="abc1234",
+    )
     _shim(tmp_path / "bin", "kind", f"echo 'current-context: {context}'\n")
     _shim(
         tmp_path / "bin",
         "kubectl",
-        f'echo "$*" >> {log}\ngrep "^current-context:" "$KUBECONFIG" | cut -d" " -f2\n',
+        f'echo "$*" >> {log}\n'
+        'case "$*" in *" logs "*) echo \'{"schema":"eval-results@v1","n":1}\' ;;\n'
+        '*) grep "^current-context:" "$KUBECONFIG" | cut -d" " -f2 ;; esac\n',
     )
     _shim(tmp_path / "bin", "uv", f'echo "uv $*" >> {log}\n')
     return env, log
@@ -339,6 +355,37 @@ def test_run_eval_applies_the_job_and_gates_through_the_guard(tmp_path: Path) ->
     assert done.returncode == 0, done.stderr
     calls = log.read_text()
     assert "apply -f" in calls and "-n idea-validator" in calls
+    assert "logs job/eval" in calls and "uv run python -m evaluation.cli gate" in calls
+    saved = list((tmp_path / "results").glob("*.json"))
+    assert len(saved) == 1 and "eval-results@v1" in saved[0].read_text()
+    assert not (tmp_path / "results" / "baseline.json").exists()
+
+
+def test_run_eval_without_a_labelled_set_says_so_and_exits_2(tmp_path: Path) -> None:
+    env, log = _eval_env(tmp_path, "kind-idea-validator")
+    env["EVAL_LABELLED"] = str(tmp_path / "labelled_set.jsonl")
+    done = _run([str(SCRIPTS / "run_eval.sh")], env)
+    assert done.returncode == 2 and "labelled_set.jsonl" in done.stderr
+    assert not log.exists()  # no cluster call at all
+
+
+def test_run_eval_refuses_a_latest_tag(tmp_path: Path) -> None:
+    env, log = _eval_env(tmp_path, "kind-idea-validator")
+    env["TAG"] = "latest"
+    done = _run([str(SCRIPTS / "run_eval.sh")], env)
+    assert done.returncode == 1 and "apply" not in (log.read_text() if log.exists() else "")
+
+
+def test_eval_results_refuses_a_non_result_log_line(tmp_path: Path) -> None:
+    env, _ = _eval_env(tmp_path, "kind-idea-validator")
+    _shim(
+        tmp_path / "bin",
+        "kubectl",
+        'case "$*" in *" logs "*) echo "boom" ;; *) grep "^current-context:" "$KUBECONFIG" | cut -d" " -f2 ;; esac\n',
+    )
+    done = _run([str(SCRIPTS / "eval_results.sh")], env)
+    assert done.returncode == 1 and "not a result document" in done.stderr
+    assert not list((tmp_path / "results").glob("*.json"))
 
 
 def test_run_eval_refuses_a_foreign_cluster_before_applying(tmp_path: Path) -> None:

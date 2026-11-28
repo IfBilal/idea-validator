@@ -26,7 +26,7 @@ k8s/
     ui/ gateway/(+hpa.yaml) profile/ orchestrator/ tools/ kb/ analyst/ ideation/ validators/ scorer/(+pvc models) verdict/ critic/ agentops/(+pvc traces)
     scouts/ deployment.yaml (on-demand) cronjob-hn.yaml cronjob-github.yaml cronjob-reddit.yaml cronjob-ph.yaml
     jobs/ cronjob-ingestion.yaml cronjob-drift.yaml cronjob-niches.yaml job-migrate.yaml job-seed.yaml job-model-import.yaml
-    eval/ eval-job.yaml
+    jobs/ eval.yaml   (manual Job, generated; see jobs/evaluation/README.md)
     netpol/ default-deny.yaml allow-dns.yaml allow-intra.yaml allow-tools-egress.yaml allow-ingress-to-ui-gateway.yaml
     ingress.yaml
   overlays/dev/kustomization.yaml (image tags, replicas, resources)

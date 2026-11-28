@@ -115,6 +115,31 @@ JOBS: dict[str, dict[str, Any]] = {
         # exit 2 bad config, 3 bad/missing snapshot, 4 rows dropped: a retry cannot fix these
         "fail_fast_codes": [2, 3, 4],
     },
+    # M13 evaluation: runs the labelled set through the gateway like a user (docs/harness/12 section 5).
+    # `manual` (applied by scripts/run_eval.sh / make eval, never by a plain deploy): it spends LLM budget.
+    # It reaches the gateway (the browser-facing API) and M13 for traces, nothing else; the internet stays M5's.
+    # The result is the last stdout line (`kubectl logs`); /tmp is an emptyDir (no PVC).
+    "eval": {
+        "image": "evaluation",
+        "command": [
+            "python",
+            "-m",
+            "evaluation.run",
+            "--labelled",
+            "/app/eval/labelled/labelled_set.jsonl",
+            "--out",
+            "/tmp/eval-results",  # noqa: S108 (the emptyDir mounted at /tmp)
+        ],
+        "secrets": [],
+        "optional_secrets": ["EVAL_USER", "EVAL_PASSWORD"],  # random defaults: create_secrets.py
+        "token": True,  # INTERNAL_TOKEN: the M13 trace read
+        "calls": ["gateway", "agentops"],
+        "manual": True,
+        "backoff_limit": 0,  # a rerun is a new spend: a human or Jenkins starts it again
+        "deadline_s": 7200,
+        # exit 2 bad config / no labelled set, 3 eval user refused: a retry cannot fix these
+        "fail_fast_codes": [2, 3],
+    },
 }
 # scheduled one-shot runs (docs/harness/10 section 4). They reach M5 and Postgres only: the internet
 # is M5's alone (CLAUDE.md rule 4). Schedules mirror config/sources.yaml. The credential-gated
@@ -557,6 +582,13 @@ def _job(name: str) -> str:
         {"name": k, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k}}}
         for k in [*(["INTERNAL_TOKEN"] if spec.get("token") else []), *spec["secrets"]]
     ]
+    env += [
+        {
+            "name": k,
+            "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k, "optional": True}},
+        }
+        for k in spec.get("optional_secrets", [])
+    ]
     container = {
         "name": name,
         "image": f"{NAMESPACE}/{spec['image']}:{IMAGE_TAG}",
@@ -579,6 +611,7 @@ def _job(name: str) -> str:
         "spec": {
             "backoffLimit": spec.get("backoff_limit", 6),
             "ttlSecondsAfterFinished": 3600,
+            **({"activeDeadlineSeconds": spec["deadline_s"]} if spec.get("deadline_s") else {}),
             "template": {
                 "metadata": {"labels": {"app": name}},
                 "spec": {

@@ -15,6 +15,7 @@ services="$(sed -n 's/^SERVICES := //p' Makefile)"
 [ -n "$services" ] || { echo "no SERVICES line in the Makefile" >&2; exit 2; }
 [ ! -f services/ui/package.json ] || services="$services ui"
 [ ! -f jobs/ingestion/Dockerfile ] || services="$services ingestion"
+[ ! -f jobs/evaluation/Dockerfile ] || services="$services evaluation"
 
 missing=()
 for name in $services; do
