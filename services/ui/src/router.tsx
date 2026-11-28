@@ -11,7 +11,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { clearSession, getToken, safeRedirect, useIsAuthenticated } from "@/lib/auth";
 import { LoginPage, RegisterPage } from "@/routes/auth";
+import { ComparePage } from "@/routes/compare";
 import { DiscoverPage } from "@/routes/discover";
+import { HistoryPage, VersionsPage } from "@/routes/history";
 import { IdeaPage } from "@/routes/idea";
 import { ProfilePage } from "@/routes/profile";
 import { ValidatePage } from "@/routes/validate";
@@ -31,6 +33,8 @@ function Shell() {
               <Link to="/validate">Validate</Link>
               <Link to="/discover">Discover</Link>
               <Link to="/ideas">My ideas</Link>
+              <Link to="/history">History</Link>
+              <Link to="/compare" search={{}}>Compare</Link>
               <Link to="/profile">Profile</Link>
               <button
                 type="button"
@@ -148,14 +152,29 @@ const ideaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/ideas/$ideaId",
   beforeLoad: requireAuth,
-  validateSearch: (search: Record<string, unknown>): { v: number } => {
+  // no ?v: the list of versions; ?v=N: that version's verdict card
+  validateSearch: (search: Record<string, unknown>): { v?: number } => {
     const v = Number(search.v);
-    return { v: Number.isInteger(v) && v >= 1 ? v : 1 };
+    return Number.isInteger(v) && v >= 1 ? { v } : {};
   },
   component: function Idea() {
     const { ideaId } = ideaRoute.useParams();
     const { v } = ideaRoute.useSearch();
-    return <IdeaPage ideaId={ideaId} version={v} />;
+    return v === undefined ? <VersionsPage ideaId={ideaId} /> : <IdeaPage ideaId={ideaId} version={v} />;
+  },
+});
+
+const compareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compare",
+  beforeLoad: requireAuth,
+  validateSearch: (search: Record<string, unknown>): { a?: string; b?: string } => ({
+    ...(typeof search.a === "string" ? { a: search.a } : {}),
+    ...(typeof search.b === "string" ? { b: search.b } : {}),
+  }),
+  component: function Compare() {
+    const { a, b } = compareRoute.useSearch();
+    return <ComparePage key={`${a}|${b}`} a={a} b={b} />;
   },
 });
 
@@ -172,6 +191,8 @@ export const routeTree =rootRoute.addChildren([
   protectedRoute("/validate", ValidatePage),
   protectedRoute("/discover", DiscoverPage),
   ideaRoute,
+  protectedRoute("/history", HistoryPage),
+  compareRoute,
   protectedRoute("/ideas", () => <Placeholder title="My ideas" />),
 ]);
 export function makeRouter(history?: RouterHistory) {
