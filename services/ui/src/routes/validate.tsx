@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 import { ApprovalDialog, QuestionCard } from "@/components/Prompts";
 import { RunPanel } from "@/components/RunPanel";
@@ -74,6 +75,11 @@ function RunView({ runId, ideaId, version }: { runId: string; ideaId: string; ve
       {state.phase === "waiting_answer" && state.question && <QuestionCard key={state.question.questionId} runId={runId} question={state.question} />}
       {state.phase === "waiting_approval" && state.approval && <ApprovalDialog key={state.approval.approvalId} runId={runId} approval={state.approval} />}
       {isTerminal(state.phase) && <FinalResult runId={runId} ideaId={ideaId} version={version} streamed={state.verdictCard} reason={state.reason} />}
+      {isTerminal(state.phase) && (
+        <Link to="/runs/$runId/trace" params={{ runId }} className="text-sm underline">
+          View trace
+        </Link>
+      )}
     </section>
   );
 }

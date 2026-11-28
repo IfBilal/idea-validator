@@ -14,6 +14,7 @@ import { LoginPage, RegisterPage } from "@/routes/auth";
 import { DiscoverPage } from "@/routes/discover";
 import { IdeaPage } from "@/routes/idea";
 import { ProfilePage } from "@/routes/profile";
+import { TracePage } from "@/routes/trace";
 import { ValidatePage } from "@/routes/validate";
 
 function Shell() {
@@ -159,6 +160,15 @@ const ideaRoute = createRoute({
   },
 });
 
+const traceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/runs/$runId/trace",
+  beforeLoad: requireAuth,
+  component: function Trace() {
+    return <TracePage runId={traceRoute.useParams().runId} />;
+  },
+});
+
 export const routeTree =rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home }),
   loginRoute,
@@ -172,6 +182,7 @@ export const routeTree =rootRoute.addChildren([
   protectedRoute("/validate", ValidatePage),
   protectedRoute("/discover", DiscoverPage),
   ideaRoute,
+  traceRoute,
   protectedRoute("/ideas", () => <Placeholder title="My ideas" />),
 ]);
 export function makeRouter(history?: RouterHistory) {
