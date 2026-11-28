@@ -138,7 +138,10 @@ class RunFlow:
     async def validate(
         self, user_id: str, body: ValidateBody, idem: str | None = None
     ) -> ValidateAccepted:
-        body = body.model_copy(update={"idea_text": await self._checked("idea", body.idea_text)})
+        checked: dict[str, Any] = {"idea_text": await self._checked("idea", body.idea_text)}
+        if body.idea_id is None and body.title is not None:
+            checked["title"] = await self._checked("idea", body.title)  # stored and shown to models
+        body = body.model_copy(update=checked)
         fingerprint = {
             "text": body.idea_text,
             "title": body.title,

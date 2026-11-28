@@ -49,6 +49,7 @@ files = ["libs", "services", "jobs"]
 exclude = [
   "services/profile/tests/integration/conftest.py",  # same module name as the verdict one
   "services/kb/tests/integration/conftest.py",
+  "services/gateway/tests/conftest.py",  # same module name as the verdict one
   "services/kb/migrations/env.py",  # same module name as profile's env.py
 ]
 strict = true
