@@ -13,6 +13,7 @@ from .repositories.drift_store import DriftStore
 from .repositories.files import JsonlTraceFiles
 from .repositories.index import PgTraceIndex
 from .services.ingest import IngestService
+from .services.metrics import TraceMetrics
 from .services.ports import TraceFiles, TraceIndex
 from .services.query import QueryService
 from .services.registry import RegistryService
@@ -53,7 +54,11 @@ def build_app(
     )
     if index is not None:
         app.state.ingest = IngestService(
-            index, store, max_batch=settings.max_batch, max_record_bytes=settings.max_record_bytes
+            index,
+            store,
+            max_batch=settings.max_batch,
+            max_record_bytes=settings.max_record_bytes,
+            metrics=TraceMetrics(app.state.metrics_registry),
         )
         app.state.query = QueryService(
             index,
