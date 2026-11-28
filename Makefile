@@ -56,6 +56,3 @@ replay: ## replay a stored run through the pure M11 engine: make replay RUN=run_
 	if [ "$${#RUN}" -gt 64 ]; then echo "run id longer than 64 characters" >&2; exit 2; fi; \
 	if [ -n "$$TRACE_DIR" ]; then uv run --package idea-validator-agentops python -m agentops.replay --config-dir config -- "$$RUN"; \
 	else kubectl -n idea-validator exec deploy/agentops -- python -m agentops.replay -- "$$RUN"; fi
-	@test -n "$(RUN)" || { echo "usage: make replay RUN=<run_id>" >&2; exit 2; }
-	@if [ -n "$$TRACE_DIR" ]; then uv run --package idea-validator-agentops python -m agentops.replay "$(RUN)" --config-dir config; \
-	else kubectl -n idea-validator exec deploy/agentops -- python -m agentops.replay "$(RUN)"; fi

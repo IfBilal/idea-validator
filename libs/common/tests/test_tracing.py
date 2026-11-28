@@ -37,7 +37,7 @@ def test_errors_are_recorded_and_reraised() -> None:
     tracer, records = make()
     with pytest.raises(RuntimeError), tracer.span("a", "tool_call", run_id="r"):
         raise RuntimeError("boom")
-    assert records[0].error == "RuntimeError: boom"
+    assert records[0].error == "RuntimeError"
 
 
 def test_secrets_are_redacted_and_big_payloads_truncated() -> None:
@@ -116,3 +116,16 @@ def test_domain_error_messages_are_kept_but_capped_and_redacted() -> None:
     assert error.startswith("UpstreamError: ")
     assert len(error) <= 260
     assert "idea text" not in error
+
+
+def test_builtin_exception_messages_are_dropped_unless_registered_as_fixed_reasons() -> None:
+    from common.tracing import error_text, register_trace_safe_message
+
+    secret = KeyError("my idea about dentists")
+    assert error_text(secret) == "KeyError"
+    assert "dentists" not in error_text(ValueError("startup idea: dentists"))
+    register_trace_safe_message("estimated_effort_hours is unknown")
+    assert error_text(ValueError("estimated_effort_hours is unknown")) == (
+        "ValueError: estimated_effort_hours is unknown"
+    )
+    assert error_text(ValueError("estimated_effort_hours is unknown; and my idea")) == "ValueError"

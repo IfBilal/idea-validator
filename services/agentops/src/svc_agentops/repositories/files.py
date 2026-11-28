@@ -31,7 +31,24 @@ class UnsafeRunId(ValueError):
 
 
 class RunFull(Exception):
-    """The run's file would grow past the per-run byte cap."""
+    """The run's file would grow past a per-run cap (``what`` is "bytes" or "records")."""
+
+    def __init__(self, what: str, message: str) -> None:
+        super().__init__(message)
+        self.what = what
+
+
+def _stored_ids(fd: int, size: int) -> set[str]:
+    """Ids of the complete records already in the file (a torn line is not a stored record)."""
+    ids: set[str] = set()
+    if size == 0:
+        return ids
+    for line in os.pread(fd, size, 0).split(b"\n"):
+        try:
+            ids.add(str(json.loads(line)["id"]))
+        except (ValueError, KeyError, TypeError):
+            continue
+    return ids
 
 
 def _open(path: Path, flags: int, mode: int = 0o640) -> int:
@@ -74,30 +91,39 @@ class JsonlTraceFiles:
         except FileNotFoundError:
             return None
 
-    def delete(self, run_id: str) -> None:
-        self.path_for(run_id).unlink(missing_ok=True)
-
     def append(
         self,
         run_id: str,
         items: list[tuple[str, dict[str, Any]]],
         max_bytes: int | None = None,
-    ) -> None:
+        max_records: int | None = None,
+    ) -> int:
+        """Append the records whose id is not in the file yet; returns how many were written.
+
+        Under the exclusive lock the file is re-read for ids, so concurrent retries of one batch
+        write it once and duplicates never count against the caps (bytes and records).
+        """
         if not items:
-            return
+            return 0
         path = self.path_for(run_id)
-        data = "".join(
-            json.dumps({"id": rid, "record": rec}, separators=(",", ":"), default=str) + "\n"
-            for rid, rec in items
-        ).encode()
         fd = _open(path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o640)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             size = os.fstat(fd).st_size
+            stored = _stored_ids(fd, size)
+            fresh = [(rid, rec) for rid, rec in items if rid not in stored]
+            if not fresh:
+                return 0
+            if max_records is not None and len(stored) + len(fresh) > max_records:
+                raise RunFull("records", f"run {run_id} would exceed {max_records} records")
+            data = "".join(
+                json.dumps({"id": rid, "record": rec}, separators=(",", ":"), default=str) + "\n"
+                for rid, rec in fresh
+            ).encode()
             if size and os.pread(fd, 1, size - 1) != b"\n":
                 data = b"\n" + data  # a crash left a torn last line: end it, readers skip it
             if max_bytes is not None and size + len(data) > max_bytes:
-                raise RunFull(f"run {run_id} would exceed {max_bytes} bytes")
+                raise RunFull("bytes", f"run {run_id} would exceed {max_bytes} bytes")
             try:
                 written = 0
                 while written < len(data):
@@ -106,8 +132,28 @@ class JsonlTraceFiles:
             except OSError:
                 os.ftruncate(fd, size)  # undo a partial write before anyone else can append
                 raise
+            return len(fresh)
         finally:
             os.close(fd)  # closing releases the lock
+
+    def delete_if_older(self, run_id: str, cutoff_ts: float) -> bool:
+        """Delete the file under its lock, but only if it is still older than ``cutoff_ts``.
+
+        An append in flight holds the lock, so purge waits for it and then sees the fresh mtime.
+        """
+        path = self.path_for(run_id)
+        try:
+            fd = _open(path, os.O_RDWR, 0o640)
+        except FileNotFoundError:
+            return False
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            if os.fstat(fd).st_mtime >= cutoff_ts:
+                return False
+            path.unlink(missing_ok=True)
+            return True
+        finally:
+            os.close(fd)
 
     def exists(self, run_id: str) -> bool:
         return self.path_for(run_id).is_file()

@@ -272,3 +272,81 @@ async def test_a_full_disk_error_mid_write_leaves_the_file_unchanged(
         ok = await client.post("/traces", json=[rec(3)])
     assert ok.json()["accepted"] == 1
     assert [line for line in path.read_text().splitlines() if line.startswith("{")]
+
+
+async def test_a_user_with_a_uuid_or_date_like_id_can_read_their_own_trace(rig: Rig) -> None:
+    for user in ("12345678-1234-4abc-8def-0123456789ab", "20261128-123456"):
+        run = f"run_{user[:8]}"
+        async with rig.client() as client:
+            await client.post("/traces", json=[owner(run, user), rec(2, run_id=run)])
+            mine = await client.get(f"/runs/{run}/trace", params={"user_id": user})
+            listed = await client.get("/runs", params={"user_id": user})
+        assert mine.status_code == 200
+        assert [r["run_id"] for r in listed.json()["runs"]] == [run]
+
+
+async def test_a_retry_repairs_a_missing_owner_even_though_the_record_is_a_duplicate(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = rig.index.set_owner
+    calls = {"n": 0}
+
+    async def flaky(run_id: str, user_id: str) -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionError("database blip")
+        await real(run_id, user_id)
+
+    monkeypatch.setattr(rig.index, "set_owner", flaky)
+    async with rig.client() as client:
+        first = await client.post("/traces", json=[owner("run_a", "u1")])
+        assert first.status_code == 500
+        assert rig.index.owners == {}
+        retry = await client.post("/traces", json=[owner("run_a", "u1")])
+        mine = await client.get("/runs/run_a/trace", params={"user_id": "u1"})
+    assert retry.json()["duplicates"] == 1
+    assert rig.index.owners == {"run_a": "u1"}
+    assert mine.status_code == 200
+
+
+async def test_a_timestamp_more_than_a_day_ahead_is_rejected_so_retention_cannot_be_bypassed(
+    rig: Rig,
+) -> None:
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    future = (now + timedelta(days=3650)).isoformat()
+    soon = (now + timedelta(hours=2)).isoformat()
+    async with rig.client() as client:
+        response = await client.post(
+            "/traces", json=[rec(1, ts=future), rec(2, ts=soon), rec(3, ts=now.isoformat())]
+        )
+    body = response.json()
+    assert body["accepted"] == 2
+    assert [r["index"] for r in body["rejected"]] == [0]
+    assert "future" in body["rejected"][0]["reason"]
+
+
+async def test_twenty_concurrent_identical_batches_store_each_record_once(rig: Rig) -> None:
+    batch = [rec(i) for i in range(1, 31)]
+    async with rig.client() as client:
+        results = await asyncio.gather(*[client.post("/traces", json=batch) for _ in range(20)])
+        body = (await client.get("/runs/run_1/trace?flat=true")).json()
+    assert all(r.status_code == 200 for r in results)
+    assert sum(r.json()["accepted"] for r in results) == 30
+    assert len(body["records"]) == 30
+    assert len((rig.dir / "run_1.jsonl").read_text().splitlines()) == 30
+
+
+async def test_concurrent_batches_cannot_overshoot_the_record_cap(tmp_path: Path) -> None:
+    small = Rig(tmp_path, max_run_records=50)
+    async with small.client() as client:
+        results = await asyncio.gather(
+            *[
+                client.post("/traces", json=[rec(n * 100 + i) for i in range(1, 11)])
+                for n in range(10)
+            ]
+        )
+        body = (await client.get("/runs/run_1/trace?flat=true")).json()
+    assert sum(r.json()["accepted"] for r in results) == 50
+    assert len(body["records"]) == 50

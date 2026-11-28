@@ -63,11 +63,16 @@ async def purge(
     doomed: list[str] = []
     for run_id in sorted(old):
         mtime = files.mtime(run_id)
-        if mtime is not None and mtime >= cutoff.timestamp():
-            continue  # records are old but the file was written recently: keep it for now
-        doomed.append(run_id)
-    if not dry_run:
-        for run_id in doomed:
-            files.delete(run_id)
-        await index.delete_runs(doomed)
-    return doomed
+        if mtime is None:
+            doomed.append(run_id)  # no file: only index rows are left
+        elif mtime < cutoff.timestamp():
+            doomed.append(run_id)
+    if dry_run:
+        return doomed
+    deleted: list[str] = []
+    for run_id in doomed:
+        # age is re-checked under the file lock: an append that landed meanwhile keeps the run
+        if files.mtime(run_id) is None or files.delete_if_older(run_id, cutoff.timestamp()):
+            deleted.append(run_id)
+    await index.delete_runs(deleted)
+    return deleted

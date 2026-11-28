@@ -41,18 +41,20 @@ def _clip(value: Any, depth: int = 0) -> Any:
     return value
 
 
-def _scrub(value: Any) -> Any:
+def _scrub(value: Any, pii: bool = True) -> Any:
     if isinstance(value, dict):
-        return {k: _scrub(v) for k, v in value.items()}
+        return {k: _scrub(v, pii) for k, v in value.items()}
     if isinstance(value, list):
-        return [_scrub(v) for v in value]
+        return [_scrub(v, pii) for v in value]
     if isinstance(value, str):
-        return scrub_pii(redact(value))
+        return scrub_pii(redact(value)) if pii else redact(value)
     return value
 
 
-def _payload(value: Any, limit: int = MAX_PAYLOAD_CHARS) -> Any:
-    bounded = bound_payload(_scrub(redact(_clip(value))), limit)
+def _payload(value: Any, limit: int = MAX_PAYLOAD_CHARS, pii: bool = True) -> Any:
+    """``pii=False`` only for records that carry nothing but numbers and ids (m11_verdict input,
+    run_owner output): masking a uuid or a date-like id would corrupt the replay or the owner."""
+    bounded = bound_payload(_scrub(redact(_clip(value)), pii), limit)
     text = json.dumps(bounded, default=str)
     if len(text) > limit + 64:  # scrubbing can only shorten; belt and braces
         return {"_truncated": True, "preview": text[:limit]}
@@ -99,9 +101,11 @@ def sanitize(record: TraceRecord, *, max_bytes: int, privileged_bytes: int = 65_
     clean = record.model_copy(
         update={
             "input": _payload(
-                record.input, M11_INPUT_LIMIT if special == "m11_verdict" else MAX_PAYLOAD_CHARS
+                record.input,
+                M11_INPUT_LIMIT if special == "m11_verdict" else MAX_PAYLOAD_CHARS,
+                pii=special is None,
             ),
-            "output": _payload(record.output),
+            "output": _payload(record.output, pii=special is None),
             "error": error,
         }
     )

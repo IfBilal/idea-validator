@@ -9,7 +9,9 @@ could remove a record a concurrent retry had just been told was a duplicate.
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -53,7 +55,11 @@ class IngestService:
         max_run_bytes: int = 8 * 1024 * 1024,
         max_run_records: int = 5000,
         min_free_bytes: int = 0,
+        max_future: timedelta = timedelta(days=1),
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
+        self._max_future = max_future
+        self._clock = clock
         self._metrics = metrics
         self._index = index
         self._files = files
@@ -64,7 +70,11 @@ class IngestService:
         self._min_free_bytes = min_free_bytes
 
     def _clean(self, item: Any) -> TraceRecord:
-        return sanitize(TraceRecord.model_validate(item), max_bytes=self._max_record_bytes)
+        record = sanitize(TraceRecord.model_validate(item), max_bytes=self._max_record_bytes)
+        if record.ts > self._clock() + self._max_future:
+            # a far-future ts would keep a run out of retention for good
+            raise RejectedRecord("ts is more than a day in the future")
+        return record
 
     async def ingest(self, payload: Any) -> IngestResult:
         items = payload if isinstance(payload, list) else [payload]
@@ -104,6 +114,9 @@ class IngestService:
         for run_id, entries in by_run.items():
             known = await self._index.existing(run_id, [e.record_id for e in entries])
             duplicates += len(known)
+            for e in entries:  # a retry must repair an owner a failed attempt did not store
+                if e.record_id in known:
+                    await self._record_owner(e.record)
             fresh = [e for e in entries if e.record_id not in known]
             if not fresh:
                 continue
@@ -115,24 +128,27 @@ class IngestService:
             duplicates += len(fresh) - len(new)
             accepted += len(new)
             for e in fresh:
-                if e.record_id in new:
-                    await self._record_owner(e.record)
+                await self._record_owner(e.record)
             if self._metrics is not None:
                 self._metrics.observe(e.record for e in fresh if e.record_id in new)
         rejected.sort(key=lambda r: r.index)
         return IngestResult(accepted=accepted, duplicates=duplicates, rejected=rejected)
 
     async def _append(self, run_id: str, fresh: list[_Item]) -> str | None:
-        """Append to the run's file; a reason string if the run is full, else None."""
-        if await self._index.count_run(run_id) + len(fresh) > self._max_run_records:
-            return f"run {run_id} reached its limit of {self._max_run_records} records"
+        """Append to the run's file; a reason string if the run is full, else None.
+
+        Both caps are checked inside the file lock, so concurrent batches cannot overshoot them.
+        """
         lines = [(e.record_id, e.record.model_dump(mode="json")) for e in fresh]
         try:
-            await asyncio.to_thread(self._files.append, run_id, lines, self._max_run_bytes)
+            await asyncio.to_thread(
+                self._files.append, run_id, lines, self._max_run_bytes, self._max_run_records
+            )
         except UnsafeRunId:
             return "the run's trace file is not a regular file"
-        except RunFull:
-            return f"run {run_id} reached its limit of {self._max_run_bytes} bytes"
+        except RunFull as exc:
+            limit = self._max_run_records if exc.what == "records" else self._max_run_bytes
+            return f"run {run_id} reached its limit of {limit} {exc.what}"
         except OSError as exc:
             log.error("trace_append_failed", run_id=run_id, error=type(exc).__name__)
             raise StorageFull("the trace volume could not be written") from exc

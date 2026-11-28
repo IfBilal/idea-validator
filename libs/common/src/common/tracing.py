@@ -41,6 +41,14 @@ _bounded = bound_payload
 MAX_ERROR_CHARS = 200
 
 
+_SAFE_MESSAGES: set[str] = set()
+
+
+def register_trace_safe_message(message: str) -> None:
+    """Declare a fixed reason (no user data in it) that may appear in a trace as is."""
+    _SAFE_MESSAGES.add(message)
+
+
 def error_text(exc: BaseException) -> str:
     """What a trace may say about a failure: our own messages, capped and redacted; for anything
     else only the type, because str(exc) can embed user text (pydantic prints the input)."""
@@ -49,8 +57,8 @@ def error_text(exc: BaseException) -> str:
         return f"{name}: {redact(exc.message[:MAX_ERROR_CHARS])}"
     if isinstance(exc, ValidationError):
         return f"{name}: {exc.error_count()} validation errors"
-    if type(exc).__module__ == "builtins" and not isinstance(exc, OSError):
-        return f"{name}: {redact(str(exc)[:MAX_ERROR_CHARS])}"
+    if type(exc).__module__ == "builtins" and str(exc) in _SAFE_MESSAGES:
+        return f"{name}: {exc}"  # one of our own fixed reasons, never user text
     return name
 
 

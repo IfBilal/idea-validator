@@ -111,3 +111,22 @@ of the manifests yet.
   verdict). It does not prove what the user was shown. A rules-version change fails unless
   `--allow-version-drift`; a truncated trace or truncated input is exit 2; the report prints how many M11
   steps were replayed.
+
+## Accepted risks and follow-ups
+- **One shared internal token.** Every service reaches `POST /traces` with the same `INTERNAL_TOKEN` (a
+  NetworkPolicy cannot filter by path, and all services must send traces). So any pod that holds the token can
+  claim `service: "orchestrator"` and post `m11_verdict` / `run_owner` records. Follow-up: a per-service token
+  (or mTLS identity) checked against the `service` field, so only the orchestrator pod can post privileged
+  decisions. Until then these records are trusted only as far as the pods in the namespace are.
+- **Owner squatting.** The first `run_owner` for a run id wins and is not tied to earlier records of the run
+  (the orchestrator sends it right after `run_started`, so a "run has other records first" rule would be
+  fragile). Run ids are random (`run_` plus 12 hex) and a trace is readable only with `user_id=` of its owner.
+  A holder of the token could still pre-claim a guessed run id; the per-service token above closes that.
+- **Timestamps.** A record whose `ts` is more than one day in the future is rejected (it would keep a run out
+  of the retention window); a record far in the past is accepted and simply purged early.
+- **Ids are not PII-scrubbed.** `m11_verdict` and `run_owner` records skip e-mail/phone masking (secrets are still
+  redacted): they hold numbers and ids only, and masking a uuid or a date-like id would break replay or the
+  owner check. The phone pattern itself only matches a leading `+`, a parenthesised area code, `555-123-4567`
+  or digit groups separated by single spaces, never bare digit runs, dates or hyphenated ids.
+- **Caps are checked under the file lock** (records and bytes, after dropping ids already stored), so retries
+  and concurrent batches neither overshoot them nor burn them.

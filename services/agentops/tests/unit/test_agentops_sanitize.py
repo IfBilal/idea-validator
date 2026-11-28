@@ -117,3 +117,50 @@ def test_new_secret_shapes_are_redacted_in_payloads_and_errors() -> None:
     for text, secret in REDACTION_POSITIVE:
         out = clean(input={"msg": text}, error=text)
         assert secret not in json.dumps(out.model_dump(mode="json")), text
+
+
+UUID = "12345678-1234-4abc-8def-0123456789ab"
+
+
+def test_the_m11_engine_input_keeps_ids_and_numbers_exactly() -> None:
+    engine_input = {
+        "idea_id": UUID,
+        "run_id": "run_20261128-123456",
+        "scores": [
+            {"dimension": "risk", "score": 3.5, "evidence_ids": [f"ev-{UUID}", "card_aaaaaaaa#c3"]}
+        ],
+        "gate_inputs": {"n_sources": 5, "risk_blocker": None},
+    }
+    out = clean(
+        kind="decision",
+        tool="transition",
+        input=engine_input,
+        output={"decision": "m11_verdict", "verdict": "GO", "score": 71.25},
+    )
+    assert out.input == engine_input
+
+
+def test_the_run_owner_user_id_is_stored_as_given() -> None:
+    for user in (UUID, "20261128-123456", "user_0123456789012", "ev-12345678-1234"):
+        out = clean(
+            kind="decision",
+            tool="transition",
+            output={"decision": "run_owner", "user_id": user},
+        )
+        assert out.output["user_id"] == user
+
+
+def test_other_records_are_still_scrubbed_for_pii() -> None:
+    out = clean(input={"msg": "call +92 300 1234567 or bob@example.com"})
+    assert "1234567" not in json.dumps(out.input)
+    assert "bob@example.com" not in json.dumps(out.input)
+
+
+def test_secrets_are_still_redacted_inside_a_privileged_record() -> None:
+    out = clean(
+        kind="decision",
+        tool="transition",
+        input={"scores": [], "note": "Bearer abc.def.ghi"},
+        output={"decision": "m11_verdict"},
+    )
+    assert "abc.def" not in json.dumps(out.input)

@@ -75,3 +75,25 @@ async def test_an_old_file_the_index_never_saw_is_removed(tmp_path: Path) -> Non
 async def test_purge_on_an_empty_store_is_a_no_op(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
     assert await purge(JsonlTraceFiles(rig.dir), rig.index, cutoff=datetime.now(UTC)) == []
+
+
+async def test_purge_does_not_delete_a_file_that_was_appended_to_after_the_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rig = Rig(tmp_path)
+    now = datetime.now(UTC)
+    await seed(rig, "run_race", now - timedelta(days=30))
+    age_file(rig, "run_race", 30)
+    files = JsonlTraceFiles(rig.dir)
+    real_mtime = files.mtime
+
+    def mtime_then_append(run_id: str) -> float | None:
+        value = real_mtime(run_id)  # the old age is read here...
+        files.append(run_id, [("late", {"n": 1})])  # ...then an append lands before the delete
+        return value
+
+    monkeypatch.setattr(files, "mtime", mtime_then_append)
+    doomed = await purge(files, rig.index, cutoff=now - timedelta(days=14))
+    assert doomed == []
+    assert (rig.dir / "run_race.jsonl").exists()
+    assert rig.index.rows  # the index rows stay with the file

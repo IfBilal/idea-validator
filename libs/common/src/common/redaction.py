@@ -28,18 +28,43 @@ _SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     # user:password@host in a URL
     (re.compile(r"(://)[^\s/@:]{1,128}:[^\s/@]{1,256}@"), rf"\1{REDACTED}@"),
-    # key=value / key: value in free text (``max_tokens=5`` does not match: no word boundary)
+    # key=value / key: value in free text, bare or quoted (``max_tokens=5`` does not match: the
+    # name must be followed by ``=`` or ``:``)
     (
         re.compile(
-            r"\b((?:api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token|secret|password"
-            r"|passwd|pwd)\s{0,3}[=:]\s{0,3})[^\s&\"',;]{1,256}",
+            r"(?<![A-Za-z0-9])((?:aws[_-]?secret[_-]?access[_-]?key|secret[_-]?access[_-]?key"
+            r"|client[_-]?secret|secret[_-]?key|private[_-]?key|api[_-]?key|apikey"
+            r"|access[_-]?token|auth[_-]?token|token|secret|password|passwd|pwd)"
+            r"[\"']?\s{0,3}[=:]\s{0,3}[\"']?)[^\s&\"',;]{1,256}",
             re.IGNORECASE,
         ),
         rf"\1{REDACTED}",
     ),
+    (re.compile(r"hf_[A-Za-z0-9]{30,256}"), REDACTED),
+    (re.compile(r"glpat-[A-Za-z0-9_-]{20,256}"), REDACTED),
+    (
+        re.compile(
+            r"-----BEGIN [A-Z ]{0,30}PRIVATE KEY-----[A-Za-z0-9+/=\s\\n]{0,8000}"
+            r"(?:-----END [A-Z ]{0,30}PRIVATE KEY-----)?"
+        ),
+        REDACTED,
+    ),
+    (
+        re.compile(r"(\b(?:Set-)?Cookie\s{0,2}:\s{0,3})[^\r\n]{1,2048}", re.IGNORECASE),
+        rf"\1{REDACTED}",
+    ),
 ]
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,8}")
-_PHONE = re.compile(r"(?<![\w.])\+?\d[\d ().-]{7,18}\d(?![\w.])")
+# Phone shapes only: a leading ``+``, a parenthesised area code, ``555-123-4567`` or digit groups
+# separated by single spaces. Bare digit runs, dates, uuids and hyphenated ids never match.
+_PHONE = re.compile(
+    r"(?<![\w.-])(?:"
+    r"\+\d[\d ().-]{7,18}\d"
+    r"|\(\d{2,4}\)[ .-]?\d[\d ().-]{5,14}\d"
+    r"|\d{3}[-.]\d{3}[-.]\d{4}"
+    r"|\d{2,8}(?: \d{2,8}){1,4}"
+    r")(?![\w-]|\.\d)"
+)
 
 
 def _scrub_text(value: str) -> str:

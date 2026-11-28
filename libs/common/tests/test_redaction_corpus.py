@@ -3,7 +3,7 @@ import time
 import pytest
 
 from common.redaction import REDACTED, redact, scrub_pii
-from common.testing import REDACTION_NEGATIVE, REDACTION_POSITIVE
+from common.testing import PII_NEGATIVE, PII_POSITIVE, REDACTION_NEGATIVE, REDACTION_POSITIVE
 
 
 @pytest.mark.parametrize(("text", "secret"), REDACTION_POSITIVE)
@@ -44,3 +44,21 @@ def test_redaction_is_linear_on_adversarial_strings(text: str) -> None:
     redact(text)
     scrub_pii(text)
     assert time.perf_counter() - started < 0.5
+
+
+@pytest.mark.parametrize("text", PII_NEGATIVE)
+def test_ids_dates_and_numbers_survive_pii_scrubbing(text: str) -> None:
+    assert scrub_pii(text) == text
+    assert redact(text) == text
+
+
+@pytest.mark.parametrize(("text", "gone"), PII_POSITIVE)
+def test_real_phone_and_email_shapes_are_still_masked(text: str, gone: str) -> None:
+    out = scrub_pii(text)
+    assert gone not in out
+    assert out.startswith(text.split(gone)[0][:5])
+
+
+def test_a_uuid_inside_a_sentence_is_untouched() -> None:
+    text = "run 12345678-1234-4abc-8def-0123456789ab finished, owner 20261128-123456"
+    assert scrub_pii(text) == text
