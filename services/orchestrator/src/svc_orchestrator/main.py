@@ -20,6 +20,7 @@ from .repositories.attempts import RedisAttempts
 from .repositories.checkpoints import postgres_saver
 from .repositories.events import RedisPublisher, RunEmitter
 from .repositories.leases import RedisLeases
+from .services.metrics import RunMetrics
 from .services.recovery import recovery_loop
 from .services.run_config import load_run_config
 from .services.run_context import RunContext
@@ -52,6 +53,7 @@ def build_app(settings: Settings, *, service: RunService | None = None) -> FastA
                 app.state.runs = service
             else:
                 app.state.runs = await _wire(settings, app, stack)
+                app.state.runs.on_terminal = run_metrics.terminal
             recovery = None
             if service is None:  # an injected service is driven by the test, not recovered
                 recovery = asyncio.create_task(
@@ -77,7 +79,10 @@ def build_app(settings: Settings, *, service: RunService | None = None) -> FastA
     app = create_app(
         name="orchestrator", module="M3", settings=settings, ready_checks=ready, lifespan=lifespan
     )
+    run_metrics = RunMetrics(app.state.metrics_registry)
     if service is not None:
+        if service.on_terminal is None:
+            service.on_terminal = run_metrics.terminal
         app.state.runs = service  # also available when the lifespan is not run (ASGITransport)
     app.include_router(make_router(settings))
     return app

@@ -149,7 +149,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Blocked injections",
-      "description": "Injection attempts blocked, per hour and source. SOURCE NEEDED: tools (M5) must emit blocked_injections_total{source}.",
+      "description": "Injection attempts blocked, per hour and source. Emitted by tools (M5): blocked_injections_total{source} on its /metrics.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -178,7 +178,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Budget stops",
-      "description": "Runs stopped by the budget, per hour. SOURCE NEEDED: orchestrator (M3) must emit runs_total{kind,status} with status=\"budget_stopped\".",
+      "description": "Runs stopped by the budget, per hour. Emitted by orchestrator (M3): runs_total{kind,status} with status=\"budget_stopped\" on its /metrics.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

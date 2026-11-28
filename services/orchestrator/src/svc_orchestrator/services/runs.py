@@ -103,6 +103,7 @@ class ActiveRun:
     pending_approval: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    counted: bool = False  # the terminal-state hook has fired for this run
     task: asyncio.Task[None] | None = None
     expiry: asyncio.Task[None] | None = None
     background: set[asyncio.Task[None]] = field(default_factory=set)
@@ -127,7 +128,9 @@ class RunService:
         lease_failures_allowed: int = 2,
         finished_ttl_s: float = FINISHED_TTL_S,
         clock: Callable[[], float] = time.monotonic,
+        on_terminal: Callable[[str, str], None] | None = None,
     ) -> None:
+        self.on_terminal = on_terminal  # (kind, status) once per run, e.g. runs_total
         if (
             min(
                 resume_concurrency,
@@ -673,8 +676,18 @@ class RunService:
         while len(self._memos) > MAX_REMEMBERED_IDEAS:
             self._memos.pop(next(iter(self._memos)))
 
+    def _count_terminal(self, run: ActiveRun) -> None:
+        if run.status not in TERMINAL or run.counted or self.on_terminal is None:
+            return
+        run.counted = True
+        try:
+            self.on_terminal(run.kind, run.status.value)
+        except Exception:  # metrics are best effort: they never break a run
+            log.warning("run_metrics_failed", run_id=run.run_id, exc_info=True)
+
     async def _persist(self, run: ActiveRun) -> None:
         """Mirror the run to M2 in M2's shape: ``context`` carries what M2 has no column for."""
+        self._count_terminal(run)
         spent = await run.ctx.ledger.spent()
         limits = await run.ctx.ledger.limits()
         context: dict[str, Any] = {

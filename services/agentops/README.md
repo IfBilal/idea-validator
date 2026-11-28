@@ -108,7 +108,9 @@ agentops and kb.
 Series derived from newly stored traces (retries are not double counted): `agent_step_latency_seconds{agent,kind}`,
 `llm_tokens_total{agent,model,direction}`, `trace_cost_usd_total{agent}`, `cache_requests_total{cache,result}` (cache = the
 record kind), `scorer_fallback_total{agent}`, `trace_errors_total{agent}`, `verdicts_total{verdict}`.
-`k8s/dashboards/idea-validator.json` (import into Grafana) has the six required panels. Two have no source yet:
-**Blocked injections** needs M5 (tools) to emit `blocked_injections_total{source}`, **Budget stops** needs M3 (orchestrator)
-to emit `runs_total{kind,status}` with `status="budget_stopped"`. Prometheus scraping and the Grafana deployment are not part
-of the manifests yet.
+`k8s/dashboards/idea-validator.json` (import into Grafana) has the six required panels. Four read agentops series; the other two
+read the services' own `/metrics`: **Blocked injections** = `blocked_injections_total{source}` from tools (M5, when the sanitiser
+removes an instruction-like pattern from fetched text), **Budget stops** = `runs_total{kind,status}` from the orchestrator (M3,
+once per run reaching a terminal state; `status="budget_stopped"`). All counters are best effort and reset on restart. Prometheus
+scraping of the three services and the Grafana deployment are not part of the manifests yet. Label values from traces are
+limited to the known agent and model names (config) and at most 64 distinct values, the rest is `other`.
