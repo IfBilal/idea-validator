@@ -46,6 +46,10 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: INGEST_TOKEN
+        - name: INGESTION_TIMEOUT_S
+          value: '240'
+        - name: INGESTION_BATCH_SIZE
+          value: '20'
         resources:
           requests:
             cpu: 50m

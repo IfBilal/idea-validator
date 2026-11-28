@@ -25,7 +25,16 @@ SERVICES: dict[str, dict[str, Any]] = {
     "orchestrator": {"module": "m3", "replicas": 2, "secrets": ["DATABASE_URL"]},
     "scouts": {"module": "m4", "replicas": 1, "secrets": ["DATABASE_URL"]},
     "tools": {"module": "m5", "replicas": 2, "secrets": ["GROQ_API_KEY"]},
-    "kb": {"module": "m6", "replicas": 2, "secrets": ["DATABASE_URL", "INGEST_TOKEN"]},
+    "kb": {
+        "module": "m6",
+        "replicas": 2,
+        "secrets": ["DATABASE_URL", "INGEST_TOKEN"],
+        # three ONNX models are loaded and embedding runs on the CPU: the generic placeholder starved it
+        "resources": {
+            "requests": {"cpu": "250m", "memory": "768Mi"},
+            "limits": {"cpu": "2", "memory": "2Gi"},
+        },
+    },
     "analyst": {"module": "m7", "replicas": 1, "secrets": []},
     "ideation": {"module": "m8", "replicas": 1, "secrets": []},
     "validators": {"module": "m9", "replicas": 2, "secrets": []},
@@ -131,6 +140,8 @@ JOBS: dict[str, dict[str, Any]] = {
         "backoff_limit": 2,
         # exit 2 bad config, 3 bad/missing snapshot, 4 rows dropped: a retry cannot fix these
         "fail_fast_codes": [2, 3, 4],
+        # M6 embeds on the CPU while it stores: a batch of 50 cards takes longer than the 30 s default
+        "extra_env": {"INGESTION_TIMEOUT_S": "240", "INGESTION_BATCH_SIZE": "20"},
     },
 }
 # scheduled one-shot runs (docs/harness/10 section 4). They reach M5 and Postgres only: the internet
@@ -279,7 +290,7 @@ def _deployment(name: str) -> str:
             "periodSeconds": 10,
             "failureThreshold": 3,
         },
-        "resources": RESOURCES,
+        "resources": svc.get("resources", RESOURCES),
         "securityContext": {
             "allowPrivilegeEscalation": False,
             "readOnlyRootFilesystem": True,
@@ -629,6 +640,7 @@ def _job(name: str) -> str:
         },
         "volumeMounts": [{"name": "tmp", "mountPath": TMP_MOUNT}],
     }
+    container["env"] += [{"name": k, "value": v} for k, v in spec.get("extra_env", {}).items()]
     if spec.get("manual"):  # built locally per commit: scripts/seed.sh pins SHA tags
         container["imagePullPolicy"] = "Always"
     job: dict[str, Any] = {
