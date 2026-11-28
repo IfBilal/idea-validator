@@ -56,6 +56,8 @@ Outputs per claim: `supported`, `reason`, `supporting_quote`. Accepted Skeptic o
 | `estimated_effort_hours` | base hours by scope (S 60, M 160, L 400) × (1 + 0.5·(1−skill_overlap)) × compute factor (needs GPU & laptop → ×1.5); model may adjust ±30% with cited reason | feasibility gate |
 | `compute_fit` | required compute ≤ profile compute | feasibility |
 | `risk_flags` | regex/keyword lists: health data, minors, finance/trading, scraping logged-in sites, ToS-dependent single API, PII | risk |
+| `duplicate_of` | id of the same-user product card with `max(cosine, Jaccard) >= 0.85` (ties: smaller id), else null; computed from stored cards, never by a model | duplicate gate |
+| `risk_blocker` | the blocker flag token (`scraping_logged_in`) when `risk_flags` has `blocker`, else null; a fixed token, never free text | risk gate |
 | `platform_dependency` | evidence that core value depends on one third-party API/platform | risk |
 | `skill_novelty` | required skills that are in profile.interests or not in profile.skills (learning value) | learning |
 | `cv_signal` | niche trend + tech in-demand list (config) | learning |

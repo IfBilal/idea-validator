@@ -8,6 +8,9 @@ COPY pyproject.toml uv.lock ./
 COPY libs/common ./libs/common
 COPY services/kb ./services/kb
 RUN uv sync --frozen --no-dev --no-editable --package idea-validator-kb
+# The pod has no internet (only M5 does) and a read-only root: bake the three FastEmbed models in at build
+# time. Each is run once so the files are really downloaded and load offline.
+RUN .venv/bin/python -c "import asyncio; from svc_kb.services.models import FastEmbedModels; m = FastEmbedModels('/models'); asyncio.run(m.dense(['warm'])); asyncio.run(m.sparse(['warm'])); asyncio.run(m.rerank('q', ['a']))"
 
 FROM python:3.12.16-slim-bookworm
 RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
@@ -16,7 +19,8 @@ COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
 # the migrate Job runs `alembic -c /app/alembic.ini upgrade head` from this image
 COPY --from=build --chown=10001:10001 /app/services/kb/alembic.ini /app/alembic.ini
 COPY --from=build --chown=10001:10001 /app/services/kb/migrations /app/migrations
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+COPY --from=build --chown=10001:10001 /models /models
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MODEL_SEED_DIR=/models MODEL_CACHE_DIR=/tmp/models HF_HUB_OFFLINE=1
 USER 10001
 EXPOSE 8000
 CMD ["uvicorn", "svc_kb.main:app", "--host", "0.0.0.0", "--port", "8000"]

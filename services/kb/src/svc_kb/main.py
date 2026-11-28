@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -21,15 +22,18 @@ def build_app(
 ) -> FastAPI:
     """Wire the service. Without a database and Qdrant it starts, answers 503, is not ready."""
     owned: list[AsyncQdrantClient] = []
+    warm: list[FastEmbedModels] = []
     engine = None
     if store is None and index is None and settings.database_url and settings.qdrant_url:
         engine = create_async_engine(settings.database_url.get_secret_value(), pool_pre_ping=True)
         store = PgStore(async_sessionmaker(engine, expire_on_commit=False))
         client = AsyncQdrantClient(url=settings.qdrant_url)
         owned.append(client)
+        models = FastEmbedModels(settings.model_cache_dir, settings.model_seed_dir)
+        warm.append(models)
         index = ChunkIndex(
             client,
-            FastEmbedModels(settings.model_cache_dir),
+            models,
             collection=settings.qdrant_collection,
             dim=DENSE_DIM,
         )
@@ -42,7 +46,11 @@ def build_app(
         try:
             if index is not None and owned:
                 await index.ensure_collection()
+            # models load in the background: /health answers at once, /ready waits for them
+            loading = [asyncio.create_task(asyncio.to_thread(m.warm)) for m in warm]
             yield
+            for task in loading:
+                task.cancel()
         finally:
             for client in owned:
                 await client.close()

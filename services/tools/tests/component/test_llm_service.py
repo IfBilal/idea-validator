@@ -368,10 +368,32 @@ async def test_timeouts_are_retried_then_reported() -> None:
 
 
 async def test_provider_rate_limiting_is_passed_on_with_retry_after() -> None:
-    limited = RawResponse(429, {"retry-after": "12"}, b"", False)
+    limited = RawResponse(429, {"retry-after": "42"}, b"", False)
+    poster = FakePoster(limited)
+    sleeps: list[float] = []
     with pytest.raises(RateLimited) as caught:
-        await build(FakePoster(limited)).complete(request())
-    assert caught.value.details["retry_after"] == 12
+        await build(poster, sleeps=sleeps).complete(request())
+    assert caught.value.details["retry_after"] == 42
+    assert len(poster.calls) == 1 and sleeps == [], "a long wait is the caller's decision, not ours"
+
+
+async def test_a_short_provider_rate_limit_is_waited_out_and_the_call_succeeds() -> None:
+    """Free-tier token-per-minute limits: six scorers in parallel get a 429 with retry-after of a few s."""
+    limited = RawResponse(429, {"retry-after": "3"}, b"", False)
+    poster = FakePoster(limited, reply())
+    sleeps: list[float] = []
+    out = await build(poster, sleeps=sleeps).complete(request())
+    assert out.content and len(poster.calls) == 2
+    assert sleeps == [3.0], "it waited exactly what the provider asked for"
+
+
+async def test_a_rate_limit_that_keeps_coming_back_is_reported_after_three_waits() -> None:
+    limited = RawResponse(429, {"retry-after": "2"}, b"", False)
+    poster = FakePoster(limited)
+    sleeps: list[float] = []
+    with pytest.raises(RateLimited):
+        await build(poster, sleeps=sleeps).complete(request())
+    assert len(poster.calls) == 4 and sleeps == [2.0, 2.0, 2.0]
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 422])

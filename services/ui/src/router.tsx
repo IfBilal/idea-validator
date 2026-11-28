@@ -16,6 +16,7 @@ import { DiscoverPage } from "@/routes/discover";
 import { HistoryPage, VersionsPage } from "@/routes/history";
 import { IdeaPage } from "@/routes/idea";
 import { ProfilePage } from "@/routes/profile";
+import { TracePage } from "@/routes/trace";
 import { ValidatePage } from "@/routes/validate";
 
 function Shell() {
@@ -178,6 +179,15 @@ const compareRoute = createRoute({
   },
 });
 
+const traceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/runs/$runId/trace",
+  beforeLoad: requireAuth,
+  component: function Trace() {
+    return <TracePage runId={traceRoute.useParams().runId} />;
+  },
+});
+
 export const routeTree =rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home }),
   loginRoute,
@@ -193,6 +203,7 @@ export const routeTree =rootRoute.addChildren([
   ideaRoute,
   protectedRoute("/history", HistoryPage),
   compareRoute,
+  traceRoute,
   protectedRoute("/ideas", () => <Placeholder title="My ideas" />),
 ]);
 export function makeRouter(history?: RouterHistory) {

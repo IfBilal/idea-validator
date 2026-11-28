@@ -158,3 +158,16 @@ async def test_ensure_collection_is_idempotent_and_search_on_empty_is_empty() ->
     await idx.ensure_collection()
     await idx.ensure_collection()
     assert await idx.search("anything", mode="hybrid", k=5) == []
+
+
+async def test_only_the_first_candidates_are_reranked_the_rest_keep_their_fused_rank() -> None:
+    idx = ChunkIndex(
+        AsyncQdrantClient(":memory:"), FakeModels(), collection="r", dim=DIM, rerank_candidates=2
+    )
+    await idx.ensure_collection()
+    for i, text in enumerate(["alpha one", "alpha two", "alpha three", "alpha four"]):
+        await idx.upsert(card(f"card_0000000{i}", text))
+    fused = await idx.search("alpha", mode="hybrid", k=4)
+    reranked = await idx.search("alpha", mode="hybrid+rerank", k=4)
+    assert [h.evidence_id for h in reranked[2:]] == [h.evidence_id for h in fused[2:]]
+    assert {h.evidence_id for h in reranked[:2]} == {h.evidence_id for h in fused[:2]}

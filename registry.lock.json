@@ -2,6 +2,7 @@
   "schema": 1,
   "entries": {
     "config:budgets@b1": "1a184395622aa6b5307fe8fde19747e77370bc71da0d459ea33e5f9777a8fdbf",
+    "config:budgets@b2": "912dc6d6f2df7837da253ab88d3ce6df2004420394120aa4e889b821a993cdf4",
     "config:llm@l2": "e6585ab13b32d1ef548f79c20e9d837c449a103e375bffaa07cc256e0ec3e555",
     "config:prompts@p1": "2bf350c3041839ab3947a5ffb4febbba12da2d7fc33b4718f01616c6d60f05b6",
     "config:verdict.engine@m11@v1": "46664b26dbd0400c648922912d01ae0ad5c2cc57b33a22f64ab5be4aeddc17b3",
