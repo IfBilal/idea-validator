@@ -41,6 +41,7 @@ All bodies are JSON validated against `schemas/*.schema.json` (Pydantic mirrors 
 | `POST /validate` | `{"idea_text": "...", "title": "...", "idea_id": null}` (idea_id when validating an existing/proposed idea) | 202 `{"run_id","idea_id","version"}` |
 | `GET /runs/{id}` | — | `{"run_id","kind","state","progress":{...},"spent":{"cost_usd","tokens","pages","steps"},"budget":{...},"pending_question":{...}\|null,"pending_approval":{...}\|null,"result":{...}\|null}` |
 | `GET /runs/{id}/events` | SSE (`text/event-stream`), supports `Last-Event-ID` | stream of `RunEvent` |
+| `GET /runs/{id}/trace` | `?flat=true` optional | M13's `{"run_id","totals","by_agent","truncated","tree"}` (or `records` when flat) for the caller's own run. Ownership is checked in M2 first (unknown and foreign: the same 404); capped at 1 MiB; never proxies M13 `GET /runs` |
 | `POST /runs/{id}/answer` | `{"question_id","answer"}` | 202 |
 | `POST /runs/{id}/approve` | `{"approval_id","decision":"approve"\|"decline"}` | 202 |
 

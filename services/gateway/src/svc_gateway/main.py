@@ -10,6 +10,7 @@ from common.http import ServiceClient
 from common.service import create_app
 
 from .api.routes import make_router
+from .clients.agentops import AgentOpsClient
 from .clients.coordination import (
     IdempotencyStore,
     RedisIdempotencyStore,
@@ -38,6 +39,7 @@ def build_app(
     events: EventBus | None = None,
     store: IdempotencyStore | None = None,
     gate: StreamGate | None = None,
+    agentops: AgentOpsClient | None = None,
 ) -> FastAPI:
     """Wire the gateway. Every dependency can be injected (tests); otherwise it is built from the
     environment at start-up, and missing configuration stops the service."""
@@ -92,6 +94,11 @@ def build_app(
             m3 = connect(settings.orchestrator_url, "ORCHESTRATOR_URL", token)
             owned.append(m3)
             active_orch = OrchestratorClient(m3)
+        active_agentops = agentops
+        if active_agentops is None and settings.agentops_url:
+            m13 = connect(settings.agentops_url, "AGENTOPS_URL", token)
+            owned.append(m13)
+            active_agentops = AgentOpsClient(m13, settings.max_trace_bytes)
         holder.update(redis=redis, profiles=active_profiles, orchestrator=active_orch)
         auth = AuthFlow(active_profiles, settings, secret)
         assert active_limiter and active_events and active_store and active_gate
@@ -108,6 +115,7 @@ def build_app(
                 streams_per_user=settings.sse_streams_per_user,
                 streams_global=settings.sse_streams_global,
             ),
+            active_agentops,
         )
         router = make_router(
             settings,
