@@ -68,7 +68,17 @@ class AgentOpsSink:
         """Flush what is queued (bounded by ``timeout_s``) and stop the worker."""
         self._stop.set()
         self._thread.join(timeout_s)
-        self._client.close()
+        left = 0
+        while True:  # whatever the worker did not reach is dropped, and counted
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+            left += 1
+        if left:
+            self._drop(left, "closed with records still queued")
+        if not self._thread.is_alive():
+            self._client.close()
 
     def _drop(self, count: int, reason: str) -> None:
         with self._lock:
@@ -79,12 +89,18 @@ class AgentOpsSink:
             self._log.warning("trace_records_dropped", reason=reason, dropped_total=self.dropped)
 
     def _run(self) -> None:
-        while True:
-            batch = self._collect()
-            if batch:
-                self._post(batch)
-            elif self._stop.is_set():
-                return
+        try:
+            while True:
+                batch = self._collect()
+                if batch:
+                    try:
+                        self._post(batch)
+                    except Exception as exc:  # one bad batch must not kill the worker
+                        self._drop(len(batch), f"unexpected {type(exc).__name__}")
+                elif self._stop.is_set():
+                    return
+        finally:
+            self._log.info("trace_sink_stopped", sent=self.sent, dropped=self.dropped)
 
     def _collect(self) -> list[TraceRecord]:
         batch: list[TraceRecord] = []

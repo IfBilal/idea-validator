@@ -13,6 +13,8 @@ from ..models.traces import IngestResult, RunList, TraceFlat, TraceTree
 from ..services.ingest import IngestService
 from ..services.query import QueryService
 
+USER_ID = r"^[A-Za-z0-9_.:-]{1,128}$"
+
 
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(dependencies=[Depends(require_internal_token(settings))])
@@ -49,15 +51,19 @@ def make_router(settings: Settings) -> APIRouter:
         run_id: str,
         service: Annotated[QueryService, Depends(query_service)],
         flat: bool = False,
+        user_id: Annotated[str | None, Query(pattern=USER_ID, max_length=128)] = None,
     ) -> TraceTree | TraceFlat:
-        return await service.flat(run_id) if flat else await service.trace(run_id)
+        if flat:
+            return await service.flat(run_id, user_id)
+        return await service.trace(run_id, user_id)
 
     @router.get("/runs", response_model=RunList)
     async def get_runs(
         service: Annotated[QueryService, Depends(query_service)],
         limit: Annotated[int | None, Query()] = None,
         after: Annotated[str | None, Query(max_length=200)] = None,
+        user_id: Annotated[str | None, Query(pattern=USER_ID, max_length=128)] = None,
     ) -> RunList:
-        return await service.runs(limit, after)
+        return await service.runs(limit, after, user_id)
 
     return router

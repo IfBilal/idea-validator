@@ -372,3 +372,14 @@ async def test_a_memo_hit_is_summarised_too() -> None:
     memo = {key: {"idea": "secret dentist idea"}}
     await rig.runner.run(memo, "x", tool="t", inputs={"q": 1}, call=ok, timeout_s=1)
     assert "dentist" not in json.dumps(rig.records[-1].model_dump(mode="json"))
+
+
+def test_a_decision_can_carry_a_larger_input_than_the_default_cap() -> None:
+    rig = Rig()
+    big = {
+        "scores": [{"evidence_ids": [f"card_{i:08x}#c{j}" for j in range(60)]} for i in range(6)]
+    }
+    rig.runner.decision("m11_verdict", big, {"verdict": "GO"}, input_limit=32_768)
+    rig.runner.decision("other", big, {})
+    assert rig.records[0].input == big  # > 4 KB, kept whole
+    assert rig.records[1].input["_truncated"] is True

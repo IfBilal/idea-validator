@@ -21,7 +21,7 @@ from common.errors import (
     UpstreamTimeout,
 )
 from common.http import RETRY_STATUS
-from common.tracing import Tracer
+from common.tracing import MAX_PAYLOAD_CHARS, Tracer
 
 from ..clients.base import retries_var
 from ..repositories.events import RunEmitter
@@ -50,7 +50,7 @@ def summarize_output(value: Any) -> dict[str, Any]:
         elif isinstance(value, int | float | bool):
             summary["value"] = value
         return summary
-    summary["keys"] = sorted(str(k)[:64] for k in value)[:50]
+    summary["fields"] = sorted(str(k)[:64] for k in value)[:50]
     numbers: dict[str, Any] = {}
     counts: dict[str, int] = {}
     ids: dict[str, Any] = {}
@@ -203,9 +203,16 @@ class StepRunner:
         await self._ledger.release_step(key)
         return StepOutcome(value, False, key, {key: value} if memoise else {})
 
-    def decision(self, name: str, inputs: Any, output: Any) -> None:
+    def decision(
+        self, name: str, inputs: Any, output: Any, *, input_limit: int = MAX_PAYLOAD_CHARS
+    ) -> None:
         """A routing or policy decision as a ``kind=decision`` trace record (docs/harness/07 §8)."""
         with self._tracer.span(
-            AGENT, "decision", tool="transition", run_id=self._run_id, input=inputs
+            AGENT,
+            "decision",
+            tool="transition",
+            run_id=self._run_id,
+            input=inputs,
+            input_limit=input_limit,
         ) as handle:
             handle.set_output({"decision": name, **(output if isinstance(output, dict) else {})})

@@ -30,7 +30,7 @@ def build_app(
         return index is not None and await index.ping()
 
     async def files_ready() -> bool:
-        return store.writable()
+        return store.writable() and store.free_bytes() >= settings.min_free_bytes
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -51,7 +51,13 @@ def build_app(
     )
     if index is not None:
         app.state.ingest = IngestService(
-            index, store, max_batch=settings.max_batch, max_record_bytes=settings.max_record_bytes
+            index,
+            store,
+            max_batch=settings.max_batch,
+            max_record_bytes=settings.max_record_bytes,
+            max_run_bytes=settings.max_run_bytes,
+            max_run_records=settings.max_run_records,
+            min_free_bytes=settings.min_free_bytes,
         )
         app.state.query = QueryService(
             index,
