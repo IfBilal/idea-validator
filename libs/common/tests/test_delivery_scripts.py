@@ -396,7 +396,11 @@ def test_a_job_that_did_not_succeed_fails_even_when_kubectl_wait_returns_zero(
     env, log = _eval_env(tmp_path, "kind-idea-validator", **stub)
     done = _run([str(SCRIPTS / "run_eval.sh")], env)
     assert done.returncode != 0 and "did not finish cleanly" in done.stderr
-    assert "wait --for=condition=failed" in log.read_text()
+    # Only the calls that always happen before the verdict on the Job: both waiters run in the
+    # background and the first to return kills the other, so whether the second one managed to log
+    # its line is a race and must not be asserted.
+    calls = log.read_text()
+    assert "apply" in calls and "get job" in calls
 
 
 def test_run_eval_without_a_labelled_set_says_so_and_exits_2(tmp_path: Path) -> None:
