@@ -12,6 +12,8 @@ unsupported claim is dropped, never rewritten.
 
 import re
 from collections.abc import Iterable
+from functools import cache
+from importlib import resources
 
 from .competitors import matches_any
 
@@ -63,8 +65,55 @@ _GENERIC_AFTER_CUE = _COMMON | _words(
 )
 
 
+@cache
+def _vocabulary() -> frozenset[str]:
+    """Ordinary English words, built from the card corpus (scripts/build_common_words.py)."""
+    text = (resources.files("svc_critic") / "data" / "common_words.txt").read_text(encoding="utf-8")
+    return frozenset(stem for word in text.split() for stem in _stems(word))
+
+
+@cache
+def _brand_words() -> frozenset[str]:
+    text = (resources.files("svc_critic") / "data" / "brand_words.txt").read_text(encoding="utf-8")
+    return frozenset(w for w in text.split() if not w.startswith("#"))
+
+
+def _stems(word: str) -> set[str]:
+    low = word.lower()
+    out = {low}
+    for suffix, add in (
+        ("ing", ""),
+        ("ing", "e"),
+        ("ed", ""),
+        ("ed", "e"),
+        ("es", ""),
+        ("s", ""),
+        ("ers", ""),
+        ("er", ""),
+    ):
+        if low.endswith(suffix) and len(low) - len(suffix) >= 3:
+            out.add(low[: -len(suffix)] + add)
+    return out
+
+
+def _ordinary_sentence_word(word: str) -> bool:
+    """A word that only looks like a name because a sentence starts with it ("Effort fits.")."""
+    if word.lower() in _brand_words():
+        return False
+    return not _stems(word).isdisjoint(_vocabulary())
+
+
 def _ordinary(word: str) -> bool:
-    return word.lower() in _COMMON or word.lower() in _ACRONYMS
+    low = word.lower()
+    plural_acronym = low.endswith("s") and low[:-1] in _ACRONYMS  # APIs, PDFs
+    return low in _COMMON or low in _ACRONYMS or plural_acronym
+
+
+_SENTENCE_START = re.compile(r"(?:^|[.!?:;\n]\s*|\s[-*#]\s+)$")
+
+
+def _starts_a_sentence(text: str, index: int) -> bool:
+    return _SENTENCE_START.search(text[:index]) is not None
 
 
 def _trim(words: list[str]) -> list[str]:
@@ -80,7 +129,12 @@ def extract_entities(text: str) -> list[str]:
     found: list[tuple[int, str]] = []
     for match in _CAPITALISED.finditer(text):
         words = _trim(match.group(0).split(" "))
+        if words and _starts_a_sentence(text, match.start()):
+            while words and _ordinary_sentence_word(words[0]):
+                words = words[1:]  # "Teaches Git" -> "Git": the first word is sentence case
         phrase = " ".join(words)
+        if not words:
+            continue  # "Effort", "Detecting": sentence case, not a brand
         if words and len(phrase) >= 2:
             found.append((match.start(), phrase))
     found.extend((m.start(), m.group(0)) for m in _MIXED_CASE.finditer(text))

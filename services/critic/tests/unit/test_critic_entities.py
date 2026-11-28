@@ -138,3 +138,28 @@ def test_the_result_is_deduplicated_and_ordered() -> None:
 def test_empty_inputs_are_safe() -> None:
     assert find_unsupported_entities("", [], []) == []
     assert find_unsupported_entities("no names here", [], []) == []
+
+
+# ---- ordinary words that merely start a sentence are not brands (found on the first real run) -----
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Effort fits within the available hours.",
+        "Detecting API keys in commits is a local check.",
+        "Teaches Git hygiene to students.",
+        "Requires only a laptop and Python.",
+        "Scanning APIs and PDFs is out of scope.",
+    ],
+)
+def test_a_capitalised_ordinary_word_at_the_start_of_a_sentence_is_not_a_name(text: str) -> None:
+    evidence = ["a note about hooks, Git and Python"]
+    assert find_unsupported_entities(text, evidence, []) == []
+
+
+@pytest.mark.parametrize("text", ["Asana charges $10.", "Zoom charges $10.", "Notion charges $10."])
+def test_a_product_at_the_start_of_a_sentence_is_still_checked(text: str) -> None:
+    assert find_unsupported_entities(text, ["Trello charges $10."], ["Trello"]) == [text.split()[0]]
+
+
+def test_plural_acronyms_are_acronyms() -> None:
+    assert find_unsupported_entities("Most APIs and PDFs are fine.", ["x"], []) == []
