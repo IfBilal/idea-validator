@@ -238,7 +238,7 @@ async def test_a_failing_file_write_leaves_nothing_half_stored(
 ) -> None:
     from svc_agentops.repositories.files import JsonlTraceFiles
 
-    def boom(self: JsonlTraceFiles, run_id: str, items: Any) -> None:
+    def boom(self: JsonlTraceFiles, *args: Any, **kw: Any) -> None:
         raise OSError("disk full")
 
     monkeypatch.setattr(JsonlTraceFiles, "append", boom)
@@ -247,7 +247,7 @@ async def test_a_failing_file_write_leaves_nothing_half_stored(
         transport=transport, base_url="http://t", headers=rig.headers
     ) as client:
         response = await client.post("/traces", json=[rec(1)])
-    assert response.status_code == 500
+    assert response.status_code == 507
     assert response.json()["error"]["code"] == "INTERNAL"
     assert rig.index.rows == {}
 

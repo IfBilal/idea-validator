@@ -210,6 +210,7 @@ def build_verdict_request(
 
 
 REPLAY_DECISION = "m11_verdict"  # name of the trace decision that M13 replay reads
+REPLAY_INPUT_LIMIT = 32_768  # the engine input is numbers and ids: far above the 4 KB default
 _REPLAY_SCORE_KEYS = ("dimension", "score", "confidence", "evidence_ids")
 
 

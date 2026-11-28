@@ -38,7 +38,10 @@ SERVICES: dict[str, dict[str, Any]] = {
         "secrets": ["DATABASE_URL"],
         # full trace records as JSONL on a PVC (docs/harness/12 section 1); one writer pod, so the
         # ReadWriteOnce volume is handed over with Recreate instead of a surge pod
+        # 1Gi: records are capped at 16 KB and runs at 8 MiB / 5000 records, a typical run is
+        # ~100 KB, so 1Gi holds thousands of runs; the retention CronJob keeps 14 days
         "pvc": {"name": "agentops-traces", "mount": "/var/lib/agentops/traces", "storage": "1Gi"},
+        "grace_s": 30,  # finish the in-flight append (flock + fsync) before the pod is killed
     },
 }
 
@@ -113,6 +116,7 @@ JOBS: dict[str, dict[str, Any]] = {
         "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
+        "deadline_s": 300,  # a stuck migration must not hold the deploy forever
     },
     # M6i seed: restores the newest snapshot baked into the ingestion image through M6 /ingest.
     # `manual`: kept out of the kustomization (it is applied by `make seed`, which first builds
@@ -158,7 +162,14 @@ CRONJOBS: dict[str, dict[str, Any]] = {
         "schedule": "20 5 * * *",
         "command": ["python", "-m", "agentops.drift", "--post"],
         "calls": ["agentops", "kb"],
-        "secrets": ["INTERNAL_TOKEN"],
+        "token_only": True,
+    },
+    # M13 retention: deletes trace files and index rows older than `days` (the PVC is finite)
+    "agentops-retention": {
+        "retention": True,
+        "schedule": "30 3 * * *",
+        "days": 14,
+        "calls": ["postgres"],
     },
 }
 CRONJOB_CALLS = ["postgres", "tools"]
@@ -316,6 +327,8 @@ def _deployment(name: str) -> str:
             "ports": [{"name": "http", "port": PORT, "targetPort": "http"}],
         },
     }
+    if "grace_s" in svc:
+        deployment["spec"]["template"]["spec"]["terminationGracePeriodSeconds"] = svc["grace_s"]
     docs = [deployment, service]
     if pvc := svc.get("pvc"):
         pod = deployment["spec"]["template"]["spec"]
@@ -620,6 +633,7 @@ def _job(name: str) -> str:
         "metadata": _meta(name),
         "spec": {
             "backoffLimit": spec.get("backoff_limit", 6),
+            **({"activeDeadlineSeconds": spec["deadline_s"]} if "deadline_s" in spec else {}),
             "ttlSecondsAfterFinished": 3600,
             "template": {
                 "metadata": {"labels": {"app": name}},
@@ -661,30 +675,29 @@ def _cronjob(name: str) -> str:
         {"name": "CONFIG_DIR", "value": "/etc/idea-validator"},
         {"name": "LOG_LEVEL", "value": "INFO"},
     ]
-    if "calls" in spec:  # not a scout: only the services it names, only the secrets it lists
+    keys = ("INTERNAL_TOKEN", "DATABASE_URL")
+    if spec.get("token_only"):  # only the services it names and the internal token
         env += [{"name": f"{c.upper()}_URL", "value": _url(c)} for c in sorted(spec["calls"])]
-        keys = list(spec["secrets"])
-    else:
+        keys = ("INTERNAL_TOKEN",)
+    elif not spec.get("retention"):
         env.append({"name": "TOOLS_URL", "value": _url("tools")})
-        keys = ["INTERNAL_TOKEN", "DATABASE_URL"]
     for key in keys:
         env.append(
             {"name": key, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}}}
         )
-    optional = (
-        []
-        if "calls" in spec
-        else ["GITHUB_TOKEN"]
-        if spec["source"] == "github"
-        else spec.get("optional", [])
-    )
+    optional = ["GITHUB_TOKEN"] if spec.get("source") == "github" else spec.get("optional", [])
     for key in optional:  # the pod starts without it: the source stays keyless or off
         ref = {"name": "app-secrets", "key": key, "optional": True}
         env.append({"name": key, "valueFrom": {"secretKeyRef": ref}})
     container = {
         "name": name,
-        "image": f"{NAMESPACE}/{spec.get('image', 'scouts')}:{IMAGE_TAG}",
-        "command": spec.get("command") or ["python", "-m", "scouts", "--source", spec["source"]],
+        "image": f"{NAMESPACE}/{spec.get('image') or ('agentops' if spec.get('retention') else 'scouts')}:{IMAGE_TAG}",
+        "command": spec.get("command")
+        or (
+            ["python", "-m", "agentops.retention", "--days", str(spec["days"])]
+            if spec.get("retention")
+            else ["python", "-m", "scouts", "--source", spec["source"]]
+        ),
         "env": env,
         "resources": RESOURCES,
         "securityContext": {
@@ -713,10 +726,27 @@ def _cronjob(name: str) -> str:
             {"name": "app-config", "configMap": {"name": "app-config"}},
         ],
     }
+    module = spec.get("module") or ("m13" if spec.get("retention") else "m4")
+    if spec.get("retention"):
+        pvc = SERVICES["agentops"]["pvc"]
+        env.append({"name": "TRACE_DIR", "value": pvc["mount"]})
+        container["volumeMounts"].append({"name": "data", "mountPath": pvc["mount"]})
+        pod["volumes"].append({"name": "data", "persistentVolumeClaim": {"claimName": pvc["name"]}})
+        # a ReadWriteOnce volume can only be attached on one node: run beside the agentops pod
+        pod["affinity"] = {
+            "podAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": [
+                    {
+                        "labelSelector": {"matchLabels": {"app": "agentops"}},
+                        "topologyKey": "kubernetes.io/hostname",
+                    }
+                ]
+            }
+        }
     cron = {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
-        "metadata": _meta(name, spec.get("module", "m4")),
+        "metadata": _meta(name, module),
         "spec": {
             "schedule": spec["schedule"],
             "concurrencyPolicy": "Forbid",
@@ -730,7 +760,7 @@ def _cronjob(name: str) -> str:
                     "activeDeadlineSeconds": 1200,
                     "ttlSecondsAfterFinished": 3600,
                     "template": {
-                        "metadata": {"labels": {"app": name, "module": spec.get("module", "m4")}},
+                        "metadata": {"labels": {"app": name, "module": module}},
                         "spec": pod,
                     },
                 }
