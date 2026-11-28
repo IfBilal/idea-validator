@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/part-of: idea-validator
 spec:
   backoffLimit: 6
+  activeDeadlineSeconds: 300
   ttlSecondsAfterFinished: 3600
   template:
     metadata:

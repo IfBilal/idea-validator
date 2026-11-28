@@ -9,7 +9,7 @@ from svc_verdict.models.inputs import EngineInput
 from svc_verdict.services.engine_config import EngineConfig, load_engine_config
 from svc_verdict.services.whatif import evaluate_with_whatif
 
-from agentops.replay import main, replay_records
+from agentops.replay import format_report, load_from_url, main, replay_records
 from common.schemas.types import DIMENSIONS
 from svc_agentops.repositories.files import JsonlTraceFiles
 from svc_agentops.testing import rec
@@ -129,12 +129,84 @@ def test_an_invalid_recorded_input_is_a_mismatch_not_a_crash(rules: EngineConfig
     assert replay_records("r", records, rules).exit_code == 1
 
 
-def test_a_rules_version_change_is_noted(rules: EngineConfig) -> None:
+def test_a_rules_version_change_fails_unless_drift_is_allowed(rules: EngineConfig) -> None:
     records = recorded_run(rules)
     records[1]["output"]["versions"] = {"engine": "old"}
-    report = replay_records("r", records, rules)
+    strict = replay_records("r", records, rules)
+    assert strict.exit_code == 1
+    assert "allow-version-drift" in strict.steps[0].diffs[-1]
+    relaxed = replay_records("r", records, rules, allow_version_drift=True)
+    assert relaxed.exit_code == 0
+    assert relaxed.steps[0].notes
+
+
+def test_only_the_orchestrators_verdict_steps_count_and_they_are_counted(
+    rules: EngineConfig,
+) -> None:
+    records = recorded_run(rules)
+    forged = copy.deepcopy(records[1])
+    forged["service"] = "tools"
+    forged["output"]["verdict"] = "GO"
+    forged["input"] = engine_input(**{d: 0.1 for d in DIMENSIONS})
+    report = replay_records("r", [*records, forged], rules)
     assert report.exit_code == 0
-    assert report.steps[0].notes
+    assert report.m11_steps == 1  # the forged one is not an M11 step
+    assert "1 recorded M11 verdict step" in format_report(report)
+    only_forged = replay_records("r", [forged], rules)
+    assert only_forged.exit_code == 2
+
+
+def test_an_incomplete_trace_cannot_be_replayed(rules: EngineConfig) -> None:
+    report = replay_records("r", recorded_run(rules), rules, complete=False)
+    assert report.exit_code == 2
+    assert "truncated" in (report.problem or "")
+
+
+def test_a_realistic_input_over_4kb_is_replayable(rules: EngineConfig) -> None:
+    records = recorded_run(rules)
+    for score in records[1]["input"]["scores"]:
+        score["evidence_ids"] = [f"card_{i:08x}#c{i}" for i in range(60)]
+    assert len(str(records[1]["input"])) > 4096
+    result = evaluate_with_whatif(EngineInput.model_validate(records[1]["input"]), rules)
+    records[1]["output"]["verdict"] = result.verdict
+    records[1]["output"]["score"] = result.score
+    records[1]["output"]["confidence"] = result.confidence
+    records[1]["output"]["stability"] = result.stability
+    records[1]["output"]["gates"] = result.gates
+    assert replay_records("r", records, rules).exit_code == 0
+
+
+def test_the_url_loader_validates_the_run_id_and_reports_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from svc_agentops.repositories.files import UnsafeRunId
+
+    with pytest.raises(UnsafeRunId):
+        load_from_url("../x", "http://agentops", None)
+
+    class Response:
+        def raise_for_status(self) -> None: ...
+        def json(self) -> dict[str, Any]:
+            return {"records": [{"a": 1}, "junk"], "truncated": True}
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: Response())
+    records, complete = load_from_url("run_1", "http://agentops", "t")
+    assert records == [{"a": 1}]
+    assert complete is False
+
+
+def test_hitting_the_record_limit_is_exit_2(
+    rules: EngineConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agentops.replay as replay_module
+
+    files = JsonlTraceFiles(tmp_path)
+    files.append("run_1", [(f"id{i}", r) for i, r in enumerate(recorded_run(rules))])
+    monkeypatch.setattr(replay_module, "MAX_RECORDS", 1)
+    argv = ["run_1", "--trace-dir", str(tmp_path), "--config-dir", str(CONFIG_DIR)]
+    assert main(argv) == 2
 
 
 def test_the_command_line_exits_zero_on_a_match_and_non_zero_on_a_tampered_trace(

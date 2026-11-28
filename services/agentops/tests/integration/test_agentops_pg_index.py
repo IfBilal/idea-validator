@@ -60,7 +60,7 @@ def migrated_url(postgres_url: str) -> Iterator[str]:
 async def engine(migrated_url: str) -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(migrated_url)
     async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE ops.traces_index"))
+        await conn.execute(text("TRUNCATE ops.traces_index, ops.run_owners"))
     yield engine
     await engine.dispose()
 
@@ -73,14 +73,39 @@ async def test_insert_is_idempotent_and_reports_only_new_ids(engine: AsyncEngine
         assert (await conn.execute(text("SELECT count(*) FROM ops.traces_index"))).scalar() == 3
 
 
-async def test_delete_removes_only_the_named_records(engine: AsyncEngine) -> None:
+async def test_existing_and_count_see_only_their_own_run(engine: AsyncEngine) -> None:
     index = PgTraceIndex(engine)
     await index.insert_new([row("r1", "a"), row("r1", "b"), row("r2", "a")])
-    await index.delete("r1", {"a"})
-    async with engine.connect() as conn:
-        left = (await conn.execute(text("SELECT run_id, record_id FROM ops.traces_index"))).all()
-    assert sorted(tuple(r) for r in left) == [("r1", "b"), ("r2", "a")]
-    await index.delete("r1", set())
+    assert await index.existing("r1", ["a", "z"]) == {"a"}
+    assert await index.existing("r1", []) == set()
+    assert await index.count_run("r1") == 2
+    assert await index.count_run("nope") == 0
+
+
+async def test_owners_first_wins_and_scope_the_run_list(engine: AsyncEngine) -> None:
+    index = PgTraceIndex(engine)
+    await index.insert_new([row("r1", "a", 10), row("r2", "a", 20), row("r3", "a", 30)])
+    await index.set_owner("r1", "u1")
+    await index.set_owner("r1", "u2")  # ignored
+    await index.set_owner("r2", "u2")
+    assert await index.owner_of("r1") == "u1"
+    assert await index.owner_of("r3") is None
+    assert [r.run_id for r in await index.list_runs(10, None, "u1")] == ["r1"]
+    assert [r.run_id for r in await index.list_runs(10, None, "u2")] == ["r2"]
+    assert len(await index.list_runs(10, None)) == 3
+
+
+async def test_old_runs_and_delete_runs_remove_rows_and_owners(engine: AsyncEngine) -> None:
+    index = PgTraceIndex(engine)
+    await index.insert_new([row("r1", "a", 10), row("r1", "b", 20), row("r2", "a", 5000)])
+    await index.set_owner("r1", "u1")
+    cutoff = T0 + timedelta(seconds=1000)
+    assert await index.old_runs(cutoff) == ["r1"]
+    await index.delete_runs(["r1"])
+    await index.delete_runs([])
+    assert await index.count_run("r1") == 0
+    assert await index.owner_of("r1") is None
+    assert await index.count_run("r2") == 1
 
 
 async def test_runs_aggregate_and_page_by_started_at_then_run_id(engine: AsyncEngine) -> None:

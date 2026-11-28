@@ -425,3 +425,17 @@ async def test_an_answer_arriving_as_the_timeout_fires_resumes_only_once() -> No
     assert view.result["verdict"] == "NO-GO"  # the answer won; the late expiry changed nothing
     assert not any("no answer" in n for n in view.result["notes"])
     await service.aclose()
+
+
+async def test_the_run_owner_is_traced_for_m13_scoping() -> None:
+    service, rig = make()
+    run_id = await service.start(start_body())
+    await finished(service, run_id)
+    owners = [
+        r
+        for r in rig.records
+        if r.kind == "decision" and (r.output or {}).get("decision") == "run_owner"
+    ]
+    assert len(owners) == 1
+    assert owners[0].output["user_id"] == "u1"
+    assert owners[0].run_id == run_id

@@ -9,6 +9,7 @@ from common.errors import NotFound, ValidationFailed
 from common.schemas.trace import TraceRecord
 
 from ..models.traces import RunList, TraceFlat, TraceTree
+from ..repositories.files import UnsafeRunId
 from .ports import TraceFiles, TraceIndex
 from .sanitize import RUN_ID
 from .tree import Entry, build_tree, ordered, totals
@@ -46,17 +47,22 @@ class QueryService:
         self._default_limit = default_limit
         self._max_limit = max_limit
 
-    async def _load(self, run_id: str) -> tuple[list[Entry], bool]:
+    async def _load(self, run_id: str, user_id: str | None) -> tuple[list[Entry], bool]:
         if not RUN_ID.fullmatch(run_id):
             raise ValidationFailed("run_id must match [A-Za-z0-9_-]{1,64}")
-        rows, truncated = await asyncio.to_thread(self._files.read, run_id, self._max_records)
+        if user_id is not None and await self._index.owner_of(run_id) != user_id:
+            raise NotFound(f"no trace for run {run_id}")  # same answer as an unknown run
+        try:
+            rows, truncated = await asyncio.to_thread(self._files.read, run_id, self._max_records)
+        except UnsafeRunId as exc:
+            raise NotFound(f"no trace for run {run_id}") from exc
         if not rows:
             raise NotFound(f"no trace for run {run_id}")
         entries: list[Entry] = [(rid, TraceRecord.model_validate(rec)) for rid, rec in rows]
         return ordered(entries), truncated
 
-    async def trace(self, run_id: str) -> TraceTree:
-        entries, truncated = await self._load(run_id)
+    async def trace(self, run_id: str, user_id: str | None = None) -> TraceTree:
+        entries, truncated = await self._load(run_id, user_id)
         run, by_agent = totals(entries)
         return TraceTree(
             run_id=run_id,
@@ -66,8 +72,8 @@ class QueryService:
             tree=build_tree(entries),
         )
 
-    async def flat(self, run_id: str) -> TraceFlat:
-        entries, truncated = await self._load(run_id)
+    async def flat(self, run_id: str, user_id: str | None = None) -> TraceFlat:
+        entries, truncated = await self._load(run_id, user_id)
         run, by_agent = totals(entries)
         return TraceFlat(
             run_id=run_id,
@@ -77,12 +83,14 @@ class QueryService:
             records=[r.model_dump(mode="json") for _, r in entries],
         )
 
-    async def runs(self, limit: int | None, after: str | None) -> RunList:
+    async def runs(
+        self, limit: int | None, after: str | None, user_id: str | None = None
+    ) -> RunList:
         n = self._default_limit if limit is None else limit
         if not 1 <= n <= self._max_limit:
             raise ValidationFailed(f"limit must be between 1 and {self._max_limit}")
         cursor = decode_cursor(after) if after else None
-        found = await self._index.list_runs(n + 1, cursor)
+        found = await self._index.list_runs(n + 1, cursor, user_id)
         page = found[:n]
         more = len(found) > n
         nxt = encode_cursor(page[-1].started_at, page[-1].run_id) if more and page else None

@@ -546,3 +546,32 @@ def test_replay_record_keeps_numbers_and_ids_and_copies_the_verdict_summary() ->
     assert engine_input["objections_accepted"] == []
     assert summary["verdict"] == "GO"
     assert "extra" not in summary
+
+
+def test_replay_record_traces_gate_text_as_short_tokens_only() -> None:
+    long_text = "my startup idea about dentists " * 20
+    request = {
+        "scores": [],
+        "gate_inputs": {
+            "n_sources": 5,
+            "n_platforms": 2,
+            "estimated_effort_hours": 100.0,
+            "risk_blocker": long_text,
+            "duplicate_of": "acme-invoices",
+        },
+    }
+    engine_input, _ = builders.replay_record(request, {})
+    gates = engine_input["gate_inputs"]
+    assert "dentists" not in str(engine_input)
+    assert gates["risk_blocker"]  # still truthy: the risk gate fires in replay
+    assert len(gates["risk_blocker"]) <= 128
+    assert gates["duplicate_of"] == "acme-invoices"  # a short token is kept
+    assert gates["n_sources"] == 5
+    assert gates["estimated_effort_hours"] == 100.0
+
+
+def test_replay_record_keeps_absent_gate_text_absent() -> None:
+    request = {"gate_inputs": {"n_sources": 1, "risk_blocker": None, "duplicate_of": ""}}
+    gates = builders.replay_record(request, {})[0]["gate_inputs"]
+    assert not gates["risk_blocker"]
+    assert not gates["duplicate_of"]

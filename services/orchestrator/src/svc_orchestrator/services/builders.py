@@ -14,9 +14,12 @@ from pydantic import ValidationError
 from common.errors import UpstreamError
 from common.schemas import DimensionScore, EvidenceItem
 from common.schemas.types import DIMENSIONS
+from common.tracing import register_trace_safe_message
 
 from ..models.api import EFFORT_CAP, FIELD_RANGES, GATE_FIELDS, PROFILE_FIELDS, UnknownSpec
 
+EFFORT_UNKNOWN = "estimated_effort_hours is unknown; ask the user instead of guessing"
+register_trace_safe_message(EFFORT_UNKNOWN)  # a fixed reason: fine to show in a trace
 MAX_QUESTIONS = 3
 MAX_IDEA_TEXT = 4000  # the same cap M2 applies when it stores a version
 _VERDICT_TEXT = re.compile(
@@ -178,7 +181,7 @@ def build_verdict_request(
     Raises ``ValueError`` when the effort is unknown: a made-up number must never reach M11.
     """
     if effort_is_unknown(extra, overrides, answers):
-        raise ValueError("estimated_effort_hours is unknown; ask the user instead of guessing")
+        raise ValueError(EFFORT_UNKNOWN)
     values: dict[str, float] = {}
     base_effort = _number(extra.get("estimated_effort_hours"))
     if base_effort is not None:
@@ -210,7 +213,30 @@ def build_verdict_request(
 
 
 REPLAY_DECISION = "m11_verdict"  # name of the trace decision that M13 replay reads
+REPLAY_INPUT_LIMIT = 32_768  # the engine input is numbers and ids: far above the 4 KB default
 _REPLAY_SCORE_KEYS = ("dimension", "score", "confidence", "evidence_ids")
+
+
+_TOKEN = re.compile(r"[A-Za-z0-9_#.:-]{1,128}")
+GATE_TEXT_MARKER = "[text]"  # truthy: the gate still fires in replay, the model text stays out
+
+
+def _gate_token(value: Any) -> str | None:
+    """A gate input is model text (risk blocker, duplicate product). Replay needs only whether it is
+    set, so a short id-like value is kept and anything else becomes a marker."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value if _TOKEN.fullmatch(value) else GATE_TEXT_MARKER
+
+
+def _replay_gates(gates: Any) -> Any:
+    if not isinstance(gates, Mapping):
+        return gates
+    return {
+        **gates,
+        "risk_blocker": _gate_token(gates.get("risk_blocker")),
+        "duplicate_of": _gate_token(gates.get("duplicate_of")),
+    }
 
 
 def replay_record(
@@ -227,7 +253,7 @@ def replay_record(
         "run_id": request.get("run_id"),
         "profile": request.get("profile"),
         "scores": [{k: s.get(k) for k in _REPLAY_SCORE_KEYS} for s in request.get("scores") or []],
-        "gate_inputs": request.get("gate_inputs"),
+        "gate_inputs": _replay_gates(request.get("gate_inputs")),
         "objections_accepted": request.get("objections_accepted") or [],
     }
     summary = {k: verdict.get(k) for k in ("verdict", "stability", "score", "confidence", "gates")}

@@ -37,7 +37,7 @@ def test_errors_are_recorded_and_reraised() -> None:
     tracer, records = make()
     with pytest.raises(RuntimeError), tracer.span("a", "tool_call", run_id="r"):
         raise RuntimeError("boom")
-    assert records[0].error == "RuntimeError: boom"
+    assert records[0].error == "RuntimeError"
 
 
 def test_secrets_are_redacted_and_big_payloads_truncated() -> None:
@@ -89,3 +89,43 @@ def test_an_active_run_keeps_counting_after_other_runs_come_and_go() -> None:
 
 def test_the_default_bound_is_generous_for_real_use() -> None:
     assert Tracer("x").max_runs >= 10_000
+
+
+def test_error_text_never_carries_exception_payloads_such_as_validation_input() -> None:
+    from pydantic import BaseModel, ValidationError
+
+    class M(BaseModel):
+        n: int
+
+    tracer, records = make()
+    with pytest.raises(ValidationError), tracer.span("a", "tool_call", run_id="r"):
+        M.model_validate({"n": "my secret startup idea about invoices"})
+    error = records[0].error or ""
+    assert "invoices" not in error
+    assert error.startswith("ValidationError")
+
+
+def test_domain_error_messages_are_kept_but_capped_and_redacted() -> None:
+    from common.errors import UpstreamError
+
+    tracer, records = make()
+    long = "x" * 1000 + " Bearer abc.def.ghi"
+    with pytest.raises(UpstreamError), tracer.span("a", "tool_call", run_id="r"):
+        raise UpstreamError(long, {"body": "idea text"})
+    error = records[0].error or ""
+    assert error.startswith("UpstreamError: ")
+    assert len(error) <= 260
+    assert "idea text" not in error
+
+
+def test_builtin_exception_messages_are_dropped_unless_registered_as_fixed_reasons() -> None:
+    from common.tracing import error_text, register_trace_safe_message
+
+    secret = KeyError("my idea about dentists")
+    assert error_text(secret) == "KeyError"
+    assert "dentists" not in error_text(ValueError("startup idea: dentists"))
+    register_trace_safe_message("estimated_effort_hours is unknown")
+    assert error_text(ValueError("estimated_effort_hours is unknown")) == (
+        "ValueError: estimated_effort_hours is unknown"
+    )
+    assert error_text(ValueError("estimated_effort_hours is unknown; and my idea")) == "ValueError"

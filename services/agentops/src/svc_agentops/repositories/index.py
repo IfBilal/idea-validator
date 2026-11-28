@@ -1,4 +1,4 @@
-"""Postgres side of the trace store: ``ops.traces_index`` (one row per record)."""
+"""Postgres side of the trace store: ``ops.traces_index`` and ``ops.run_owners``."""
 
 from dataclasses import asdict
 from datetime import datetime
@@ -20,13 +20,14 @@ _INSERT = text("""
 """)
 
 _RUNS = """
-    SELECT run_id, min(ts) AS started_at, max(ts) AS ended_at, count(*) AS steps,
-           sum(tokens_in) AS tokens_in, sum(tokens_out) AS tokens_out, sum(cost) AS cost,
-           count(*) FILTER (WHERE status = 'error') AS errors
-    FROM ops.traces_index
-    GROUP BY run_id
+    SELECT t.run_id, min(t.ts) AS started_at, max(t.ts) AS ended_at, count(*) AS steps,
+           sum(t.tokens_in) AS tokens_in, sum(t.tokens_out) AS tokens_out, sum(t.cost) AS cost,
+           count(*) FILTER (WHERE t.status = 'error') AS errors
+    FROM ops.traces_index t
+    {join}
+    GROUP BY t.run_id
     {having}
-    ORDER BY min(ts) DESC, run_id DESC
+    ORDER BY min(t.ts) DESC, t.run_id DESC
     LIMIT :limit
 """
 
@@ -44,22 +45,61 @@ class PgTraceIndex:
                     new.add(row.record_id)
         return new
 
-    async def delete(self, run_id: str, record_ids: set[str]) -> None:
+    async def existing(self, run_id: str, record_ids: list[str]) -> set[str]:
         if not record_ids:
-            return
+            return set()
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT record_id FROM ops.traces_index "
+                    "WHERE run_id = :r AND record_id = ANY(:ids)"
+                ),
+                {"r": run_id, "ids": record_ids},
+            )
+            return {r[0] for r in rows}
+
+    async def count_run(self, run_id: str) -> int:
+        async with self._engine.connect() as conn:
+            row = await conn.execute(
+                text("SELECT count(*) FROM ops.traces_index WHERE run_id = :r"), {"r": run_id}
+            )
+            return int(row.scalar() or 0)
+
+    async def set_owner(self, run_id: str, user_id: str) -> None:
         async with self._engine.begin() as conn:
             await conn.execute(
-                text("DELETE FROM ops.traces_index WHERE run_id = :r AND record_id = ANY(:ids)"),
-                {"r": run_id, "ids": sorted(record_ids)},
+                text(
+                    "INSERT INTO ops.run_owners (run_id, user_id) VALUES (:r, :u) "
+                    "ON CONFLICT (run_id) DO NOTHING"
+                ),
+                {"r": run_id, "u": user_id},
             )
 
-    async def list_runs(self, limit: int, after: tuple[datetime, str] | None) -> list[RunSummary]:
-        having = "HAVING (min(ts), run_id) < (:a_ts, :a_run)" if after else ""
+    async def owner_of(self, run_id: str) -> str | None:
+        async with self._engine.connect() as conn:
+            row = await conn.execute(
+                text("SELECT user_id FROM ops.run_owners WHERE run_id = :r"), {"r": run_id}
+            )
+            return row.scalar()
+
+    async def list_runs(
+        self, limit: int, after: tuple[datetime, str] | None, user_id: str | None = None
+    ) -> list[RunSummary]:
         params: dict[str, object] = {"limit": limit}
+        join = ""
+        if user_id is not None:
+            join = "JOIN ops.run_owners o ON o.run_id = t.run_id AND o.user_id = :uid"
+            params["uid"] = user_id
+        having = ""
         if after:
+            having = "HAVING (min(t.ts), t.run_id) < (:a_ts, :a_run)"
             params |= {"a_ts": after[0], "a_run": after[1]}
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(text(_RUNS.format(having=having)), params)).mappings().all()
+            rows = (
+                (await conn.execute(text(_RUNS.format(join=join, having=having)), params))
+                .mappings()
+                .all()
+            )
         return [
             RunSummary(
                 run_id=r["run_id"],
@@ -73,6 +113,28 @@ class PgTraceIndex:
             )
             for r in rows
         ]
+
+    async def old_runs(self, cutoff: datetime) -> list[str]:
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT run_id FROM ops.traces_index GROUP BY run_id "
+                    "HAVING max(ts) < :c ORDER BY run_id"
+                ),
+                {"c": cutoff},
+            )
+            return [r[0] for r in rows]
+
+    async def delete_runs(self, run_ids: list[str]) -> None:
+        if not run_ids:
+            return
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM ops.traces_index WHERE run_id = ANY(:ids)"), {"ids": run_ids}
+            )
+            await conn.execute(
+                text("DELETE FROM ops.run_owners WHERE run_id = ANY(:ids)"), {"ids": run_ids}
+            )
 
     async def ping(self) -> bool:
         async with self._engine.connect() as conn:

@@ -24,6 +24,7 @@ from svc_verdict.services.whatif import evaluate_with_whatif
 from common.config import ConfigError
 from common.context import INTERNAL_TOKEN_HEADER
 from svc_agentops.repositories.files import JsonlTraceFiles, UnsafeRunId
+from svc_agentops.services.sanitize import RUN_ID, TRUSTED_SERVICE
 
 DECISION = "m11_verdict"
 COMPARED = ("verdict", "stability", "score", "confidence", "gates")
@@ -43,6 +44,7 @@ class ReplayReport:
     run_id: str
     steps: list[StepReport]
     problem: str | None = None
+    m11_steps: int = 0  # recorded M11 verdict steps found (from the orchestrator only)
 
     @property
     def exit_code(self) -> int:
@@ -57,16 +59,30 @@ def _same(a: Any, b: Any) -> bool:
     return bool(a == b)
 
 
-def replay_records(run_id: str, records: list[dict[str, Any]], rules: EngineConfig) -> ReplayReport:
+def replay_records(
+    run_id: str,
+    records: list[dict[str, Any]],
+    rules: EngineConfig,
+    *,
+    allow_version_drift: bool = False,
+    complete: bool = True,
+) -> ReplayReport:
+    """``complete=False`` means the stored trace was cut short: the proof would be partial."""
+    if not complete:
+        return ReplayReport(
+            run_id, [], "the trace was truncated (too many records); not replayable"
+        )
     found = [
         r
         for r in records
         if r.get("kind") == "decision"
+        and r.get("service") == TRUSTED_SERVICE
         and isinstance(r.get("output"), dict)
         and r["output"].get("decision") == DECISION
     ]
     if not found:
         return ReplayReport(run_id, [], "no recorded M11 verdict step in this run")
+    n_found = len(found)
     steps: list[StepReport] = []
     for n, rec in enumerate(sorted(found, key=lambda r: (r["ts"], r["step_id"])), start=1):
         raw = rec.get("input")
@@ -86,15 +102,19 @@ def replay_records(run_id: str, records: list[dict[str, Any]], rules: EngineConf
         ]
         notes = []
         if recorded.get("versions") != rules.versions:
-            notes.append(
+            message = (
                 f"rules versions differ: recorded {recorded.get('versions')}, now {rules.versions}"
             )
+            if allow_version_drift:
+                notes.append(message)
+            else:
+                diffs.append(message + " (use --allow-version-drift to accept)")
         steps.append(StepReport(n, not diffs, diffs, notes))
-    return ReplayReport(run_id, steps)
+    return ReplayReport(run_id, steps, m11_steps=n_found)
 
 
 def format_report(report: ReplayReport) -> str:
-    lines = [f"replay of {report.run_id}"]
+    lines = [f"replay of {report.run_id}: {report.m11_steps} recorded M11 verdict step(s)"]
     if report.problem:
         lines.append(f"cannot replay: {report.problem}")
     for s in report.steps:
@@ -106,12 +126,15 @@ def format_report(report: ReplayReport) -> str:
     return "\n".join(lines)
 
 
-def load_from_dir(run_id: str, directory: Path) -> list[dict[str, Any]]:
-    rows, _ = JsonlTraceFiles(directory).read(run_id, MAX_RECORDS)
-    return [rec for _, rec in rows]
+def load_from_dir(run_id: str, directory: Path) -> tuple[list[dict[str, Any]], bool]:
+    """The run's records and whether they are all there (False when MAX_RECORDS cut them)."""
+    rows, truncated = JsonlTraceFiles(directory).read(run_id, MAX_RECORDS)
+    return [rec for _, rec in rows], not truncated
 
 
-def load_from_url(run_id: str, url: str, token: str | None) -> list[dict[str, Any]]:
+def load_from_url(run_id: str, url: str, token: str | None) -> tuple[list[dict[str, Any]], bool]:
+    if not RUN_ID.fullmatch(run_id):
+        raise UnsafeRunId("run id must match [A-Za-z0-9_-]{1,64}")
     headers = {INTERNAL_TOKEN_HEADER: token} if token else {}
     response = httpx.get(
         f"{url.rstrip('/')}/runs/{run_id}/trace",
@@ -120,8 +143,8 @@ def load_from_url(run_id: str, url: str, token: str | None) -> list[dict[str, An
         timeout=10,
     )
     response.raise_for_status()
-    records = response.json()["records"]
-    return [r for r in records if isinstance(r, dict)]
+    body = response.json()
+    return [r for r in body["records"] if isinstance(r, dict)], not body.get("truncated", False)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -131,21 +154,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trace-dir", type=Path, default=os.environ.get("TRACE_DIR"))
     parser.add_argument("--url", default=os.environ.get("AGENTOPS_URL"))
     parser.add_argument("--config-dir", type=Path, default=os.environ.get("CONFIG_DIR"))
+    parser.add_argument(
+        "--allow-version-drift",
+        action="store_true",
+        help="accept that the rules (config/verdict.yaml) changed since the run",
+    )
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
     args = parser.parse_args(argv)
     try:
         rules = load_engine_config(args.config_dir)
         if args.trace_dir:
-            records = load_from_dir(args.run_id, Path(args.trace_dir))
+            records, complete = load_from_dir(args.run_id, Path(args.trace_dir))
         elif args.url:
-            records = load_from_url(args.run_id, args.url, os.environ.get("INTERNAL_TOKEN"))
+            records, complete = load_from_url(
+                args.run_id, args.url, os.environ.get("INTERNAL_TOKEN")
+            )
         else:
             print("give --trace-dir (or TRACE_DIR) or --url (or AGENTOPS_URL)", file=sys.stderr)
             return 2
     except (ConfigError, UnsafeRunId, httpx.HTTPError, OSError) as exc:
         print(f"replay failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
-    report = replay_records(args.run_id, records, rules)
+    report = replay_records(
+        args.run_id,
+        records,
+        rules,
+        allow_version_drift=args.allow_version_drift,
+        complete=complete,
+    )
     if args.json:
         print(
             json.dumps({"exit_code": report.exit_code, "steps": [s.__dict__ for s in report.steps]})

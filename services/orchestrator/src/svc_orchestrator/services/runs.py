@@ -180,6 +180,7 @@ class RunService:
         await self._lease(run)
         limits = await ctx.ledger.limits()
         await ctx.emitter.emit("run_started", kind=body.kind, budget=limits.model_dump())
+        ctx.runner.decision("run_owner", {}, {"user_id": body.user_id})  # M13 scopes traces by it
         self._launch(run, state)
         await self._persist(run)
         return run_id

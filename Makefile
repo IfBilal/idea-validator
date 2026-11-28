@@ -52,6 +52,7 @@ netpol-test: ## non-M5 egress fails, M5 succeeds (P1)
 eval: ## compare the newest eval result with the stored baseline (needs eval/results, P10-T02)
 	./scripts/check_eval.sh
 replay: ## replay a stored run through the pure M11 engine: make replay RUN=run_90 (TRACE_DIR=dir for local files, else kubectl exec into agentops)
-	@test -n "$(RUN)" || { echo "usage: make replay RUN=<run_id>" >&2; exit 2; }
-	@if [ -n "$$TRACE_DIR" ]; then uv run --package idea-validator-agentops python -m agentops.replay "$(RUN)" --config-dir config; \
-	else kubectl -n idea-validator exec deploy/agentops -- python -m agentops.replay "$(RUN)"; fi
+	@case "$$RUN" in ""|*[!A-Za-z0-9_-]*) echo "usage: make replay RUN=<run_id> (letters, digits, _ and - only)" >&2; exit 2;; esac; \
+	if [ "$${#RUN}" -gt 64 ]; then echo "run id longer than 64 characters" >&2; exit 2; fi; \
+	if [ -n "$$TRACE_DIR" ]; then uv run --package idea-validator-agentops python -m agentops.replay --config-dir config -- "$$RUN"; \
+	else kubectl -n idea-validator exec deploy/agentops -- python -m agentops.replay -- "$$RUN"; fi

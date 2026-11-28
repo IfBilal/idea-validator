@@ -165,3 +165,40 @@ def test_tracer_for_has_no_sink_without_a_url_and_reads_the_token_from_settings(
     tracer = tracer_for("orchestrator", settings)
     assert isinstance(tracer._sink, AgentOpsSink)
     tracer._sink.close(timeout_s=1)
+
+
+def test_an_unexpected_exception_in_the_worker_drops_the_batch_and_keeps_the_worker_alive() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transport bug")  # not an httpx.HTTPError
+        return httpx.Response(200, json={})
+
+    sink = AgentOpsSink(
+        "http://agentops",
+        transport=httpx.MockTransport(handler),
+        flush_interval_s=0.01,
+        retry_delay_s=0.0,
+        max_attempts=1,
+    )
+    sink(record(1))
+    time.sleep(0.2)
+    sink(record(2))
+    sink.close(timeout_s=5)
+    assert sink.dropped == 1
+    assert sink.sent == 1
+
+
+def test_records_still_queued_when_the_worker_cannot_finish_are_counted_as_dropped() -> None:
+    c = Collector()
+    c.delay = 0.3
+    sink = sink_with(c, max_queue=100, max_attempts=1, batch_size=5)
+    for i in range(1, 60):
+        sink(record(i))
+    time.sleep(0.05)
+    sink.close(timeout_s=0.05)  # far too short to flush everything
+    assert sink.dropped > 0
+    time.sleep(0.6)  # the batch in flight finishes
+    assert sink.sent + sink.dropped == 59  # nothing vanishes without being counted

@@ -136,3 +136,81 @@ class EmulatedRedis:
             h["steps"] = n("steps") + e_steps
         self.ttls[str(key)] = int(ttl)
         return over
+
+
+# Shared redaction corpus: (text, fragment that must not survive). Secret-shaped strings are built
+# from parts so that secret scanners do not flag this file.
+def _j(*parts: str) -> str:
+    return "".join(parts)
+
+
+REDACTION_POSITIVE: list[tuple[str, str]] = [
+    ("Authorization: Bearer abc.def-123_x", "abc.def-123_x"),
+    ("Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==", "dXNlcjpwYXNzd29yZDEyMw"),
+    (_j("key sk", "-abcdefghijklmnopqrstuvwx ok"), "abcdefghijklmnopqrstuvwx"),
+    (_j("stripe sk", "_live_", "4eC39HqLyjWDarjtT1zdp7dc"), "4eC39HqLyjWDarjtT1zdp7dc"),
+    (_j("stripe sk", "_test_", "4eC39HqLyjWDarjtT1zdp7dc"), "4eC39HqLyjWDarjtT1zdp7dc"),
+    (_j("gh", "p_", "a" * 36), "a" * 36),
+    (_j("github", "_pat_", "11ABCDEFG0abcdefghijkl_mnopqrstuvwxyz"), "11ABCDEFG0abcdefghijkl"),
+    (_j("aws ", "AKIA", "IOSFODNN7EXAMPLE", " here"), "IOSFODNN7EXAMPLE"),
+    (_j("slack ", "xox", "b-123456789012-abcdefghijkl"), "123456789012-abcdefghijkl"),
+    (_j("google ", "AIza", "SyA1234567890abcdefghijklmnopqrstuv"), "SyA1234567890abcdef"),
+    ("postgres://admin:hunter2pw@db.internal:5432/app", "hunter2pw"),
+    ("https://user:p4ssw0rd@example.com/x", "p4ssw0rd"),
+    (_j("api", "_key=", "abcd1234efgh5678 failed"), "abcd1234efgh5678"),
+    (_j("retry with api", "key: ", "zzzz9999yyyy"), "zzzz9999yyyy"),
+    (_j("pass", "word=", "correct-horse-battery"), "correct-horse-battery"),
+    (_j("tok", "en = ", "9f8e7d6c5b4a"), "9f8e7d6c5b4a"),
+    (_j("AWS_SECRET_", "ACCESS_KEY=", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE"), "wJalrXUtnFEMI"),
+    (_j("client", "_secret=", "s3cr3tvalue99"), "s3cr3tvalue99"),
+    (_j("api", 'key: "', 'abc12345def"'), "abc12345def"),
+    (_j('{"api', '_key": "', 'abc12345def"}'), "abc12345def"),
+    (_j("hf", "_", "a" * 34), "a" * 34),
+    (_j("glp", "at-", "abcdefghij0123456789"), "abcdefghij0123456789"),
+    (
+        _j(
+            "-----BEGIN RSA PRIV",
+            "ATE KEY-----\nMIIEowIBAAKCAQEA7\nabcd\n-----END RSA PRIV",
+            "ATE KEY-----",
+        ),
+        "MIIEowIBAAKCAQEA7",
+    ),
+    (_j("Cookie: ses", "sion=abc123; theme=dark"), "abc123"),
+    (_j("Set-Cookie: ses", "sion=zzz999; Path=/"), "zzz999"),
+]
+REDACTION_NEGATIVE: list[str] = [
+    "a student idea about invoices",
+    "max_tokens=100 and token_count: 5",
+    "the keyboard key was pressed",
+    "see https://example.com/path?x=1",
+    "skill-based sk-short",
+    "email-like text without at sign",
+    "cost 0.0123 usd over 12 steps",
+    "card_aaaaaaaa#c3 is evidence",
+]
+
+
+# Ids and numbers that must survive PII scrubbing untouched (they are engine inputs and owners).
+PII_NEGATIVE: list[str] = [
+    "12345678-1234-4abc-8def-0123456789ab",
+    "ev-12345678-1234",
+    "run 20261128-123456",
+    "run_20261128-123456",
+    "20261128123456",
+    "2026-11-28T12:00:00+00:00",
+    "card_aaaaaaaa#c3",
+    "user_0123456789012",
+    "0.8123456789",
+    "1700000000000",
+    "idea_1 version 3 score 71.5",
+]
+# Real phone shapes that are still masked (text, digits that must disappear).
+PII_POSITIVE: list[tuple[str, str]] = [
+    ("call +92 300 1234567 now", "1234567"),
+    ("call +1 (555) 123-4567 now", "123-4567"),
+    ("call (555) 123-4567 now", "123-4567"),
+    ("call 555 123 4567 now", "123 4567"),
+    ("call 0300 1234567 now", "1234567"),
+    ("call 555-123-4567 now", "123-4567"),
+    ("mail bob@example.com now", "bob@example.com"),
+]
