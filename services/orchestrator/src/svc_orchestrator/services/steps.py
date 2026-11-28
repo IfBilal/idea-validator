@@ -5,6 +5,7 @@ the budget, the trace or the timeout.
 """
 
 import asyncio
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
@@ -31,6 +32,38 @@ TIMEOUT_GRACE_S = 1.0
 AGENT = "orchestrator"
 MAX_STEP_RERUNS = 2  # free re-runs of one step after crashes, then the step is refused
 PROCESS_ID = uuid.uuid4().hex  # tells a step claimed by this process from one a dead process left
+
+
+_ID = re.compile(r"[A-Za-z0-9_#.-]{1,64}")
+_ID_KEYS = ("id", "ids")
+
+
+def summarize_output(value: Any) -> dict[str, Any]:
+    """What a trace keeps of a step result: shape, counts, numbers, ids and a hash, never text.
+
+    Step outputs hold scorer reasons, ideas and evidence quotes (user data, docs/harness/13 §8).
+    """
+    summary: dict[str, Any] = {"type": type(value).__name__, "hash": canonical_hash(value)[:16]}
+    if not isinstance(value, Mapping):
+        if isinstance(value, list):
+            summary["n"] = len(value)
+        elif isinstance(value, int | float | bool):
+            summary["value"] = value
+        return summary
+    summary["keys"] = sorted(str(k)[:64] for k in value)[:50]
+    numbers: dict[str, Any] = {}
+    counts: dict[str, int] = {}
+    ids: dict[str, Any] = {}
+    for key, item in list(value.items())[:100]:
+        name = str(key)[:64]
+        if isinstance(item, bool | int | float):
+            numbers[name] = item
+        elif isinstance(item, list | tuple | dict):
+            counts[name] = len(item)
+        elif isinstance(item, str) and name.endswith(_ID_KEYS) and _ID.fullmatch(item):
+            ids[name] = item
+    summary.update(numbers=numbers, counts=counts, ids=ids)
+    return summary
 
 
 @dataclass(frozen=True)
@@ -97,7 +130,7 @@ class StepRunner:
                 agent, "tool_call", tool=tool, run_id=self._run_id, input=traced
             ) as handle:
                 handle.cache_hit = True
-                handle.set_output(memo[key])
+                handle.set_output(summarize_output(memo[key]))
             await self._emitter.emit(
                 "tool_call", agent=agent, tool=tool, cache_hit=True, latency_ms=0
             )
@@ -144,7 +177,7 @@ class StepRunner:
                     handle.retries = _retries_after_failure(exc, self._config.max_retries)
                     raise
                 handle.retries = retries_var.get()
-                handle.set_output(value)
+                handle.set_output(summarize_output(value))
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             await self._ledger.release_step(

@@ -329,3 +329,46 @@ async def test_parallel_steps_cannot_overshoot_the_step_budget() -> None:
     assert sum(results) == 2, f"{sum(results)} steps ran for a budget of 2"
     assert len(calls) == 2, "a refused step must never make its call"
     assert (await rig.ledger.spent()).steps == 2
+
+
+async def test_a_step_that_returns_idea_text_leaves_none_of_it_in_the_trace() -> None:
+    import json
+
+    rig = Rig()
+    secret_idea = "my startup idea: invoices for dentists, contact dr.smith"
+    result = {
+        "idea": secret_idea,
+        "reasons": [secret_idea, "quote: " + secret_idea],
+        "evidence": [{"evidence_id": "card_aaaaaaaa#c1", "quote": secret_idea}],
+        "score": 3.5,
+        "n_sources": 4,
+        "cache_hit": False,
+    }
+
+    async def returns() -> Any:
+        return result
+
+    await rig.runner.run({}, "x", tool="t", inputs={"q": 1}, call=returns, timeout_s=1)
+    text = json.dumps(rig.records[-1].model_dump(mode="json"))
+    assert "dentists" not in text
+    assert "smith" not in text
+    out = rig.records[-1].output
+    assert out["numbers"]["score"] == 3.5
+    assert out["counts"]["evidence"] == 1
+    assert out["counts"]["reasons"] == 2
+    assert out["hash"]
+
+
+async def test_a_memo_hit_is_summarised_too() -> None:
+    import json
+
+    rig = Rig()
+    key = (
+        "x:"
+        + __import__("svc_orchestrator.services.cache_keys", fromlist=["x"]).canonical_hash(
+            {"q": 1}
+        )[:16]
+    )
+    memo = {key: {"idea": "secret dentist idea"}}
+    await rig.runner.run(memo, "x", tool="t", inputs={"q": 1}, call=ok, timeout_s=1)
+    assert "dentist" not in json.dumps(rig.records[-1].model_dump(mode="json"))

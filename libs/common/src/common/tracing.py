@@ -12,7 +12,10 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import ValidationError
+
 from .context import parent_step_var, run_id_var
+from .errors import DomainError
 from .logging import get_logger
 from .redaction import redact
 from .schemas.trace import TraceKind, TraceRecord
@@ -33,6 +36,22 @@ def bound_payload(value: Any) -> Any:
 
 
 _bounded = bound_payload
+
+
+MAX_ERROR_CHARS = 200
+
+
+def error_text(exc: BaseException) -> str:
+    """What a trace may say about a failure: our own messages, capped and redacted; for anything
+    else only the type, because str(exc) can embed user text (pydantic prints the input)."""
+    name = type(exc).__name__
+    if isinstance(exc, DomainError):
+        return f"{name}: {redact(exc.message[:MAX_ERROR_CHARS])}"
+    if isinstance(exc, ValidationError):
+        return f"{name}: {exc.error_count()} validation errors"
+    if type(exc).__module__ == "builtins" and not isinstance(exc, OSError):
+        return f"{name}: {redact(str(exc)[:MAX_ERROR_CHARS])}"
+    return name
 
 
 class SpanHandle:
@@ -104,7 +123,7 @@ class Tracer:
         try:
             yield handle
         except Exception as exc:
-            handle.error = f"{type(exc).__name__}: {exc}"
+            handle.error = error_text(exc)
             raise
         finally:
             parent_step_var.reset(token)

@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any
 
 import pytest
@@ -82,3 +83,37 @@ def test_record_id_is_stable_and_changes_with_content() -> None:
 
 def test_error_text_is_capped() -> None:
     assert len(clean(error="e" * 50_000).error or "") <= 2000
+
+
+ADVERSARIAL = ["a" * 100_000, "a." * 50_000, "1-" * 50_000, "1" * 100_000, "a@" * 200_000]
+
+
+@pytest.mark.parametrize("text", ADVERSARIAL, ids=lambda t: f"{t[:4]}x{len(t)}")
+@pytest.mark.parametrize("where", ["error", "input", "output"])
+def test_sanitize_is_fast_on_adversarial_strings(text: str, where: str) -> None:
+    over: dict[str, Any] = {where: text if where == "error" else {"k": [text, {"n": text}]}}
+    started = time.perf_counter()
+    clean(**over)
+    assert time.perf_counter() - started < 0.5
+
+
+def test_a_two_megabyte_error_is_truncated_before_any_scan() -> None:
+    started = time.perf_counter()
+    out = clean(error="a" * 2_000_000)
+    assert time.perf_counter() - started < 0.5
+    assert len(out.error or "") <= 2000
+
+
+def test_many_small_strings_are_bounded_too() -> None:
+    started = time.perf_counter()
+    out = clean(input={"items": ["x@" * 500] * 5000})
+    assert time.perf_counter() - started < 0.5
+    assert len(canonical(out)) < MAX
+
+
+def test_new_secret_shapes_are_redacted_in_payloads_and_errors() -> None:
+    from common.testing import REDACTION_POSITIVE
+
+    for text, secret in REDACTION_POSITIVE:
+        out = clean(input={"msg": text}, error=text)
+        assert secret not in json.dumps(out.model_dump(mode="json")), text
