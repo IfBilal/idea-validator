@@ -290,3 +290,22 @@ async def test_only_the_validators_model_note_is_stripped_not_any_trailing_brack
         claim("c1", "Students struggle with study schedules [Notion]", [E1], "demand_pain"),
     )
     assert r.supported is False
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [" [model 4.0, prior 3.5, alpha 0.5]", " [model 3; prior unavailable: unknown feature 'x']"],
+)
+async def test_both_note_formats_the_validators_emit_are_stripped(tail: str) -> None:
+    (r,) = await run(
+        checker(), claim("c1", "Students struggle with study schedules" + tail, [E1], "demand_pain")
+    )
+    assert r.supported is True
+
+
+@pytest.mark.parametrize("tail", [" [model Notion]", " [model 4.0] Notion", " [model 4.0; Notion]"])
+async def test_a_look_alike_note_is_not_stripped(tail: str) -> None:
+    (r,) = await run(
+        checker(), claim("c1", "Students struggle with study schedules" + tail, [E1], "demand_pain")
+    )
+    assert r.supported is False

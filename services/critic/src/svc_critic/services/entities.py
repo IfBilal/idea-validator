@@ -69,7 +69,15 @@ _GENERIC_AFTER_CUE = _COMMON | _words(
 def _vocabulary() -> frozenset[str]:
     """Ordinary English words, built from the card corpus (scripts/build_common_words.py)."""
     text = (resources.files("svc_critic") / "data" / "common_words.txt").read_text(encoding="utf-8")
-    return frozenset(stem for word in text.split() for stem in _stems(word))
+    verbs = (resources.files("svc_critic") / "data" / "ordinary_verbs.txt").read_text(
+        encoding="utf-8"
+    )
+    words = text.split()
+    for verb in (v for v in verbs.splitlines() if v and not v.startswith("#")):
+        words += [verb, verb + "s", verb + "es", verb + "ed", verb + "d", verb + "ing"]
+        words += [verb[:-1] + "ing"] if verb.endswith("e") else []
+        words += [verb + verb[-1] + "ing", verb + verb[-1] + "ed"]  # scan -> scanning, scanned
+    return frozenset(stem for word in words for stem in _stems(word))
 
 
 @cache
@@ -102,8 +110,6 @@ def _ordinary_sentence_word(word: str) -> bool:
     low = word.lower()
     if low in _brand_words():
         return False
-    if low.endswith("ing") and len(low) > 5:
-        return True  # "Detecting keys ...": a gerund opens the sentence (-ing brands: deny list)
     return not _stems(word).isdisjoint(_vocabulary())
 
 
