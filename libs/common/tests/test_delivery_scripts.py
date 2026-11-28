@@ -449,7 +449,10 @@ def test_the_guard_creates_the_kube_directory_of_a_fresh_home(tmp_path: Path) ->
     env = _env(tmp_path)
     env["PROJECT_KUBECONFIG"] = str(tmp_path / "fresh-home" / ".kube" / "idea-validator.kubeconfig")
     given = tmp_path / "ci.kubeconfig"
-    given.write_text("apiVersion: v1\nkind: Config\ncurrent-context: kind-idea-validator\n")
+    given.write_text(
+        "apiVersion: v1\nkind: Config\ncurrent-context: kind-idea-validator\n"
+        "clusters:\n- cluster:\n    server: https://127.0.0.1:6443\n"
+    )
     env["CI_KUBECONFIG"] = str(given)
     _shim(
         tmp_path / "bin", "kubectl", "grep '^current-context:' \"$KUBECONFIG\" | awk '{print $2}'\n"
