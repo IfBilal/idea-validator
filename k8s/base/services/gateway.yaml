@@ -46,6 +46,8 @@ spec:
           value: INFO
         - name: AGENTOPS_URL
           value: http://agentops:8000
+        - name: CRITIC_URL
+          value: http://critic:8000
         - name: ORCHESTRATOR_URL
           value: http://orchestrator:8000
         - name: PROFILE_URL

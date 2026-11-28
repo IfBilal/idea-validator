@@ -17,6 +17,7 @@ from common.http import ServiceClient
 from common.schemas import RunEvent
 
 from .clients.agentops import AgentOpsClient
+from .clients.critic import InputRail
 from .clients.events import Subscription
 from .clients.ideas import IdeaClient
 from .clients.orchestrator import OrchestratorClient
@@ -335,6 +336,48 @@ class FakeM13:
                 body = {**body, "run_id": "run_someoneelse"}
             return httpx.Response(200, json=body)
         return httpx.Response(404, json={})
+
+
+class FakeM12:
+    """M12's input rail: refuses an injection phrase, otherwise returns the text with its whitespace
+    collapsed (a stand-in sanitiser, enough to prove the gateway uses M12's copy)."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.fail: int | None = None
+        self.timeout = False
+        self.malformed = False
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if self.timeout:
+            raise httpx.ReadTimeout("slow")
+        if request.headers.get("x-internal-token") != INTERNAL_TOKEN:
+            return httpx.Response(401, json={})
+        if self.fail:
+            return httpx.Response(self.fail, json={"error": {"message": "secret internal detail"}})
+        body = json.loads(request.content)
+        self.calls.append(body)
+        if self.malformed:
+            return httpx.Response(200, json=["not", "an", "object"])
+        text = str(body["text"])
+        if "ignore previous instructions" in text.lower():
+            return httpx.Response(
+                200, json={"allowed": False, "reasons": ["injection_pattern"], "sanitized_text": ""}
+            )
+        return httpx.Response(
+            200, json={"allowed": True, "reasons": [], "sanitized_text": " ".join(text.split())}
+        )
+
+
+def rail_client(m12: FakeM12) -> InputRail:
+    http = ServiceClient(
+        "http://critic.internal.test:8000",
+        timeout_s=1,
+        backoff_s=0,
+        internal_token=INTERNAL_TOKEN,
+        transport=httpx.MockTransport(m12),
+    )
+    return InputRail(http)
 
 
 def agentops_client(m13: FakeM13, max_bytes: int = 1024 * 1024) -> AgentOpsClient:

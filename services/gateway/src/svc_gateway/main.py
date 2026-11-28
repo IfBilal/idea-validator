@@ -17,6 +17,7 @@ from .clients.coordination import (
     RedisStreamGate,
     StreamGate,
 )
+from .clients.critic import InputRail
 from .clients.events import EventBus, RedisEventBus
 from .clients.ideas import IdeaClient
 from .clients.orchestrator import OrchestratorClient
@@ -40,6 +41,7 @@ def build_app(
     store: IdempotencyStore | None = None,
     gate: StreamGate | None = None,
     agentops: AgentOpsClient | None = None,
+    rail: InputRail | None = None,
 ) -> FastAPI:
     """Wire the gateway. Every dependency can be injected (tests); otherwise it is built from the
     environment at start-up, and missing configuration stops the service."""
@@ -99,6 +101,11 @@ def build_app(
             m13 = connect(settings.agentops_url, "AGENTOPS_URL", token)
             owned.append(m13)
             active_agentops = AgentOpsClient(m13, settings.max_trace_bytes)
+        active_rail = rail
+        if active_rail is None and settings.critic_url:
+            m12 = connect(settings.critic_url, "CRITIC_URL", token)
+            owned.append(m12)
+            active_rail = InputRail(m12)
         holder.update(redis=redis, profiles=active_profiles, orchestrator=active_orch)
         auth = AuthFlow(active_profiles, settings, secret)
         assert active_limiter and active_events and active_store and active_gate
@@ -116,6 +123,7 @@ def build_app(
                 streams_global=settings.sse_streams_global,
             ),
             active_agentops,
+            active_rail,
         )
         router = make_router(
             settings,

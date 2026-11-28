@@ -13,6 +13,9 @@ class Settings(ServiceSettings):
     service_name: str = "gateway"
     profile_url: str | None = None  # M2, e.g. http://profile.idea-validator.svc.cluster.local:8000
     orchestrator_url: str | None = None  # M3, e.g. http://orchestrator.idea-validator.svc:8000
+    critic_url: str | None = (
+        None  # M12 input rail; without it user text is not pre-checked (dev only)
+    )
     agentops_url: str | None = None  # M13; optional: without it GET /runs/{id}/trace is a 503
     redis_url: SecretStr | None = None  # rate-limit counters and the run event channels
     jwt_secret: SecretStr | None = None

@@ -47,7 +47,7 @@ SERVICES: dict[str, dict[str, Any]] = {
 
 # caller -> callees (docs/harness/03 section 1 and 16 section 5). Every service also posts traces to agentops.
 CALLS: dict[str, list[str]] = {
-    "gateway": ["profile", "orchestrator", "redis"],
+    "gateway": ["profile", "orchestrator", "redis", "critic"],
     "profile": ["postgres", "redis"],
     "orchestrator": [
         "profile",
