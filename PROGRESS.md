@@ -92,7 +92,9 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | P5 M3 restart recovery (leases, checkpoint allow-list, budget claims, events replay) | #67 | 2026-11-27 | Dev B agent; security review applied |
 | P1-T08 Jenkins fixes (kube guard on eval stage, plugin pins, kubeconfig validation, ADR-012) | #85 | 2026-11-28 | review fixes pushed on Taimoor's branch by a Dev B agent; no Jenkins run yet |
 | P9-T04/P10-T03 eval metrics, regression gate, tuning (k-fold, false-GO weighted) | #43 | 2026-11-27 | no labelled set yet |
-| P9-T01/T02 M13 trace store + replay | #94 (open) | 2026-11-28 | security fixes in progress |
+| P9-T01/T02 M13 trace store + replay | #94 | 2026-11-28 | merged after a security review (ReDoS, ingest ordering, per-run caps, owner filter, replay checks); registry/drift/gateway trace route in #97 |
+| P4/P5 approvals ownership check (M2) | #93 | 2026-11-28 | merged; closes #34 |
+| AI-draft verdict labels (74 ideas, NOT the human set) | #90, #91 | 2026-11-28 | merged; humans must label independently first (issue #92) |
 
 ## Blocked / Needs human
 - [ ] gpu-session (P8-T03): >= 60 human-reviewed examples via `python -m finetune.review` (Taimoor and Bilal); never simulated. Until then the test set cannot be called hand-checked.

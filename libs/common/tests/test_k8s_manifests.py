@@ -66,8 +66,13 @@ def test_every_deployment_is_hardened(dep: dict[str, Any]) -> None:
     pod = spec["securityContext"]
     assert pod["runAsNonRoot"] is True and pod["runAsUser"] == (101 if is_ui else 10001)
     assert pod["seccompProfile"]["type"] == "RuntimeDefault"
-    strategy = dep["spec"]["strategy"]["rollingUpdate"]
-    assert (strategy["maxUnavailable"], strategy["maxSurge"]) == (0, 1)
+    if any("persistentVolumeClaim" in v for v in spec["volumes"]):
+        # a ReadWriteOnce volume cannot be mounted by a surge pod on another node: hand it over
+        assert dep["spec"]["strategy"]["type"] == "Recreate"
+        assert dep["spec"]["replicas"] == 1
+    else:
+        strategy = dep["spec"]["strategy"]["rollingUpdate"]
+        assert (strategy["maxUnavailable"], strategy["maxSurge"]) == (0, 1)
     (container,) = spec["containers"]
     sc = container["securityContext"]
     assert sc["allowPrivilegeEscalation"] is False and sc["readOnlyRootFilesystem"] is True

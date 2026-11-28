@@ -1019,3 +1019,20 @@ async def test_a_changed_profile_only_reruns_what_depends_on_it() -> None:
     assert searched == 0  # evidence does not depend on the profile
     assert first.world.count("validators", "POST /score-all") == 1  # scorers saw the profile
     assert first.world.count(*VERDICT_ROUTE) == 1
+
+
+# ---- replay record for M13 ---------------------------------------------------------------------
+async def test_the_m11_request_and_answer_are_traced_for_replay_without_free_text() -> None:
+    h = Harness()
+    state = await run(h)
+    (rec,) = [
+        r
+        for r in h.records
+        if r.kind == "decision" and (r.output or {}).get("decision") == "m11_verdict"
+    ]
+    assert rec.input["run_id"] == "run_1"
+    assert {s["dimension"] for s in rec.input["scores"]} == set(DIMS)
+    assert all("reason" not in s and "features" not in s for s in rec.input["scores"])
+    assert state.verdict is not None
+    assert rec.output["verdict"] == state.verdict["verdict"]
+    assert rec.output["versions"] == state.verdict["versions"]
