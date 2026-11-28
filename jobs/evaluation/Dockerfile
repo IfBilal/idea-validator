@@ -16,7 +16,7 @@ RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin 
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
 # the labelled set (when it exists) and the engine config are the only data the Job reads;
-# tests are excluded by .dockerignore
+# .dockerignore keeps tests, candidates.jsonl and the README out of the image
 COPY --chown=10001:10001 eval/labelled /app/eval/labelled
 COPY --chown=10001:10001 config /app/config
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

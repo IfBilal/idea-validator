@@ -70,7 +70,8 @@ spec:
         imagePullPolicy: Always
       volumes:
       - name: tmp
-        emptyDir: {}
+        emptyDir:
+          sizeLimit: 64Mi
   podFailurePolicy:
     rules:
     - action: FailJob

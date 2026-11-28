@@ -36,13 +36,14 @@ kubectl -n "$NS" wait --for=condition=complete job/eval --timeout="${TIMEOUT}s" 
 done_pid=$!
 kubectl -n "$NS" wait --for=condition=failed job/eval --timeout="${TIMEOUT}s" >/dev/null 2>&1 &
 failed_pid=$!
-job_ok=0
-if wait -n "$done_pid" "$failed_pid"; then job_ok=1; fi
+# `wait -n` and `kubectl wait --for=condition=failed` both exit 0 when they see their condition,
+# so neither says whether the Job SUCCEEDED. Only the Job's own status decides (backoffLimit is 0).
+wait -n "$done_pid" "$failed_pid" || true
 kill "$done_pid" "$failed_pid" 2>/dev/null || true
-# a stopped wait is not a verdict: ask the Job itself
-if [ "$(kubectl -n "$NS" get job eval -o jsonpath='{.status.succeeded}' 2>/dev/null || true)" = "1" ]; then
-  job_ok=1
-fi
+succeeded="$(kubectl -n "$NS" get job eval -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+failed="$(kubectl -n "$NS" get job eval -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+job_ok=0
+if [ "$succeeded" = 1 ] && { [ -z "$failed" ] || [ "$failed" = 0 ]; }; then job_ok=1; fi
 
 if ! result="$(EVAL_RESULTS_DIR="${EVAL_RESULTS_DIR:-eval/results}" ./scripts/eval_results.sh | tail -n1)"; then
   kubectl -n "$NS" logs job/eval --tail=30 >&2 || true

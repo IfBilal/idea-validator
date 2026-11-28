@@ -76,3 +76,13 @@ def test_duplicate_ids_are_refused(tmp_path: Path) -> None:
 def test_boundaries_of_idea_length_and_effort(tmp_path: Path) -> None:
     ok = load_labelled(write(tmp_path, item(idea_text="x" * 4000, estimated_effort_hours=10000)))
     assert ok[0].estimated_effort_hours == 10000.0
+
+
+@pytest.mark.parametrize("bad_id", ["L1\n", "L 1", "../x", "a" * 65, "Lé", "L1‮", "", "L/1", "L,1"])
+def test_ids_are_restricted_to_a_safe_alphabet(tmp_path: Path, bad_id: str) -> None:
+    with pytest.raises(LabelledSetError, match="'id' must match"):
+        load_labelled(write(tmp_path, item(id=bad_id)))
+
+
+def test_ids_at_the_length_boundary_load(tmp_path: Path) -> None:
+    assert load_labelled(write(tmp_path, item(id="a" * 64)))[0].id == "a" * 64

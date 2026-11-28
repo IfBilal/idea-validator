@@ -149,6 +149,7 @@ JOBS: dict[str, dict[str, Any]] = {
         "manual": True,
         "backoff_limit": 0,  # a rerun is a new spend: a human or Jenkins starts it again
         "deadline_s": 7200,
+        "tmp_limit": "64Mi",  # results and progress only
         # exit 2 bad config / no labelled set, 3 eval user refused: a retry cannot fix these
         "fail_fast_codes": [2, 3],
     },
@@ -666,7 +667,14 @@ def _job(name: str) -> str:
                         "seccompProfile": {"type": "RuntimeDefault"},
                     },
                     "containers": [container],
-                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                    "volumes": [
+                        {
+                            "name": "tmp",
+                            "emptyDir": {"sizeLimit": spec["tmp_limit"]}
+                            if spec.get("tmp_limit")
+                            else {},
+                        }
+                    ],
                 },
             },
         },

@@ -64,6 +64,28 @@ async def test_timeout_is_an_error_row() -> None:
     row = await run_one(fake, make_item(), RunConfig(poll_s=0, item_timeout_s=0.05))
     assert row["status"] == "error" and row["error"] == "timeout" and row["system"] is None
     assert row["attempts"] == 1  # a timeout is not retried (it costs a full run)
+    assert fake.cancelled == fake.started == ["run_L1_1"]  # the orphan is asked to stop
+
+
+async def test_endless_running_ends_at_the_item_timeout_and_never_starts_a_second_run() -> None:
+    fake = FakeGateway({"eval L1": {"never_finishes": True}})
+    cfg = RunConfig(poll_s=0, item_timeout_s=0.05, item_retries=2)
+    row = await run_one(fake, make_item(), cfg)
+    assert row["error"] == "timeout" and len(fake.started) == 1
+
+
+async def test_a_gateway_error_mid_poll_cancels_and_does_not_start_another_run() -> None:
+    fake = FakeGateway({"eval L1": {"raise_on_poll": httpx.ConnectError("down")}})
+    row = await run_one(fake, make_item())
+    assert row["error"] == "gateway_error" and len(fake.started) == 1
+    assert fake.cancelled == fake.started
+
+
+async def test_a_missing_cancel_route_does_not_break_the_row() -> None:
+    fake = FakeGateway({"eval L1": {"never_finishes": True}})
+    fake.cancel_status = 404
+    row = await run_one(fake, make_item(), RunConfig(poll_s=0, item_timeout_s=0.05))
+    assert row["error"] == "timeout" and fake.cancelled
 
 
 @pytest.mark.parametrize("status", [429, 500, 503])
@@ -86,11 +108,18 @@ async def test_client_error_is_not_retried() -> None:
     assert row["error"] == "http_422" and row["attempts"] == 1
 
 
-async def test_failed_run_is_retried_then_reported() -> None:
+async def test_failed_run_is_reported_and_never_restarted() -> None:
     fake = FakeGateway({"eval L1": {"state": "failed"}})
     row = await run_one(fake, make_item())
-    assert row["status"] == "error" and row["error"] == "run_failed" and row["attempts"] == 3
-    assert len(set(fake.idem_keys)) == 3  # a retry is a new run, not an idempotent replay
+    assert row["status"] == "error" and row["error"] == "run_failed" and row["attempts"] == 1
+    assert len(fake.started) == 1 and fake.cancelled == []  # no second run, nothing to stop
+
+
+async def test_start_retries_replay_the_same_idempotency_key() -> None:
+    fake = FakeGateway({"eval L1": {"validate_failures": [503, 503]}})
+    row = await run_one(fake, make_item())
+    assert row["status"] == "ok" and len(fake.started) == 1
+    assert len(set(fake.idem_keys)) == 1 and len(fake.idem_keys) == 3
 
 
 async def test_budget_stopped_is_an_error_not_a_verdict() -> None:
@@ -154,12 +183,24 @@ async def test_unknown_question_is_left_unanswered_and_reported() -> None:
     assert row["error"] == "unanswered_question" and fake.answers == []
 
 
-async def test_budget_overrun_is_flagged_not_hidden() -> None:
-    fake = FakeGateway(
-        {"eval L1": {"spent": {"cost_usd": 0.5, "tokens": 1, "pages": 1, "steps": 1}}}
-    )
+async def test_budget_overrun_on_a_finished_run_is_flagged_not_hidden() -> None:
+    over = {"cost_usd": 0.5, "tokens": 1, "pages": 1, "steps": 1}
+    row = await run_one(FakeGateway({"eval L1": {"spent_final": over}}), make_item())
+    assert row["status"] == "ok" and row["behaviour"]["budget_kept"] is False
+
+
+async def test_overspend_while_running_stops_and_cancels_the_run() -> None:
+    over = {"cost_usd": 0.5, "tokens": 1, "pages": 1, "steps": 1}
+    fake = FakeGateway({"eval L1": {"spent": over}})
     row = await run_one(fake, make_item())
-    assert row["behaviour"]["budget_kept"] is False
+    assert row["error"] == "budget_exceeded" and fake.cancelled == fake.started
+
+
+async def test_a_run_view_without_a_cost_limit_fails_preflight() -> None:
+    fake = FakeGateway({"eval L1": {"budget": {"max_tokens": 10}}})
+    row = await run_one(fake, make_item())
+    assert row["error"] == "no_budget_limit" and fake.cancelled == fake.started
+    assert fake.polls[fake.started[0]] == 1  # decided on the first view
 
 
 async def test_poisoned_item_checks_run() -> None:

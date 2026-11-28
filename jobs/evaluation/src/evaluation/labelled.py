@@ -7,6 +7,7 @@ M11 verdicts; ids are unique.
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from evaluation.metrics import LABELS
 
 PROFILE_FIELDS = ("skills", "hours_per_week", "weeks_available", "team_size", "compute", "goal")
 OPTIONAL_PROFILE_FIELDS = ("interests",)
+ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}")  # fullmatch: a trailing newline does not pass
 MAX_IDEA_CHARS = 4000  # the gateway refuses longer idea text
 MAX_EFFORT_HOURS = 10_000  # M3's accepted range for estimated_effort_hours
 
@@ -60,8 +62,8 @@ def _parse(raw: Any, path: Path, line_no: int) -> LabelledItem:
     if not isinstance(raw, dict):
         raise _fail(path, line_no, "each line must be a JSON object")
     item_id = raw.get("id")
-    if not isinstance(item_id, str) or not item_id.strip():
-        raise _fail(path, line_no, "'id' must be a non-empty string")
+    if not isinstance(item_id, str) or not ID_PATTERN.fullmatch(item_id):
+        raise _fail(path, line_no, "'id' must match [A-Za-z0-9._-]{1,64}")
     text = raw.get("idea_text")
     if not isinstance(text, str) or not text.strip():
         raise _fail(path, line_no, f"{item_id}: 'idea_text' must be a non-empty string")

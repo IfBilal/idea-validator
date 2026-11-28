@@ -71,6 +71,7 @@ class FakeGateway:
     def __init__(self, scenarios: dict[str, dict[str, Any]] | None = None) -> None:
         self.scenarios = scenarios or {}
         self.users: set[str] = set()
+        self.taken: set[str] = set()
         self.calls: list[tuple[str, str]] = []
         self.answers: list[dict[str, Any]] = []
         self.approvals: list[dict[str, Any]] = []
@@ -80,6 +81,9 @@ class FakeGateway:
         self.polls: dict[str, int] = {}
         self.idem_keys: list[str] = []
         self.trace_calls: list[str] = []
+        self.cancelled: list[str] = []
+        self.cancel_status = 202
+        self.started: list[str] = []
         self.trace_auth: list[str] = []
         self.login_status = 200
 
@@ -104,6 +108,8 @@ class FakeGateway:
                 200, {"access_token": "tok", "token_type": "bearer", "expires_in": 60}
             )
         if path == "/auth/register":
+            if body["email"] in self.taken:
+                return self._json(409, {})
             self.users.add(body["email"])
             return self._json(201, {"user_id": "u"})
         if path == "/profile":
@@ -122,6 +128,9 @@ class FakeGateway:
             self.approvals.append(body)
             self.runs[path.split("/")[2]]["approved"] = True
             return self._json(202, {"run_id": "r", "state": "running"})
+        if path.endswith("/cancel"):
+            self.cancelled.append(path.split("/")[2])
+            return self._json(self.cancel_status, {})
         if path.startswith("/runs/"):
             return self._run(path.split("/")[2])
         return self._json(404, {})
@@ -137,14 +146,25 @@ class FakeGateway:
             return self._json(status, {}, {"retry-after": "0"} if status == 429 else None)
         run_id = f"run_{title.split()[-1]}_{self.validate_attempts[title]}"
         self.runs[run_id] = {"spec": spec}
-        return self._json(202, {"run_id": run_id, "idea_id": "i", "version": 1})
+        self.started.append(run_id)
+        shown = spec.get("bad_run_id", run_id)
+        return self._json(202, {"run_id": shown, "idea_id": "i", "version": 1})
 
     def _run(self, run_id: str) -> httpx.Response:
         run = self.runs[run_id]
         spec = run["spec"]
         n = self.polls[run_id] = self.polls.get(run_id, 0) + 1
+        if "raise_on_poll" in spec:
+            raise spec["raise_on_poll"]
+        if "view_raw" in spec:
+            return httpx.Response(200, content=spec["view_raw"])
+        if spec.get("huge_view"):
+            pad = b"x" * (3 << 20)
+            return httpx.Response(200, content=b'{"state":"running","pad":"' + pad + b'"}')
         spent = spec.get("spent", {"cost_usd": 0.01, "tokens": 100, "pages": 1, "steps": 5})
-        budget = {"max_cost_usd": 0.05, "max_tokens": 60000, "max_pages": 30, "max_steps": 80}
+        budget = spec.get(
+            "budget", {"max_cost_usd": 0.05, "max_tokens": 60000, "max_pages": 30, "max_steps": 80}
+        )
         view: dict[str, Any] = {
             "run_id": run_id,
             "kind": "validate",
@@ -171,6 +191,7 @@ class FakeGateway:
         if n <= spec.get("polls", 1):
             return self._json(200, view)
         state = spec.get("state", "succeeded")
+        view["spent"] = spec.get("spent_final", spent)
         result = spec["card"] if "card" in spec else good_card(spec.get("verdict", "GO"))
         view.update(state=state, result=result if state == "succeeded" else None)
         return self._json(200, view)
@@ -179,6 +200,8 @@ class FakeGateway:
         mode = self.runs.get(run_id, {}).get("spec", {}).get("trace", "ok")
         if mode == "missing":
             return self._json(404, {})
+        if mode == "huge":
+            return httpx.Response(200, content=b'{"records":[' + b"1," * (5 << 20) + b"1]}")
         if mode == "bad":
             return self._json(200, {"run_id": run_id, "records": ["x"]})
         if mode == "empty":
@@ -189,6 +212,8 @@ class FakeGateway:
             return self._json(503, {})
         spec = self.runs[run_id]["spec"]
         verdict = (spec.get("card") or {}).get("verdict") or spec.get("verdict", "GO")
+        if "trace_raw" in spec:
+            return httpx.Response(200, content=spec["trace_raw"])
         records = spec.get("trace_records", good_trace(verdict))
         self.trace_calls.append(run_id)
         return self._json(200, {"run_id": run_id, "records": records})

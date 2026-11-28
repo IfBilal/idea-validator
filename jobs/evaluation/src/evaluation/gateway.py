@@ -6,12 +6,15 @@ body of an error response is never put into a message: it can quote the idea tex
 """
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
 MAX_WAIT_S = 30.0
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024  # a run view; traces ask for more explicitly
+MAX_TRACE_BYTES = 8 * 1024 * 1024
 BASE_BACKOFF_S = 0.5
 
 Sleep = Callable[[float], Awaitable[None]]
@@ -28,11 +31,11 @@ class NotFoundError(GatewayError):
     """404: the thing is not there (e.g. a trace that was never stored)."""
 
 
-def _wait(response: httpx.Response | None, attempt: int) -> float:
+def _wait_from(headers: httpx.Headers | None, attempt: int) -> float:
     delay: float = BASE_BACKOFF_S * float(2**attempt)
-    if response is not None:
-        raw = response.headers.get("retry-after", "")
-        if raw.strip().isdigit():
+    if headers is not None:
+        raw = headers.get("retry-after", "").strip()
+        if raw.isascii() and raw.isdigit():
             delay = float(int(raw))
     return min(delay, MAX_WAIT_S)
 
@@ -59,34 +62,52 @@ class Gateway:
         token: str | None = None,
         body: Any = None,
         headers: dict[str, str] | None = None,
+        max_bytes: int = MAX_RESPONSE_BYTES,
     ) -> Any:
+        """One JSON call. The body is read as a stream and abandoned above ``max_bytes``."""
         sent = {**self._headers, **(headers or {})}
         if token:
             sent["Authorization"] = f"Bearer {token}"
         last = "request failed"
         for attempt in range(self._retries + 1):
-            response: httpx.Response | None = None
+            status: int | None = None
+            retry_after: httpx.Headers | None = None
             try:
-                response = await self._client.request(method, path, json=body, headers=sent)
+                async with self._client.stream(method, path, json=body, headers=sent) as response:
+                    status, retry_after = response.status_code, response.headers
+                    if status == 429 or status >= 500:
+                        last = f"HTTP {status}"
+                    elif status == 404:
+                        raise NotFoundError(f"{method} {path}: HTTP 404", 404)
+                    elif status >= 400:
+                        raise GatewayError(f"{method} {path}: HTTP {status}", status)
+                    else:
+                        return await _read_json(response, method, path, max_bytes)
             except httpx.TimeoutException:
                 last = "timed out"
             except httpx.TransportError:
                 last = "connection failed"
-            if response is not None:
-                code = response.status_code
-                if code == 429 or code >= 500:
-                    last = f"HTTP {code}"
-                elif code == 404:
-                    raise NotFoundError(f"{method} {path}: HTTP 404", 404)
-                elif code >= 400:
-                    raise GatewayError(f"{method} {path}: HTTP {code}", code)
-                else:
-                    try:
-                        return response.json()
-                    except ValueError:
-                        raise GatewayError(f"{method} {path}: malformed JSON", code) from None
+            except httpx.RequestError:  # bad encoding, redirect loops: retrying cannot help
+                raise GatewayError(f"{method} {path}: unusable response") from None
             if attempt < self._retries:
-                await self._sleep(_wait(response, attempt))
+                await self._sleep(_wait_from(retry_after, attempt))
         raise GatewayError(
             f"{method} {path}: {last} after {self._retries + 1} tries", retryable=True
         )
+
+
+async def _read_json(response: httpx.Response, method: str, path: str, cap: int) -> Any:
+    declared = response.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > cap:
+        raise GatewayError(f"{method} {path}: response too large", response.status_code)
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes():
+        size += len(chunk)
+        if size > cap:
+            raise GatewayError(f"{method} {path}: response too large", response.status_code)
+        chunks.append(chunk)
+    try:
+        return json.loads(b"".join(chunks))
+    except ValueError:  # includes bad UTF-8 and JSON errors
+        raise GatewayError(f"{method} {path}: malformed JSON", response.status_code) from None

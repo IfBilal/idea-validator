@@ -1,5 +1,6 @@
 """Delivery scripts used by Jenkins: push check, rollback of what a build changed, guarded kubeconfig."""
 
+import json
 import os
 import re
 import stat
@@ -327,7 +328,12 @@ def test_make_images_builds_every_image_push_images_checks() -> None:
 # --- run_eval.sh and check_eval.sh go through the guard ------------------------------------
 
 
-def _eval_env(tmp_path: Path, context: str) -> tuple[dict[str, str], Path]:
+GOOD_RESULT = json.dumps({"schema": "eval-results@v1", "n_total": 3, "n": 3})
+
+
+def _eval_env(tmp_path: Path, context: str, **stub: str) -> tuple[dict[str, str], Path]:
+    """A stubbed kubectl. `kubectl wait` always exits 0 (as it does for a FAILED job too); the Job's
+    status comes only from STUB_SUCCEEDED / STUB_FAILED / STUB_ACTIVE."""
     log = tmp_path / "calls.log"
     env = _env(
         tmp_path,
@@ -336,14 +342,28 @@ def _eval_env(tmp_path: Path, context: str) -> tuple[dict[str, str], Path]:
         EVAL_RESULTS_DIR=str(tmp_path / "results"),
         BASELINE=str(ROOT / "Makefile"),
         TAG="abc1234",
+        **{
+            "STUB_SUCCEEDED": "1",
+            "STUB_FAILED": "",
+            "STUB_ACTIVE": "",
+            "STUB_MARKER": "-----EVAL-RESULT-----",
+            "STUB_RESULT": GOOD_RESULT,
+            **stub,
+        },
     )
     _shim(tmp_path / "bin", "kind", f"echo 'current-context: {context}'\n")
     _shim(
         tmp_path / "bin",
         "kubectl",
         f'echo "$*" >> {log}\n'
-        'case "$*" in *" logs "*) echo \'{"schema":"eval-results@v1","n":1}\' ;;\n'
-        '*) grep "^current-context:" "$KUBECONFIG" | cut -d" " -f2 ;; esac\n',
+        'case "$*" in\n'
+        '*" logs "*) printf "%s\\n%s\\n" "$STUB_MARKER" "$STUB_RESULT" ;;\n'
+        '*status.succeeded*) printf "%s" "$STUB_SUCCEEDED" ;;\n'
+        '*status.failed*) printf "%s" "$STUB_FAILED" ;;\n'
+        '*status.active*) printf "%s" "$STUB_ACTIVE" ;;\n'
+        '*" wait "*) exit 0 ;;\n'
+        '*) grep "^current-context:" "$KUBECONFIG" | cut -d" " -f2 ;;\n'
+        "esac\n",
     )
     _shim(tmp_path / "bin", "uv", f'echo "uv $*" >> {log}\n')
     return env, log
@@ -361,6 +381,24 @@ def test_run_eval_applies_the_job_and_gates_through_the_guard(tmp_path: Path) ->
     assert not (tmp_path / "results" / "baseline.json").exists()
 
 
+@pytest.mark.parametrize(
+    "stub",
+    [
+        {"STUB_SUCCEEDED": "", "STUB_FAILED": "1"},  # the failed waiter returned 0
+        {"STUB_SUCCEEDED": "1", "STUB_FAILED": "1"},
+        {"STUB_SUCCEEDED": "", "STUB_FAILED": ""},  # neither: timed out, still running
+        {"STUB_SUCCEEDED": "0", "STUB_FAILED": "0"},
+    ],
+)
+def test_a_job_that_did_not_succeed_fails_even_when_kubectl_wait_returns_zero(
+    tmp_path: Path, stub: dict[str, str]
+) -> None:
+    env, log = _eval_env(tmp_path, "kind-idea-validator", **stub)
+    done = _run([str(SCRIPTS / "run_eval.sh")], env)
+    assert done.returncode != 0 and "did not finish cleanly" in done.stderr
+    assert "wait --for=condition=failed" in log.read_text()
+
+
 def test_run_eval_without_a_labelled_set_says_so_and_exits_2(tmp_path: Path) -> None:
     env, log = _eval_env(tmp_path, "kind-idea-validator")
     env["EVAL_LABELLED"] = str(tmp_path / "labelled_set.jsonl")
@@ -376,16 +414,44 @@ def test_run_eval_refuses_a_latest_tag(tmp_path: Path) -> None:
     assert done.returncode == 1 and "apply" not in (log.read_text() if log.exists() else "")
 
 
-def test_eval_results_refuses_a_non_result_log_line(tmp_path: Path) -> None:
-    env, _ = _eval_env(tmp_path, "kind-idea-validator")
-    _shim(
-        tmp_path / "bin",
-        "kubectl",
-        'case "$*" in *" logs "*) echo "boom" ;; *) grep "^current-context:" "$KUBECONFIG" | cut -d" " -f2 ;; esac\n',
-    )
+@pytest.mark.parametrize(
+    ("stub", "message"),
+    [
+        ({"STUB_RESULT": "boom"}, "not a valid eval-results"),
+        ({"STUB_RESULT": json.dumps({"schema": "other", "n_total": 3})}, "not a valid"),
+        ({"STUB_RESULT": json.dumps({"schema": "eval-results@v1", "n_total": 0})}, "not a valid"),
+        ({"STUB_RESULT": json.dumps({"schema": "eval-results@v1"})}, "not a valid"),
+        ({"STUB_RESULT": '{"schema": "eval-results@v1", "n_total": true}'}, "not a valid"),
+        ({"STUB_MARKER": "something else"}, "result marker"),
+        ({"STUB_ACTIVE": "1"}, "still running"),
+    ],
+)
+def test_eval_results_refuses_anything_that_is_not_a_finished_result(
+    tmp_path: Path, stub: dict[str, str], message: str
+) -> None:
+    env, _ = _eval_env(tmp_path, "kind-idea-validator", **stub)
     done = _run([str(SCRIPTS / "eval_results.sh")], env)
-    assert done.returncode == 1 and "not a result document" in done.stderr
+    assert done.returncode == 1 and message in done.stderr
     assert not list((tmp_path / "results").glob("*.json"))
+
+
+def test_eval_results_writes_one_file_atomically_and_leaves_no_temp(tmp_path: Path) -> None:
+    env, _ = _eval_env(tmp_path, "kind-idea-validator")
+    done = _run([str(SCRIPTS / "eval_results.sh")], env)
+    assert done.returncode == 0, done.stderr
+    files = sorted((tmp_path / "results").iterdir())
+    assert [f.name for f in files] == [Path(done.stdout.strip().splitlines()[-1]).name]
+    assert json.loads(files[0].read_text())["n_total"] == 3
+
+
+def test_eval_results_never_replaces_an_existing_file(tmp_path: Path) -> None:
+    env, _ = _eval_env(tmp_path, "kind-idea-validator")
+    _shim(tmp_path / "bin", "date", "echo 20261128T000000Z\n")
+    (tmp_path / "results").mkdir()
+    (tmp_path / "results" / "20261128T000000Z.json").write_text("keep me")
+    done = _run([str(SCRIPTS / "eval_results.sh")], env)
+    assert done.returncode == 1 and "already exists" in done.stderr
+    assert (tmp_path / "results" / "20261128T000000Z.json").read_text() == "keep me"
 
 
 def test_run_eval_refuses_a_foreign_cluster_before_applying(tmp_path: Path) -> None:

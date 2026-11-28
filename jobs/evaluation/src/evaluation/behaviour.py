@@ -10,6 +10,7 @@ records with ``kind`` (tool_call, llm_call, decision), ``agent``, ``service``, `
 """
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
@@ -54,10 +55,10 @@ def _start(rec: Mapping[str, Any]) -> float | None:
         return None
     try:
         end = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         return None
-    ms = rec.get("latency_ms")
-    return end - (ms / 1000 if isinstance(ms, int | float) and not isinstance(ms, bool) else 0)
+    ms = finite_number(rec.get("latency_ms"))
+    return end - (ms / 1000 if ms is not None else 0)
 
 
 def _ordered(trace: Trace) -> list[Mapping[str, Any]]:
@@ -103,24 +104,37 @@ def verdict_decision(trace: Trace | None) -> Mapping[str, Any] | None:
     return None
 
 
+def _cites(ids: Any, known: set[str]) -> bool:
+    """A non-empty list of strings that are all known (anything else, even unhashable, is false)."""
+    return (
+        isinstance(ids, list) and bool(ids) and all(isinstance(i, str) and i in known for i in ids)
+    )
+
+
+def finite_number(value: Any) -> float | None:
+    """A finite real number, or ``None`` (bool, NaN, inf, text and nesting are refused)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
 def scores_cite_valid_evidence(card: Mapping[str, Any]) -> bool:
     """Every non-abstained score cites evidence ids that exist in the card's evidence map."""
     scores, evidence = card.get("scores"), card.get("evidence")
     if not isinstance(scores, list) or not scores or not isinstance(evidence, dict):
         return False
-    known = set(evidence)
+    known = {k for k in evidence if isinstance(k, str)}
     for entry in scores:
         if not isinstance(entry, dict):
             return False
         if entry.get("score") is None:
             continue  # an abstention carries no claim
-        ids = entry.get("evidence_ids")
-        if not isinstance(ids, list) or not ids or not all(i in known for i in ids):
+        if not _cites(entry.get("evidence_ids"), known):
             return False
     claims = card.get("claims") or []
     for claim in claims if isinstance(claims, list) else []:
         ids = claim.get("evidence_ids") if isinstance(claim, dict) else None
-        if not isinstance(ids, list) or not ids or not all(i in known for i in ids):
+        if not _cites(ids, known):
             return False
     return True
 
@@ -138,12 +152,15 @@ def budget_kept(
     if trace is None:
         return False
     limits = dict(budget)
-    limits.setdefault("max_cost_usd", max_cost_usd)
-    if trace_stats(trace)["trace_cost_usd"] > float(limits["max_cost_usd"]) + _COST_EPS:
+    cost_limit = finite_number(limits.get("max_cost_usd"))
+    if cost_limit is None:
+        cost_limit = max_cost_usd
+    if trace_stats(trace)["trace_cost_usd"] > cost_limit + _COST_EPS:
         return False
     for counter, limit_key in _LIMIT_OF.items():
-        used, limit = spent.get(counter), limits.get(limit_key)
-        if not isinstance(used, int | float) or not isinstance(limit, int | float):
+        used = finite_number(spent.get(counter))
+        limit = cost_limit if limit_key == "max_cost_usd" else finite_number(limits.get(limit_key))
+        if used is None or limit is None:
             continue
         if used > limit + _COST_EPS:
             return False
@@ -221,12 +238,12 @@ def trace_stats(trace: Trace | None) -> dict[str, Any]:
     cost, fallbacks = 0.0, 0
     for rec in trace or []:
         agent = str(rec.get("agent", "unknown"))
-        ms = rec.get("latency_ms")
-        if isinstance(ms, int | float) and not isinstance(ms, bool):
+        ms = finite_number(rec.get("latency_ms"))
+        if ms is not None:
             latency[agent] = latency.get(agent, 0) + int(ms)
-        value = rec.get("cost_usd")
-        if isinstance(value, int | float) and not isinstance(value, bool):
-            cost += float(value)
+        value = finite_number(rec.get("cost_usd"))
+        if value is not None:
+            cost += value
         if rec.get("fallback"):
             fallbacks += 1
     return {"agent_latency_ms": latency, "trace_cost_usd": round(cost, 6), "fallbacks": fallbacks}

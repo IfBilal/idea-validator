@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import json
 from datetime import UTC, datetime
 from functools import partial
@@ -48,8 +49,12 @@ def labelled(tmp_path: Path, humans: list[str], **extra: Any) -> Path:
     return path
 
 
+_RUNS = itertools.count()
+
+
 def invoke(tmp_path: Path, fake: FakeGateway, *args: str, env: dict[str, str] | None = None) -> int:
-    clock = iter(datetime(2026, 11, 28, 2, 0, s, tzinfo=UTC) for s in range(59))
+    minute = next(_RUNS) % 59  # every call gets its own result file name
+    clock = iter(datetime(2026, 11, 28, 2, minute, s, tzinfo=UTC) for s in range(59))
     return main(
         ["--out", str(tmp_path / "out"), "--poll-interval", "0", *args],
         env=ENV if env is None else env,
@@ -91,13 +96,14 @@ def test_end_to_end_metrics_and_final_json_line(
 
 
 def test_output_is_deterministic_for_same_inputs(tmp_path: Path) -> None:
+    """Fake wall clock and fake timestamps: the two result files must be byte-identical."""
     path = labelled(tmp_path, ["GO", "PIVOT", "NO-GO", "GO", "PIVOT"])
-    docs = []
+    texts = []
     for name in ("a", "b"):
         out = tmp_path / name
         fake = FakeGateway({f"eval L{i}": {"polls": (5 - i) % 3} for i in range(5)})
-        clock = iter(datetime(2026, 11, 28, 2, 0, s, tzinfo=UTC) for s in range(59))
-        main(
+        stamps = iter(datetime(2026, 11, 28, 2, 0, s, tzinfo=UTC) for s in range(59))
+        code = main(
             [
                 "--labelled",
                 str(path),
@@ -111,14 +117,13 @@ def test_output_is_deterministic_for_same_inputs(tmp_path: Path) -> None:
             env=ENV,
             transport=fake.transport(),
             sleep=no_sleep,
-            now=partial(next, clock),
+            now=partial(next, stamps),
+            clock=lambda: 0.0,
         )
-        doc = json.loads(next(out.glob("2026*.json")).read_text())
-        for row in doc["rows"]:
-            row.pop("run_id", None)
-            row.pop("latency_s", None)
-        docs.append(doc)
-    assert docs[0] == docs[1]
+        assert code == 0
+        texts.append(next(out.glob("2026*.json")).read_text())
+    assert texts[0] == texts[1]
+    assert json.loads(texts[0])["latency_s"] == {"mean": 0.0, "p95": 0.0}
 
 
 def test_errors_are_counted_not_dropped_and_ie_only_when_returned(tmp_path: Path) -> None:
@@ -187,8 +192,11 @@ def test_refused_login_exits_3(tmp_path: Path) -> None:
     assert invoke(tmp_path, fake, "--labelled", str(labelled(tmp_path, ["GO"]))) == 3
 
 
+POISON = {"poisoned": True, "injection_forces": "NO-GO", "injection_canary": "OBEY ME"}
+
+
 def test_write_baseline_only_when_asked_and_clean(tmp_path: Path) -> None:
-    path = labelled(tmp_path, ["GO", "GO"])
+    path = labelled(tmp_path, ["GO", "GO"], L0=POISON)
     assert invoke(tmp_path, FakeGateway(), "--labelled", str(path), "--write-baseline") == 0
     base = json.loads((tmp_path / "out" / "baseline.json").read_text())
     assert check_results(base, base) == []  # the gate accepts a run against itself
@@ -214,7 +222,7 @@ def test_write_baseline_only_when_asked_and_clean(tmp_path: Path) -> None:
 
 
 def test_result_feeds_the_existing_gate(tmp_path: Path) -> None:
-    path = labelled(tmp_path, ["GO", "GO"])
+    path = labelled(tmp_path, ["GO", "GO"], L0=POISON)
     invoke(tmp_path, FakeGateway(), "--labelled", str(path), "--write-baseline")
     out = tmp_path / "out"
     current = next(out.glob("2026*.json"))

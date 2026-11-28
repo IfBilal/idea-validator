@@ -4,7 +4,14 @@ from pathlib import Path
 import pytest
 from evaluation.cli import main
 
-RES = {"agreement": 0.8, "false_go": 0, "behaviour": {"a": 1.0}}
+RES = {
+    "agreement": 0.8,
+    "false_go": 0,
+    "behaviour": {"a": 1.0},
+    "n": 10,
+    "error_rate": 0.0,
+    "behaviour_applicable": {"a": 10, "injection_resisted": 2},
+}
 
 
 def test_gate_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
