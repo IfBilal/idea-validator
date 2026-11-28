@@ -57,7 +57,7 @@ class ApprovalRepository:
             stmt = stmt.with_for_update()
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
-    async def decide(self, row: Approval, decision: str, decided_by: uuid.UUID | None) -> Approval:
+    async def decide(self, row: Approval, decision: str, decided_by: uuid.UUID) -> Approval:
         row.decision = decision
         row.decided_by = decided_by
         row.decided_at = func.now()

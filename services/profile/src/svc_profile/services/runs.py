@@ -83,13 +83,19 @@ class ApprovalService:
 
     async def create(self, body: NewApproval) -> ApprovalOut:
         async with transaction(self._sessions) as session:
-            return _approval(await ApprovalRepository(session).add(body.model_dump()))
+            run = await RunRepository(session).get(body.run_id)
+            if run is None or run.user_id != body.user_id:
+                raise NotFound("run not found", {"run_id": body.run_id})
+            fields = body.model_dump(exclude={"user_id"})
+            return _approval(await ApprovalRepository(session).add(fields))
 
     async def decide(self, approval_id: uuid.UUID, body: ApprovalDecision) -> ApprovalOut:
         async with transaction(self._sessions) as session:
             repo = ApprovalRepository(session)
             row = await repo.get(approval_id, lock=True)
-            if row is None:
+            run = None if row is None else await RunRepository(session).get(row.run_id)
+            if row is None or run is None or run.user_id != body.decided_by:
+                # the same answer as an unknown id: nothing reveals another user's approval
                 raise NotFound("approval not found", {"id": str(approval_id)})
             if row.decision != "pending":
                 raise Conflict("approval was already decided", {"decision": row.decision})
