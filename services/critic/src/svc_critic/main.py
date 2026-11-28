@@ -9,10 +9,12 @@ from common.service import create_app
 
 from .api.routes import make_router
 from .clients.knowledge_base import KnowledgeBaseClient, UnconfiguredKnowledgeBase
+from .clients.llm import LlmClient
 from .config import Settings
 from .services.approval import BudgetBook
 from .services.claims import ClaimChecker
 from .services.entailment import EntailmentJudge, LexicalOverlapJudge
+from .services.llm_judge import LlmEntailmentJudge
 from .services.objections import ObjectionFilter
 from .services.rail import InputRail, RailLimits
 
@@ -34,7 +36,25 @@ def build_app(
             )
         else:
             kb = UnconfiguredKnowledgeBase()
-    judge = judge or LexicalOverlapJudge(settings.judge_threshold, settings.max_quote_chars)
+    llm: LlmClient | None = None
+    if judge is None:
+        judge = LexicalOverlapJudge(settings.judge_threshold, settings.max_quote_chars)
+        if settings.tools_url and settings.llm_judge_enabled is not False:
+            token = settings.internal_token.get_secret_value() if settings.internal_token else None
+            llm = LlmClient(
+                settings.tools_url,
+                model=settings.llm_judge_model,
+                timeout_s=settings.llm_judge_timeout_s,
+                internal_token=token,
+            )
+            judge = LlmEntailmentJudge(
+                judge,
+                llm,
+                settings.prompts_dir,
+                max_claims=settings.llm_judge_max_claims,
+                max_evidence_chars=settings.llm_judge_max_evidence_chars,
+                max_quote_chars=settings.max_quote_chars,
+            )
     checker = ClaimChecker(
         kb, judge, max_claims=settings.max_claims, max_quote_chars=settings.max_quote_chars
     )
@@ -50,6 +70,8 @@ def build_app(
             yield
         finally:
             await kb.aclose()
+            if llm is not None:
+                await llm.aclose()
 
     app = create_app(
         name="critic",

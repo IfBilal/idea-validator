@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import Field
 
 from common.config import ServiceSettings
@@ -10,6 +12,13 @@ class Settings(ServiceSettings):
     kb_url: str | None = None  # M6 base URL; no default host on purpose
     kb_timeout_s: float = Field(default=5.0, gt=0)  # budgets.yaml timeouts_s.kb_search
     kb_max_retries: int = Field(default=2, ge=0, le=5)
+    tools_url: str | None = None  # M5 base URL (hosted by tools); unset = lexical judge only
+    llm_judge_enabled: bool | None = None  # default: on when tools_url is set
+    llm_judge_model: str = "hosted-cheap"  # alias from config/llm.yaml
+    llm_judge_max_claims: int = Field(default=8, ge=1)  # LLM calls per request
+    llm_judge_timeout_s: float = Field(default=20.0, gt=0)
+    llm_judge_max_evidence_chars: int = Field(default=1500, ge=1)  # per evidence record
+    prompts_dir: Path = Path("/app/prompts")
     judge_threshold: float = Field(default=0.5, ge=0, le=1)  # lexical-overlap support threshold
     max_claims: int = Field(default=50, ge=1)
     max_objections: int = Field(default=5, ge=1)  # accepted objections kept per request

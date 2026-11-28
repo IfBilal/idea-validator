@@ -14,6 +14,7 @@ RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin 
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+COPY --chown=10001:10001 prompts/critic@v1.md /app/prompts/critic@v1.md
 USER 10001
 EXPOSE 8000
 CMD ["uvicorn", "svc_critic.main:app", "--host", "0.0.0.0", "--port", "8000"]
