@@ -13,6 +13,7 @@ from common.logging import get_logger
 from common.schemas import Claim, ClaimCheckRequest, ClaimCheckResponse, ClaimResult
 
 from ..models.evidence import EvidenceRecord
+from .budget import request_scope
 from .competitors import matches_any, names_competitors
 from .entailment import REASON_NO_SUPPORT, EntailmentJudge
 from .entities import find_unsupported_entities
@@ -61,7 +62,8 @@ class ClaimChecker:
             raise ValidationFailed("claim_id values must be unique within a request")
         wanted = list(dict.fromkeys(e for c in claims for e in c.evidence_ids))
         found = await self._source.fetch_evidence(wanted) if wanted else {}
-        results = [await self._check_one(c, found) for c in claims]
+        with request_scope():  # one LLM-judge budget for the whole request, shared by every claim
+            results = [await self._check_one(c, found) for c in claims]
         log.info(
             "claims_checked",
             total=len(results),
