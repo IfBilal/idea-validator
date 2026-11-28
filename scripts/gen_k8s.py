@@ -32,7 +32,14 @@ SERVICES: dict[str, dict[str, Any]] = {
     "scorer": {"module": "m10", "replicas": 1, "secrets": []},
     "verdict": {"module": "m11", "replicas": 2, "secrets": []},
     "critic": {"module": "m12", "replicas": 1, "secrets": []},
-    "agentops": {"module": "m13", "replicas": 1, "secrets": ["DATABASE_URL"]},
+    "agentops": {
+        "module": "m13",
+        "replicas": 1,
+        "secrets": ["DATABASE_URL"],
+        # full trace records as JSONL on a PVC (docs/harness/12 section 1); one writer pod, so the
+        # ReadWriteOnce volume is handed over with Recreate instead of a surge pod
+        "pvc": {"name": "agentops-traces", "mount": "/var/lib/agentops/traces", "storage": "1Gi"},
+    },
 }
 
 # caller -> callees (docs/harness/03 section 1 and 16 section 5). Every service also posts traces to agentops.
@@ -101,6 +108,12 @@ JOBS: dict[str, dict[str, Any]] = {
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
     },
+    "migrate-agentops": {  # the ops schema (traces_index): own Alembic history
+        "image": "agentops",
+        "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
+        "secrets": ["DATABASE_URL"],
+        "calls": ["postgres"],
+    },
     # M6i seed: restores the newest snapshot baked into the ingestion image through M6 /ingest.
     # `manual`: kept out of the kustomization (it is applied by `make seed`, which first builds
     # the image), so a plain `make deploy` on a repo with no snapshot yet does not fail a Job.
@@ -161,6 +174,16 @@ CRONJOBS: dict[str, dict[str, Any]] = {
         "suspend": True,
         "optional": ["PRODUCTHUNT_TOKEN"],
     },
+    # M13 drift report (docs/harness/12 section 6): reads M6 /stats and the traces through M13 and
+    # posts the report back to M13. No Postgres, no tools, no internet: only agentops and kb.
+    "drift-report": {
+        "image": "agentops",
+        "module": "m13",
+        "schedule": "20 5 * * *",
+        "command": ["python", "-m", "agentops.drift", "--post"],
+        "calls": ["agentops", "kb"],
+        "secrets": ["INTERNAL_TOKEN"],
+    },
 }
 CRONJOB_CALLS = ["postgres", "tools"]
 
@@ -186,7 +209,7 @@ def edges() -> dict[str, list[str]]:
     for job, spec in JOBS.items():
         out[job] = sorted(spec["calls"])
     for cron in CRONJOBS:
-        out[cron] = sorted(CRONJOB_CALLS)
+        out[cron] = sorted(CRONJOBS[cron].get("calls", CRONJOB_CALLS))
     return out
 
 
@@ -230,6 +253,8 @@ def _env(name: str) -> list[dict[str, Any]]:
             continue
         var = URL_ENV.get((name, callee), f"{callee.upper()}_URL")
         env.append({"name": var, "value": _url(callee)})
+    if pvc := SERVICES[name].get("pvc"):
+        env.append({"name": "TRACE_DIR", "value": pvc["mount"]})
     for key in ["INTERNAL_TOKEN", *SERVICES[name]["secrets"]]:
         env.append(
             {"name": key, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}}}
@@ -315,7 +340,24 @@ def _deployment(name: str) -> str:
             "ports": [{"name": "http", "port": PORT, "targetPort": "http"}],
         },
     }
-    return _dump(deployment, service)
+    docs = [deployment, service]
+    if pvc := svc.get("pvc"):
+        pod = deployment["spec"]["template"]["spec"]
+        container["volumeMounts"].append({"name": "data", "mountPath": pvc["mount"]})
+        pod["volumes"].append({"name": "data", "persistentVolumeClaim": {"claimName": pvc["name"]}})
+        deployment["spec"]["strategy"] = {"type": "Recreate"}
+        docs.append(
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": _meta(pvc["name"], svc["module"]),
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": pvc["storage"]}},
+                },
+            }
+        )
+    return _dump(*docs)
 
 
 def _ui_workload() -> str:
@@ -650,20 +692,31 @@ def _cronjob(name: str) -> str:
     env: list[dict[str, Any]] = [
         {"name": "CONFIG_DIR", "value": "/etc/idea-validator"},
         {"name": "LOG_LEVEL", "value": "INFO"},
-        {"name": "TOOLS_URL", "value": _url("tools")},
     ]
-    for key in ("INTERNAL_TOKEN", "DATABASE_URL"):
+    if "calls" in spec:  # not a scout: only the services it names, only the secrets it lists
+        env += [{"name": f"{c.upper()}_URL", "value": _url(c)} for c in sorted(spec["calls"])]
+        keys = list(spec["secrets"])
+    else:
+        env.append({"name": "TOOLS_URL", "value": _url("tools")})
+        keys = ["INTERNAL_TOKEN", "DATABASE_URL"]
+    for key in keys:
         env.append(
             {"name": key, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}}}
         )
-    optional = ["GITHUB_TOKEN"] if spec["source"] == "github" else spec.get("optional", [])
+    optional = (
+        []
+        if "calls" in spec
+        else ["GITHUB_TOKEN"]
+        if spec["source"] == "github"
+        else spec.get("optional", [])
+    )
     for key in optional:  # the pod starts without it: the source stays keyless or off
         ref = {"name": "app-secrets", "key": key, "optional": True}
         env.append({"name": key, "valueFrom": {"secretKeyRef": ref}})
     container = {
         "name": name,
-        "image": f"{NAMESPACE}/scouts:{IMAGE_TAG}",
-        "command": ["python", "-m", "scouts", "--source", spec["source"]],
+        "image": f"{NAMESPACE}/{spec.get('image', 'scouts')}:{IMAGE_TAG}",
+        "command": spec.get("command") or ["python", "-m", "scouts", "--source", spec["source"]],
         "env": env,
         "resources": RESOURCES,
         "securityContext": {
@@ -695,7 +748,7 @@ def _cronjob(name: str) -> str:
     cron = {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
-        "metadata": _meta(name, "m4"),
+        "metadata": _meta(name, spec.get("module", "m4")),
         "spec": {
             "schedule": spec["schedule"],
             "concurrencyPolicy": "Forbid",
@@ -709,7 +762,7 @@ def _cronjob(name: str) -> str:
                     "activeDeadlineSeconds": 1200,
                     "ttlSecondsAfterFinished": 3600,
                     "template": {
-                        "metadata": {"labels": {"app": name, "module": "m4"}},
+                        "metadata": {"labels": {"app": name, "module": spec.get("module", "m4")}},
                         "spec": pod,
                     },
                 }

@@ -94,6 +94,7 @@ ENDPOINTS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", "/runs/run_1/answer", {"question_id": "q", "answer": 1}),
     ("POST", "/runs/run_1/approve", {"approval_id": "a", "decision": "approve"}),
     ("GET", "/runs/run_1/events", None),
+    ("GET", "/runs/run_1/trace", None),
     ("GET", "/ideas", None),
     ("GET", f"/ideas/{IDEA}/versions", None),
     ("GET", f"/ideas/{IDEA}/versions/1", None),
@@ -487,6 +488,18 @@ def test_answering_or_approving_someone_elses_run_is_404_and_never_reaches_m3(
     response = env.client.post(f"/runs/{run_id}/{action}", json=body, headers=env.headers())
     assert response.status_code == 404
     assert env.m3.posts(f"/{action}") == []
+
+
+def test_a_non_owner_approve_never_reaches_m3_or_an_m2_approval_decision(env: Env) -> None:
+    run_id = seed_run(env, user=BOB)
+    r = env.client.post(
+        f"/runs/{run_id}/approve",
+        json={"approval_id": f"ap_{run_id}_deep_search", "decision": "approve"},
+        headers=env.headers(),
+    )
+    assert r.status_code == 404
+    assert env.m3.calls == []
+    assert [c for c in env.m2.calls if "/approvals" in c[1]] == []
 
 
 @pytest.mark.parametrize("action", ["answer", "approve"])
@@ -1044,6 +1057,7 @@ def test_cross_user_matrix_every_endpoint_answers_404_and_changes_nothing(env: E
         ("POST", f"/runs/{run_id}/answer", {"question_id": "q", "answer": 1}),
         ("POST", f"/runs/{run_id}/approve", {"approval_id": "a", "decision": "approve"}),
         ("GET", f"/runs/{run_id}/events", None),
+        ("GET", f"/runs/{run_id}/trace", None),
         ("GET", f"/ideas/{idea}/versions", None),
         ("GET", f"/ideas/{idea}/versions/1", None),
         ("GET", f"/compare?ids={idea},{other}", None),

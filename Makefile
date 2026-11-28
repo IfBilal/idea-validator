@@ -26,7 +26,7 @@ up: dev-env ## dev stack (postgres, redis, qdrant via docker compose), waits unt
 down: ## stop the dev stack; data volumes are kept (docker compose down -v deletes them)
 	docker compose down
 migrate: ## alembic upgrade on the compose Postgres (run `make up` first)
-	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head && uv run --package idea-validator-kb alembic -c services/kb/alembic.ini upgrade head
+	set -a && . ./.env && set +a && uv run --package idea-validator-profile alembic -c services/profile/alembic.ini upgrade head && uv run --package idea-validator-kb alembic -c services/kb/alembic.ini upgrade head && uv run --package idea-validator-agentops alembic -c services/agentops/alembic.ini upgrade head
 seed: ## restore the newest data/snapshots/cards-*.jsonl.gz into the kind cluster via a seed Job (M6i, P3-T09)
 	./scripts/seed.sh $(TAG)
 jenkins: ## start Jenkins in Docker on 127.0.0.1:8085 (needs the kind cluster)
@@ -56,5 +56,7 @@ eval-results: ## copy the newest evaluation Job result (its last log line) to ev
 	./scripts/eval_results.sh
 eval-gate: ## compare the newest eval/results/<ts>.json with baseline.json, no cluster run
 	./scripts/check_eval.sh
-replay: ## replay a stored run: make replay RUN=run_90 (needs M13 trace store, P9-T02)
-	@echo "make replay needs the M13 trace store and replay command (P9-T01/T02), not built yet" >&2; exit 1
+replay: ## replay a stored run through the pure M11 engine: make replay RUN=run_90 (TRACE_DIR=dir for local files, else kubectl exec into agentops)
+	@test -n "$(RUN)" || { echo "usage: make replay RUN=<run_id>" >&2; exit 2; }
+	@if [ -n "$$TRACE_DIR" ]; then uv run --package idea-validator-agentops python -m agentops.replay "$(RUN)" --config-dir config; \
+	else kubectl -n idea-validator exec deploy/agentops -- python -m agentops.replay "$(RUN)"; fi

@@ -140,6 +140,7 @@ class RunOut(RunBody):
 
 class NewApproval(Message):
     run_id: str
+    user_id: uuid.UUID  # must own the run
     action: str = Field(min_length=1, max_length=60)
     estimated_cost_usd: float = Field(ge=0)
     budget_usd: float = Field(ge=0)
@@ -148,7 +149,7 @@ class NewApproval(Message):
 
 class ApprovalDecision(Message):
     decision: Literal["approved", "declined", "expired"]
-    decided_by: uuid.UUID | None = None
+    decided_by: uuid.UUID  # must own the approval's run
 
 
 class ApprovalOut(Message):

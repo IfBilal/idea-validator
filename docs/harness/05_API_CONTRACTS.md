@@ -41,6 +41,7 @@ All bodies are JSON validated against `schemas/*.schema.json` (Pydantic mirrors 
 | `POST /validate` | `{"idea_text": "...", "title": "...", "idea_id": null}` (idea_id when validating an existing/proposed idea) | 202 `{"run_id","idea_id","version"}` |
 | `GET /runs/{id}` | — | `{"run_id","kind","state","progress":{...},"spent":{"cost_usd","tokens","pages","steps"},"budget":{...},"pending_question":{...}\|null,"pending_approval":{...}\|null,"result":{...}\|null}` |
 | `GET /runs/{id}/events` | SSE (`text/event-stream`), supports `Last-Event-ID` | stream of `RunEvent` |
+| `GET /runs/{id}/trace` | `?flat=true` optional | M13's `{"run_id","totals","by_agent","truncated","tree"}` (or `records` when flat) for the caller's own run. Ownership is checked in M2 first (unknown and foreign: the same 404); capped at 1 MiB; never proxies M13 `GET /runs` |
 | `POST /runs/{id}/answer` | `{"question_id","answer"}` | 202 |
 | `POST /runs/{id}/approve` | `{"approval_id","decision":"approve"\|"decline"}` | 202 |
 
@@ -107,7 +108,7 @@ data: {"run_id","seq","ts","type", ...payload}
 ### M2 Profile/Session/Cache (`/internal/*`)
 `POST /internal/users` (`{email,password}` → 201 `{user_id}`; 409 duplicate email, 422 password < 10 chars), `POST /internal/auth/login` (`{email,password}` → `{user_id}`; one generic 401 for every failure; account locked 15 min after 5 failures; the gateway issues the JWT), `GET /internal/profiles/{user_id}[?version=]`, `PUT /internal/profiles/{user_id}` (each PUT adds a version), `POST /internal/ideas` (creates version 1), `GET /internal/ideas?user_id&limit&cursor` (newest first, keyset cursor),
 `POST /internal/ideas/{id}/versions`, `GET /internal/ideas/{id}/versions[/{v}]?user_id` (the `/{v}` detail has `idea_id, version, text, change_note, card` plus title, clarifications and the stored verdict; `card` is null until a card is stored; a foreign or unknown idea/version is one identical 404), `PUT /internal/ideas/{id}/versions/{v}` (`{user_id,text,change_note,card,idempotency_key,base_version}` → `{idea_id,version,created}`; `{v}` must be `base_version+1` else 422; the card is stored verbatim, a `verdict: null` stays null; same key and same content returns `created:false`, same key with other content, a `base_version` that is not the latest, or a lost race gives 409; unknown or foreign idea 404; card ≤ 256 KB, text ≤ 4000, key `[A-Za-z0-9_.:-]{1,100}`, unknown fields 422), `POST /internal/verdicts` (body is the full `Verdict`; stores the payload and one row per dimension score),
-`GET|PUT /internal/runs/{id}` (`?user_id` on GET; a run belongs to one user), `GET /internal/runs?state=a,b&limit=&after=` (M3 recovery: every user's runs in those states, at most 10 states of `[a-z_]{1,40}`, `limit` 1..500 default 100, paged by run id with `after`), `POST /internal/approvals`, `PUT /internal/approvals/{id}` (decided once, else 409),
+`GET|PUT /internal/runs/{id}` (`?user_id` on GET; a run belongs to one user), `GET /internal/runs?state=a,b&limit=&after=` (M3 recovery: every user's runs in those states, at most 10 states of `[a-z_]{1,40}`, `limit` 1..500 default 100, paged by run id with `after`), `POST /internal/approvals` (body carries `user_id`, who must own the run, else 404), `PUT /internal/approvals/{id}` (body `{decision, decided_by}`, `decided_by` required and must own the approval's run, else the same 404 as an unknown id; decided once, else 409),
 `GET|PUT /internal/cache/verdict/{key}` (GET returns `{hit: bool, value}`; PUT 204 with `{value, ttl_s?}`, default TTL 24 h; build the key with `common.cache_keys.verdict_cache_key`), `GET /internal/compare?user_id&idea_ids=..` (2 to 5 ideas).
 Every read takes the caller's `user_id`; someone else's idea, version or run is reported as 404, never 403.
 
@@ -197,6 +198,8 @@ out: {"results":[{"claim_id","supported":true|false,"reason":"evidence id missin
 `POST /objections/filter` `{objections[]}` → accepted (evidence-backed) vs discarded.
 
 ### M13 AgenticOps
-`POST /trace` (TraceRecord or batch `[]`), `GET /runs/{id}/trace` (ordered records), `GET /runs?status=&kind=`,
+`POST /traces` (one TraceRecord or a batch of at most 100; idempotent; answer `{accepted, duplicates, rejected:[{index, reason}]}`),
+`GET /runs/{id}/trace` (ordered tree + `totals` + `by_agent`; `?flat=true` for the raw ordered list), `GET /runs?limit=&after=` (newest first,
+limit 1-100, opaque `next` cursor), all with `X-Internal-Token` (details: `services/agentops/README.md`),
 `GET /dashboard` (HTML page reading metrics, if no Grafana), `GET /drift/latest`, `POST /eval/run` (starts Job), `GET /eval/results/{id}`,
 `GET /registry` (prompt + rubric versions in use).

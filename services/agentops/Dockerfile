@@ -6,6 +6,7 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY libs/common ./libs/common
+COPY services/verdict ./services/verdict
 COPY services/agentops ./services/agentops
 RUN uv sync --frozen --no-dev --no-editable --package idea-validator-agentops
 
@@ -13,6 +14,13 @@ FROM python:3.12.16-slim-bookworm
 RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
+# the migrate-agentops Job runs `alembic -c /app/alembic.ini upgrade head` (migrations ship in the package)
+COPY --from=build --chown=10001:10001 /app/services/agentops/alembic.ini /app/alembic.ini
+# GET /registry hashes the versioned prompts, rubrics and config this build was cut from
+COPY --chown=10001:10001 prompts /app/registry/prompts
+COPY --chown=10001:10001 rubrics /app/registry/rubrics
+COPY --chown=10001:10001 config /app/registry/config
+COPY --chown=10001:10001 registry.lock.json /app/registry/registry.lock.json
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER 10001
 EXPOSE 8000

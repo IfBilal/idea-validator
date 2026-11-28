@@ -404,39 +404,105 @@ def test_an_oversized_run_row_is_refused(client: TestClient) -> None:
     assert client.put("/internal/runs/run_1", json=run_body(uid), headers=H).status_code == 200
 
 
-def test_an_approval_is_decided_exactly_once(client: TestClient) -> None:
-    body = {
-        "run_id": "run_1",
+def new_approval(run_id: str, uid: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "user_id": uid,
         "action": "deep_search",
         "estimated_cost_usd": 0.03,
         "budget_usd": 0.05,
+        **extra,
     }
-    created = client.post("/internal/approvals", json=body, headers=H)
-    assert created.status_code == 201
-    assert created.json()["decision"] == "pending"
-    aid = created.json()["id"]
-    done = client.put(f"/internal/approvals/{aid}", json={"decision": "approved"}, headers=H)
+
+
+def approval_for(client: TestClient, uid: str, run_id: str = "run_1") -> str:
+    assert client.put(f"/internal/runs/{run_id}", json=run_body(uid), headers=H).status_code == 200
+    created = client.post("/internal/approvals", json=new_approval(run_id, uid), headers=H)
+    assert created.status_code == 201, created.text
+    return str(created.json()["id"])
+
+
+def test_an_approval_is_decided_exactly_once(client: TestClient) -> None:
+    uid = user(client)
+    aid = approval_for(client, uid)
+    decide = {"decision": "approved", "decided_by": uid}
+    done = client.put(f"/internal/approvals/{aid}", json=decide, headers=H)
     assert (done.status_code, done.json()["decision"]) == (200, "approved")
     assert done.json()["decided_at"] is not None
-    again = client.put(f"/internal/approvals/{aid}", json={"decision": "declined"}, headers=H)
-    assert again.status_code == 409
-    missing = client.put(
-        f"/internal/approvals/{uuid.uuid4()}", json={"decision": "approved"}, headers=H
+    again = client.put(
+        f"/internal/approvals/{aid}", json={**decide, "decision": "declined"}, headers=H
     )
+    assert again.status_code == 409
+    missing = client.put(f"/internal/approvals/{uuid.uuid4()}", json=decide, headers=H)
     assert missing.status_code == 404
 
 
-def test_approval_inputs_are_validated(client: TestClient) -> None:
-    bad = {"run_id": "r", "action": "x", "estimated_cost_usd": -1, "budget_usd": 1}
-    assert client.post("/internal/approvals", json=bad, headers=H).status_code == 422
-    aid = client.post(
-        "/internal/approvals",
-        json={"run_id": "r", "action": "x", "estimated_cost_usd": 1, "budget_usd": 1},
+def test_a_created_approval_starts_pending(client: TestClient) -> None:
+    uid = user(client)
+    client.put("/internal/runs/run_1", json=run_body(uid), headers=H)
+    created = client.post("/internal/approvals", json=new_approval("run_1", uid), headers=H)
+    assert (created.status_code, created.json()["decision"]) == (201, "pending")
+
+
+def test_another_user_cannot_decide_my_approval(client: TestClient) -> None:
+    owner, other = user(client), user(client, "eve@example.com")
+    aid = approval_for(client, owner)
+    stolen = client.put(
+        f"/internal/approvals/{aid}", json={"decision": "approved", "decided_by": other}, headers=H
+    )
+    ghost = uuid.uuid4()
+    unknown = client.put(
+        f"/internal/approvals/{ghost}",
+        json={"decision": "approved", "decided_by": other},
         headers=H,
-    ).json()["id"]
+    )
+    assert (stolen.status_code, unknown.status_code) == (404, 404)
+    # identical response apart from echoing the requested id: no existence oracle
+    one, two = stolen.json()["error"], unknown.json()["error"]
+    assert one["message"] == two["message"] == "approval not found"
+    assert one["code"] == two["code"]
+    assert one["details"] == {"id": aid} and two["details"] == {"id": str(ghost)}
+    # still pending: the owner can decide it
+    ok = client.put(
+        f"/internal/approvals/{aid}", json={"decision": "declined", "decided_by": owner}, headers=H
+    )
+    assert (ok.status_code, ok.json()["decision"]) == (200, "declined")
+
+
+def test_an_approval_cannot_be_created_on_someone_elses_or_a_missing_run(
+    client: TestClient,
+) -> None:
+    owner, other = user(client), user(client, "eve@example.com")
+    client.put("/internal/runs/run_1", json=run_body(owner), headers=H)
+    theirs = client.post("/internal/approvals", json=new_approval("run_1", other), headers=H)
+    missing = client.post("/internal/approvals", json=new_approval("run_zz", owner), headers=H)
+    assert (theirs.status_code, missing.status_code) == (404, 404)
+    assert theirs.json()["error"]["message"] == missing.json()["error"]["message"]
+
+
+def test_a_decision_needs_decided_by(client: TestClient) -> None:
+    uid = user(client)
+    aid = approval_for(client, uid)
+    r = client.put(f"/internal/approvals/{aid}", json={"decision": "approved"}, headers=H)
+    assert r.status_code == 422
+    bad = client.put(
+        f"/internal/approvals/{aid}", json={"decision": "approved", "decided_by": None}, headers=H
+    )
+    assert bad.status_code == 422
+    no_user = {"run_id": "run_1", "action": "x", "estimated_cost_usd": 1, "budget_usd": 1}
+    assert client.post("/internal/approvals", json=no_user, headers=H).status_code == 422
+
+
+def test_approval_inputs_are_validated(client: TestClient) -> None:
+    uid = user(client)
+    bad = new_approval("r", uid, estimated_cost_usd=-1)
+    assert client.post("/internal/approvals", json=bad, headers=H).status_code == 422
+    aid = approval_for(client, uid)
     assert (
         client.put(
-            f"/internal/approvals/{aid}", json={"decision": "pending"}, headers=H
+            f"/internal/approvals/{aid}",
+            json={"decision": "pending", "decided_by": uid},
+            headers=H,
         ).status_code
         == 422
     )

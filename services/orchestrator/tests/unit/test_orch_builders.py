@@ -518,3 +518,31 @@ def test_already_abstained_dimensions_have_no_claim_to_remove() -> None:
     new, removed = builders.apply_claim_results(scores, [])
     assert removed == []
     assert new == scores
+
+
+def test_replay_record_keeps_numbers_and_ids_and_copies_the_verdict_summary() -> None:
+    request = {
+        "idea_id": "i",
+        "version": 2,
+        "run_id": "r",
+        "profile": {"goal": "startup"},
+        "scores": [
+            {
+                "dimension": "risk",
+                "score": 3.0,
+                "confidence": 0.5,
+                "evidence_ids": ["card_aaaaaaaa#c0"],
+                "reason": "secret idea text",
+                "features": {"x": 1},
+            }
+        ],
+        "gate_inputs": {"n_sources": 5},
+    }
+    verdict = {"verdict": "GO", "stability": "STABLE", "score": 71.0, "confidence": 0.8, "extra": 1}
+    engine_input, summary = builders.replay_record(request, verdict)
+    assert engine_input["scores"] == [
+        {"dimension": "risk", "score": 3.0, "confidence": 0.5, "evidence_ids": ["card_aaaaaaaa#c0"]}
+    ]
+    assert engine_input["objections_accepted"] == []
+    assert summary["verdict"] == "GO"
+    assert "extra" not in summary

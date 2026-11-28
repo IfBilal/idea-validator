@@ -27,12 +27,14 @@ resources:
 - jobs/migrate.yaml
 - jobs/migrate-kb.yaml
 - jobs/migrate-scouts.yaml
+- jobs/migrate-agentops.yaml
 - cronjobs/scout-hackernews.yaml
 - cronjobs/scout-github.yaml
 - cronjobs/scout-lobsters.yaml
 - cronjobs/scout-stackexchange.yaml
 - cronjobs/scout-reddit.yaml
 - cronjobs/scout-producthunt.yaml
+- cronjobs/drift-report.yaml
 - ingress.yaml
 - ingress-ui.yaml
 - hpa.yaml

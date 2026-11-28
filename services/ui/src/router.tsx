@@ -11,6 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { clearSession, getToken, safeRedirect, useIsAuthenticated } from "@/lib/auth";
 import { LoginPage, RegisterPage } from "@/routes/auth";
+import { DiscoverPage } from "@/routes/discover";
+import { IdeaPage } from "@/routes/idea";
 import { ProfilePage } from "@/routes/profile";
 import { ValidatePage } from "@/routes/validate";
 
@@ -142,7 +144,22 @@ const loginRoute = createRoute({
   },
 });
 
-export const routeTree = rootRoute.addChildren([
+const ideaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/ideas/$ideaId",
+  beforeLoad: requireAuth,
+  validateSearch: (search: Record<string, unknown>): { v: number } => {
+    const v = Number(search.v);
+    return { v: Number.isInteger(v) && v >= 1 ? v : 1 };
+  },
+  component: function Idea() {
+    const { ideaId } = ideaRoute.useParams();
+    const { v } = ideaRoute.useSearch();
+    return <IdeaPage ideaId={ideaId} version={v} />;
+  },
+});
+
+export const routeTree =rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/", component: Home }),
   loginRoute,
   createRoute({
@@ -153,7 +170,8 @@ export const routeTree = rootRoute.addChildren([
   }),
   protectedRoute("/profile", ProfilePage),
   protectedRoute("/validate", ValidatePage),
-  protectedRoute("/discover", () => <Placeholder title="Discover ideas" />),
+  protectedRoute("/discover", DiscoverPage),
+  ideaRoute,
   protectedRoute("/ideas", () => <Placeholder title="My ideas" />),
 ]);
 export function makeRouter(history?: RouterHistory) {
