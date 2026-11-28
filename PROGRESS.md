@@ -87,6 +87,14 @@ Dev B order after the merged foundation: finish in-review PRs (M2 storage #15, M
 | P8 serving benchmark with production-length prompts (886 tokens mean) | this PR | 2026-11-27 | gpu-session. Q4_K_M, Ryzen 5 5600: p50 7.2 s / p95 9.8 s at 4 threads (6.6 / 9.5 at 6), peak RSS 1.93 GB, 100% valid objects with constrained decoding. A 1-2 CPU pod will be 2-3x slower (15-25 s per score): size scorer slots/replicas accordingly. Synthetic weights: re-measure with the real model |
 | P7 slice 4: verdict card (settled, insufficient-evidence, gate-failure NO-GO, partial/no-verdict variants), safe evidence links, claim list with Challenge hook | this PR | 2026-11-27 | gpu-session. 129 Vitest tests built on the real worked example; a card with `verdict: null`/`partial` or malformed never shows GO/PIVOT/NO-GO or a score; links only http(s) with noopener. Challenge/what-if actions are slice 5 |
 | P7 slice 5: challenge a claim and what-if (suggested or custom change) with outcome views, version chaining, approval during a run | this PR | 2026-11-27 | gpu-session. 162 Vitest tests on real M11 fixtures; results parse fail-closed (a removed outcome needs its saved card; partial/unknown is never 'defended'); one action at a time with an idempotency key per action. Not yet run against the real gateway/orchestrator in a browser |
+| P3-T07..T09 M6i ingestion job, snapshot/restore, seed Job (taken over from #30) | #69 | 2026-11-27 | Dev B agent; security review applied (ReDoS, snapshot round trip, size caps, mandatory manifest, SHA-pinned seed Job, ingest token) |
+| P3-T02..T06 M4 scouts (HN, GitHub, Stack Exchange keyless; Reddit/Product Hunt off), CronJobs | #72 | 2026-11-27 | Dev B agent; security review applied (entities inert, advisory lock, private hosts rejected); Lobsters disabled (robots) |
+| P5 M3 restart recovery (leases, checkpoint allow-list, budget claims, events replay) | #67 | 2026-11-27 | Dev B agent; security review applied |
+| P1-T08 Jenkins fixes (kube guard on eval stage, plugin pins, kubeconfig validation, ADR-012) | #85 | 2026-11-28 | review fixes pushed on Taimoor's branch by a Dev B agent; no Jenkins run yet |
+| P9-T04/P10-T03 eval metrics, regression gate, tuning (k-fold, false-GO weighted) | #43 | 2026-11-27 | no labelled set yet |
+| P9-T01/T02 M13 trace store + replay | #94 | 2026-11-28 | merged after a security review (ReDoS, ingest ordering, per-run caps, owner filter, replay checks); registry/drift/gateway trace route in #97 |
+| P4/P5 approvals ownership check (M2) | #93 | 2026-11-28 | merged; closes #34 |
+| AI-draft verdict labels (74 ideas, NOT the human set) | #90, #91 | 2026-11-28 | merged; humans must label independently first (issue #92) |
 
 ## Blocked / Needs human
 - [ ] gpu-session (P8-T03): >= 60 human-reviewed examples via `python -m finetune.review` (Taimoor and Bilal); never simulated. Until then the test set cannot be called hand-checked.
