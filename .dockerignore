@@ -16,6 +16,10 @@ node_modules
 **/node_modules
 docs
 eval
+!eval/labelled
+eval/labelled/*.py
+eval/labelled/candidates.jsonl
+eval/labelled/README.md
 k8s
 data
 !data/snapshots

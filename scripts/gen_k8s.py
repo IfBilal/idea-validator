@@ -167,6 +167,31 @@ JOBS: dict[str, dict[str, Any]] = {
         # M6 embeds on the CPU while it stores: a batch of 50 cards takes longer than the 30 s default
         "extra_env": {"INGESTION_TIMEOUT_S": "240", "INGESTION_BATCH_SIZE": "20"},
     },
+    # M13 evaluation: runs the labelled set through the gateway like a user (docs/harness/12 section 5).
+    # `manual` (applied by scripts/run_eval.sh / make eval, never by a plain deploy): it spends LLM budget.
+    # It reaches only the gateway (the user-facing API, traces included), holds no internal token; the internet stays M5's.
+    # The result is the last stdout line (`kubectl logs`); /tmp is an emptyDir (no PVC).
+    "eval": {
+        "image": "evaluation",
+        "command": [
+            "python",
+            "-m",
+            "evaluation.run",
+            "--labelled",
+            "/app/eval/labelled/labelled_set.jsonl",
+            "--out",
+            "/tmp/eval-results",  # noqa: S108 (the emptyDir mounted at /tmp)
+        ],
+        "secrets": [],
+        "optional_secrets": ["EVAL_USER", "EVAL_PASSWORD"],  # random defaults: create_secrets.py
+        "calls": ["gateway"],  # traces too: GET /runs/{id}/trace with the eval user's own token
+        "manual": True,
+        "backoff_limit": 0,  # a rerun is a new spend: a human or Jenkins starts it again
+        "deadline_s": 7200,
+        "tmp_limit": "64Mi",  # results and progress only
+        # exit 2 bad config / no labelled set, 3 eval user refused: a retry cannot fix these
+        "fail_fast_codes": [2, 3],
+    },
 }
 # scheduled one-shot runs (docs/harness/10 section 4). They reach M5 and Postgres only: the internet
 # is M5's alone (CLAUDE.md rule 4). Schedules mirror config/sources.yaml. The credential-gated
@@ -652,6 +677,13 @@ def _job(name: str) -> str:
         {"name": k, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k}}}
         for k in [*(["INTERNAL_TOKEN"] if spec.get("token") else []), *spec["secrets"]]
     ]
+    env += [
+        {
+            "name": k,
+            "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": k, "optional": True}},
+        }
+        for k in spec.get("optional_secrets", [])
+    ]
     container = {
         "name": name,
         "image": f"{NAMESPACE}/{spec['image']}:{IMAGE_TAG}",
@@ -676,6 +708,7 @@ def _job(name: str) -> str:
             "backoffLimit": spec.get("backoff_limit", 6),
             **({"activeDeadlineSeconds": spec["deadline_s"]} if "deadline_s" in spec else {}),
             "ttlSecondsAfterFinished": 3600,
+            **({"activeDeadlineSeconds": spec["deadline_s"]} if spec.get("deadline_s") else {}),
             "template": {
                 "metadata": {"labels": {"app": name}},
                 "spec": {
@@ -689,7 +722,14 @@ def _job(name: str) -> str:
                         "seccompProfile": {"type": "RuntimeDefault"},
                     },
                     "containers": [container],
-                    "volumes": [{"name": "tmp", "emptyDir": {}}],
+                    "volumes": [
+                        {
+                            "name": "tmp",
+                            "emptyDir": {"sizeLimit": spec["tmp_limit"]}
+                            if spec.get("tmp_limit")
+                            else {},
+                        }
+                    ],
                 },
             },
         },

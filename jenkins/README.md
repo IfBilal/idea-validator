@@ -26,7 +26,7 @@ the Deployments this build changed (image has the build's tag and a previous rev
 - `/repo` is mounted read-only; `hudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true` is set because the source is a local path.
 
 ## Known limits
-- The Eval stage applies `k8s/base/eval/eval-job.yaml`, which does not exist yet (Dev B, P9-T04); it only runs on the nightly timer.
+- The Eval stage runs `scripts/run_eval.sh`, which applies the manual Job `k8s/jobs/eval.yaml` (image `evaluation`), saves its result and gates on the baseline; it only runs on the nightly timer and exits 2 until `eval/labelled/labelled_set.jsonl` exists.
 - `make images` uses the legacy docker builder (no buildx in the Jenkins image): about a minute per service.
 - Plugins are pinned at top level (versions from the Jenkins update center for core 2.580.3); their dependencies are still resolved
   by `jenkins-plugin-cli` at image build. Not verified here: no running Jenkins, image build or pipeline run.

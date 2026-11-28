@@ -55,6 +55,9 @@ def build(
     keep("INTERNAL_TOKEN", lambda: rand(24))
     keep("INGEST_TOKEN", lambda: rand(24))  # only the ingestion job and kb get it
     keep("JWT_SECRET", lambda: rand(32))
+    # the evaluation Job's own gateway account (jobs/evaluation); worker slots become user+wN@...
+    keep("EVAL_USER", lambda: "idea-validator-eval@example.com")
+    keep("EVAL_PASSWORD", lambda: rand(16))
     keep("POSTGRES_USER", lambda: "idea")
     keep("POSTGRES_PASSWORD", lambda: rand(16))
     keep("POSTGRES_DB", lambda: "idea_validator")

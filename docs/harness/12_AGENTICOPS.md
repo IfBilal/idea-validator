@@ -43,6 +43,12 @@ Outputs `eval/results/<timestamp>.json`:
 - **Behaviour checks** from traces: tools used (search_kb before scoring), evidence cited (every score has valid ids),
   budget kept, injection resisted (poisoned items in the set), max debate rounds ≤ 3.
 - Cost per verdict, latency per agent, fallbacks.
+Implementation note (P9-T04): the runner is `python -m evaluation.run` (see `jobs/evaluation/README.md`). It drives
+the public gateway Validate path (traces through the gateway's `GET /runs/{id}/trace?flat=true` with the eval user's JWT; no internal token, egress to the gateway only) with a dedicated eval user (no `run_kind=eval` exists in M3; each item is a new
+idea so the cache cannot answer), declines every approval, and reports errored items instead of dropping them.
+The Job is manual (`k8s/jobs/eval.yaml`, started by `make eval` / the nightly Jenkins stage) and hands its result
+out as the last log line (`make eval-results`). `baseline.json` is written only by an explicit `--write-baseline`.
+`make eval` with no `eval/labelled/labelled_set.jsonl` says so and exits 2.
 `scripts/check_eval.sh` compares with `eval/results/baseline.json`: fails if agreement drops > 5 pts, false-GO increases,
 or any behaviour check < 100%.
 

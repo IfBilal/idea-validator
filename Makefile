@@ -4,7 +4,7 @@ TAG ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo dev)
 NS  := idea-validator
 SERVICES := gateway profile orchestrator scouts tools kb analyst ideation validators scorer verdict critic agentops
 
-.PHONY: dev-env secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images jenkins k8s-up deploy smoke netpol-test eval replay
+.PHONY: dev-env secrets k8s-gen k8s-verify help setup lint typecheck test test-verdict test-retrieval up down migrate seed images jenkins k8s-up deploy smoke netpol-test eval eval-results eval-gate replay
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
 setup: ## install dev deps + hooks (P0)
@@ -35,6 +35,7 @@ images: ## build and push every module image to the local registry, tagged TAG (
 	for s in $(SERVICES); do docker build -q -f services/$$s/Dockerfile -t localhost:5001/$$s:$(TAG) . && docker push -q localhost:5001/$$s:$(TAG); done
 	@if [ -f services/ui/package.json ]; then docker build -q -t localhost:5001/ui:$(TAG) services/ui && docker push -q localhost:5001/ui:$(TAG); fi
 	@if [ -f jobs/ingestion/Dockerfile ]; then docker build -q -f jobs/ingestion/Dockerfile -t localhost:5001/ingestion:$(TAG) . && docker push -q localhost:5001/ingestion:$(TAG); fi
+	@if [ -f jobs/evaluation/Dockerfile ]; then docker build -q -f jobs/evaluation/Dockerfile -t localhost:5001/evaluation:$(TAG) . && docker push -q localhost:5001/evaluation:$(TAG); fi
 k8s-up: ## kind + calico + registry + ingress + metrics-server (P1)
 	./scripts/k8s_up.sh
 k8s-gen: ## regenerate k8s/ manifests from scripts/gen_k8s.py (a test fails if they drift)
@@ -49,7 +50,11 @@ smoke: ## smoke test through ingress (P1)
 	./scripts/smoke_test.sh
 netpol-test: ## non-M5 egress fails, M5 succeeds (P1)
 	./scripts/netpol_test.sh
-eval: ## compare the newest eval result with the stored baseline (needs eval/results, P10-T02)
+eval: ## run the evaluation Job on the cluster, save eval/results/<ts>.json, gate on baseline.json (exit 2 without eval/labelled/labelled_set.jsonl)
+	./scripts/run_eval.sh
+eval-results: ## copy the newest evaluation Job result (its last log line) to eval/results/<ts>.json
+	./scripts/eval_results.sh
+eval-gate: ## compare the newest eval/results/<ts>.json with baseline.json, no cluster run
 	./scripts/check_eval.sh
 replay: ## replay a stored run through the pure M11 engine: make replay RUN=run_90 (TRACE_DIR=dir for local files, else kubectl exec into agentops)
 	@case "$$RUN" in ""|*[!A-Za-z0-9_-]*) echo "usage: make replay RUN=<run_id> (letters, digits, _ and - only)" >&2; exit 2;; esac; \
