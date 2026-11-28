@@ -489,6 +489,18 @@ def test_answering_or_approving_someone_elses_run_is_404_and_never_reaches_m3(
     assert env.m3.posts(f"/{action}") == []
 
 
+def test_a_non_owner_approve_never_reaches_m3_or_an_m2_approval_decision(env: Env) -> None:
+    run_id = seed_run(env, user=BOB)
+    r = env.client.post(
+        f"/runs/{run_id}/approve",
+        json={"approval_id": f"ap_{run_id}_deep_search", "decision": "approve"},
+        headers=env.headers(),
+    )
+    assert r.status_code == 404
+    assert env.m3.calls == []
+    assert [c for c in env.m2.calls if "/approvals" in c[1]] == []
+
+
 @pytest.mark.parametrize("action", ["answer", "approve"])
 def test_a_conflict_from_m3_is_a_generic_409(env: Env, action: str) -> None:
     run_id = seed_run(env)
