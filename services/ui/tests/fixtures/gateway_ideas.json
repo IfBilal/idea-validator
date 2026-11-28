@@ -1,0 +1,445 @@
+{
+  "card_a": {
+    "card": {
+      "confidence": 0.825,
+      "gates": {
+        "duplicate": "pass",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "pass"
+      },
+      "idea_id": "idea_t",
+      "missing": null,
+      "reasons": [
+        "score 70.50 >= T_go 70 and no dimension below floor 1.5"
+      ],
+      "run_id": "run_t",
+      "score": 70.5,
+      "scores": [
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.8,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for demand_pain",
+          "rubric_version": "demand_pain@v1",
+          "score": 3.5
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.6,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for competition",
+          "rubric_version": "competition@v1",
+          "score": 2.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for differentiation",
+          "rubric_version": "differentiation@v1",
+          "score": 3.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.8,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for feasibility",
+          "rubric_version": "feasibility@v1",
+          "score": 4.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.75,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for risk",
+          "rubric_version": "risk@v1",
+          "score": 3.5
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.85,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for learning",
+          "rubric_version": "learning@v1",
+          "score": 4.5
+        }
+      ],
+      "sensitivity": {
+        "flipped": 4,
+        "flips": [
+          {
+            "change": "weight competition +20%",
+            "score": 69.4235,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight feasibility -20%",
+            "score": 69.8667,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "weight learning -20%",
+            "score": 69.525,
+            "verdict": "PIVOT"
+          },
+          {
+            "change": "score competition -1",
+            "score": 67.5,
+            "verdict": "PIVOT"
+          }
+        ],
+        "runs": 14
+      },
+      "stability": "BORDERLINE",
+      "thresholds": {
+        "T_go": 70.0,
+        "T_no": 50.0,
+        "floor": 1.5
+      },
+      "verdict": "GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 15.0,
+        "demand_pain": 15.0,
+        "differentiation": 15.0,
+        "feasibility": 25.0,
+        "learning": 20.0,
+        "risk": 10.0
+      },
+      "what_would_make_go": [
+        {
+          "delta": 1.0,
+          "dimension": "competition",
+          "from": 2.0,
+          "new_score": 73.5,
+          "new_verdict": "GO",
+          "stable": true,
+          "to": 3.0
+        }
+      ]
+    },
+    "change_note": null,
+    "clarifications": null,
+    "created_at": "2026-11-01T10:00:00Z",
+    "idea_id": "11111111-1111-4111-8111-111111111111",
+    "parent_version": null,
+    "score": 70.5,
+    "stability": "BORDERLINE",
+    "text": "x",
+    "title": "Notion exporter",
+    "verdict": "GO",
+    "version": 2
+  },
+  "card_b": {
+    "card": {
+      "confidence": null,
+      "gates": {
+        "duplicate": "not_evaluated",
+        "evidence": "pass",
+        "feasibility": "pass",
+        "risk": "fail"
+      },
+      "idea_id": "idea_t",
+      "missing": null,
+      "reasons": [
+        "risk gate: blocker - collects health data of minors without consent"
+      ],
+      "run_id": "run_t",
+      "score": null,
+      "scores": [
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "demand_pain",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for demand_pain",
+          "rubric_version": "demand_pain@v1",
+          "score": 4.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "competition",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for competition",
+          "rubric_version": "competition@v1",
+          "score": 4.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "differentiation",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for differentiation",
+          "rubric_version": "differentiation@v1",
+          "score": 4.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "feasibility",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for feasibility",
+          "rubric_version": "feasibility@v1",
+          "score": 4.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "risk",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for risk",
+          "rubric_version": "risk@v1",
+          "score": 4.0
+        },
+        {
+          "abstained": false,
+          "adjusted_by_challenge": 0.0,
+          "confidence": 0.7,
+          "dimension": "learning",
+          "evidence_ids": [
+            "card_1a2b3c00#c0"
+          ],
+          "model": "fixture",
+          "reason": "fixture reason for learning",
+          "rubric_version": "learning@v1",
+          "score": 4.0
+        }
+      ],
+      "sensitivity": {
+        "flipped": 0,
+        "flips": [],
+        "note": "decided before scoring (gate / abstention / confidence)",
+        "runs": 0
+      },
+      "stability": "STABLE",
+      "thresholds": {
+        "T_go": 70.0,
+        "T_no": 50.0,
+        "floor": 1.5
+      },
+      "verdict": "NO-GO",
+      "version": 1,
+      "versions": {
+        "engine": "m11@v1",
+        "profile_weights": "w1",
+        "rubrics": "r1"
+      },
+      "weakest_dimension": null,
+      "weights": {
+        "competition": 20.0,
+        "demand_pain": 25.0,
+        "differentiation": 20.0,
+        "feasibility": 15.0,
+        "learning": 5.0,
+        "risk": 15.0
+      },
+      "what_would_make_go": []
+    },
+    "change_note": null,
+    "clarifications": null,
+    "created_at": "2026-11-01T10:00:00Z",
+    "idea_id": "22222222-2222-4222-8222-222222222222",
+    "parent_version": null,
+    "score": null,
+    "stability": "STABLE",
+    "text": "x",
+    "title": "Pet tracker",
+    "verdict": "NO-GO",
+    "version": 1
+  },
+  "compare": {
+    "dimensions": [
+      {
+        "delta": 0.5,
+        "dimension": "demand_pain",
+        "scores": {
+          "11111111-1111-4111-8111-111111111111": 3.5,
+          "22222222-2222-4222-8222-222222222222": 4.0
+        }
+      },
+      {
+        "delta": 2.0,
+        "dimension": "competition",
+        "scores": {
+          "11111111-1111-4111-8111-111111111111": 2.0,
+          "22222222-2222-4222-8222-222222222222": 4.0
+        }
+      },
+      {
+        "delta": 1.0,
+        "dimension": "differentiation",
+        "scores": {
+          "11111111-1111-4111-8111-111111111111": 3.0,
+          "22222222-2222-4222-8222-222222222222": 4.0
+        }
+      },
+      {
+        "delta": 0.0,
+        "dimension": "feasibility",
+        "scores": {
+          "11111111-1111-4111-8111-111111111111": 4.0,
+          "22222222-2222-4222-8222-222222222222": 4.0
+        }
+      },
+      {
+        "delta": 0.5,
+        "dimension": "risk",
+        "scores": {
+          "11111111-1111-4111-8111-111111111111": 3.5,
+          "22222222-2222-4222-8222-222222222222": 4.0
+        }
+      },
+      {
+        "delta": 0.5,
+        "dimension": "learning",
+        "scores": {
+          "11111111-1111-4111-8111-111111111111": 4.5,
+          "22222222-2222-4222-8222-222222222222": 4.0
+        }
+      }
+    ],
+    "ideas": [
+      {
+        "confidence": 0.825,
+        "idea_id": "11111111-1111-4111-8111-111111111111",
+        "score": 70.5,
+        "scores": {
+          "competition": 2.0,
+          "demand_pain": 3.5,
+          "differentiation": 3.0,
+          "feasibility": 4.0,
+          "learning": 4.5,
+          "risk": 3.5
+        },
+        "stability": "BORDERLINE",
+        "title": "Notion exporter",
+        "verdict": "GO",
+        "version": 2
+      },
+      {
+        "confidence": null,
+        "idea_id": "22222222-2222-4222-8222-222222222222",
+        "score": null,
+        "scores": {
+          "competition": 4.0,
+          "demand_pain": 4.0,
+          "differentiation": 4.0,
+          "feasibility": 4.0,
+          "learning": 4.0,
+          "risk": 4.0
+        },
+        "stability": "STABLE",
+        "title": "Pet tracker",
+        "verdict": "NO-GO",
+        "version": 1
+      }
+    ],
+    "verdicts": {
+      "11111111-1111-4111-8111-111111111111": "GO",
+      "22222222-2222-4222-8222-222222222222": "NO-GO"
+    }
+  },
+  "page": {
+    "items": [
+      {
+        "idea_id": "11111111-1111-4111-8111-111111111111",
+        "latest_verdict": "GO",
+        "latest_version": 2,
+        "score": 70.5,
+        "source": "user",
+        "title": "Notion exporter",
+        "updated_at": "2026-11-01T10:00:00Z"
+      },
+      {
+        "idea_id": "22222222-2222-4222-8222-222222222222",
+        "latest_verdict": null,
+        "latest_version": 1,
+        "score": null,
+        "source": "discover",
+        "title": "Pet tracker",
+        "updated_at": "2026-10-30T09:00:00Z"
+      }
+    ],
+    "next_cursor": "cur2"
+  },
+  "versions": [
+    {
+      "change_note": "narrowed scope",
+      "created_at": "2026-11-01T10:00:00Z",
+      "parent_version": 1,
+      "score": 70.5,
+      "stability": "STABLE",
+      "text": "Export pages to Markdown",
+      "verdict": "GO",
+      "version": 2
+    },
+    {
+      "change_note": null,
+      "created_at": "2026-10-29T10:00:00Z",
+      "parent_version": null,
+      "score": null,
+      "stability": null,
+      "text": "Export everything",
+      "verdict": null,
+      "version": 1
+    }
+  ]
+}
