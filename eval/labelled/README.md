@@ -14,8 +14,10 @@ Rules:
 - Don't tune thresholds so tightly to this set that they fail on new ideas: use k-fold in the tuning script.
 
 ## Workflow
-1. `candidates.jsonl` (committed) holds 43 drafted ideas with student profiles and an `intended_category` hint
-   (11 clear_go, 12 clear_nogo, 10 borderline, 10 thin_evidence; five same-idea-different-profile pairs share an `idea_group`).
+1. `candidates.jsonl` (committed) holds 74 drafted ideas with student profiles and an `intended_category` hint
+   (21 clear_go, 22 clear_nogo, 21 borderline, 10 thin_evidence; eight same-idea-different-profile pairs share an `idea_group`).
+   L044-L074 were added after the first AI draft found the snapshot too developer-centric for L001-L043: they are
+   developer and student-project tools whose topics have real cards in the snapshot.
    The hint is only what we expect: **the real verdict depends on the evidence in the knowledge base**, so a drafted
    "clear GO" may turn out thin-evidence and that is a valid finding.
 2. After ingestion (Phase 3) run each candidate through Validate with the cache off, so the evidence is the real KB.
