@@ -369,6 +369,7 @@ class AnalystService:
         trend = feat.trend_growth(niche.trend_slope if niche else None)
         as_of = index.snapshot.as_of
 
+        flags = feat.risk_flags(text)
         out = FeaturesResponse(
             n_sources=feat.n_sources(refs),
             n_platforms=feat.n_platforms(refs),
@@ -396,12 +397,14 @@ class AnalystService:
                 2,
             ),
             compute_fit=feat.compute_fit(feat.required_compute(text), profile.compute),
-            risk_flags=feat.risk_flags(text),
+            risk_flags=flags,
             platform_dependency=feat.platform_dependency(text),
             skill_novelty=feat.skill_novelty(required, profile.skills, profile.interests),
             cv_signal=round(feat.cv_signal(required, cfg.in_demand_skills, trend), 4),
             required_skills=required,
             rejected_evidence_count=rejected,
+            duplicate_of=feat.duplicate_of(scored),
+            risk_blocker=feat.risk_blocker(flags),
         )
         log.info(
             "features_computed",
