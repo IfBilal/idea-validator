@@ -1,13 +1,13 @@
 # Jenkins configuration as code. Secrets come from the container environment / mounted files, never from git.
 jenkins:
   systemMessage: "idea-validator delivery pipeline (Build, Push, Deploy, Smoke, nightly Eval)"
-  numExecutors: 2
+  numExecutors: 1
   securityRealm:
     local:
       allowsSignup: false
       users:
         - id: admin
-          password: ${JENKINS_ADMIN_PASSWORD}
+          password: ${readFile:/run/secrets/admin-password}
   authorizationStrategy:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false

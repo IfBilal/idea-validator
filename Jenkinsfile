@@ -9,12 +9,16 @@ pipeline {
     cron('H 2 * * *')        // nightly full evaluation
   }
   environment {
-    TAG = "${env.GIT_COMMIT.take(7)}"
     REGISTRY = "localhost:5001"
     NS = "idea-validator"
   }
   stages {
-    stage('Checkout') { steps { checkout scm } }
+    stage('Checkout') {
+      steps {
+        checkout scm
+        script { env.TAG = sh(returnStdout: true, script: 'git rev-parse --short=7 HEAD').trim() }   // also works on non-SCM runs
+      }
+    }
     stage('Build')    { steps { sh 'make images TAG=$TAG' } }
     stage('Push')     { steps { sh './scripts/push_images.sh $TAG' } }
     stage('Deploy') {
@@ -31,7 +35,7 @@ pipeline {
       when { triggeredBy 'TimerTrigger' }
       steps {
         withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'CI_KUBECONFIG')]) {
-          sh 'kubectl apply -f k8s/base/eval/eval-job.yaml -n $NS && ./scripts/check_eval.sh'   // compare with stored baseline
+          sh './scripts/run_eval.sh'   // guarded: apply the eval job, then compare with the stored baseline
         }
       }
     }
@@ -39,8 +43,15 @@ pipeline {
   post {
     failure {
       echo 'Pipeline failed, nothing promoted'
-      withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'CI_KUBECONFIG')]) {
-        sh './scripts/rollback_changed.sh $TAG || true'   // kubectl rollout undo for deployments changed in this build
+      script {
+        if (env.TAG) {   // unset when checkout itself failed: nothing was deployed
+          // a failed rollback must stay visible: it marks the build, it is never swallowed
+          catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+            withCredentials([file(credentialsId: 'kubeconfig-kind', variable: 'CI_KUBECONFIG')]) {
+              sh './scripts/rollback_changed.sh $TAG'   // rollout undo for deployments changed in this build
+            }
+          }
+        }
       }
     }
   }

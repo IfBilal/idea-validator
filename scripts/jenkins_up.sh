@@ -3,8 +3,10 @@
 # the local registry. The admin password is generated once into a mode-600 file outside git.
 #   scripts/jenkins_up.sh          start (or restart) Jenkins on http://127.0.0.1:8085
 #   scripts/jenkins_up.sh stop     stop and remove the container (the jenkins_home volume is kept)
-# Security: Jenkins listens on 127.0.0.1 only. It runs on the host network and mounts the Docker socket, which is
-# root-equivalent on this machine: anyone who can log in to it can run commands as root here. Keep it local.
+# Security: Jenkins listens on 127.0.0.1 only, has no anonymous access, and the admin password is mounted as a file
+# (not an env var). It runs on the host network and mounts the Docker socket, which is root-equivalent on this
+# machine: anyone who can log in can run commands as root here. Local-only risk acceptance: docs/decisions/ADR-012.
+# JENKINS_BRANCH (default */main) is interpolated into configuration-as-code, so it is validated first.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source "$(dirname "$0")/lib/kube_guard.sh"
@@ -12,8 +14,15 @@ source "$(dirname "$0")/lib/kube_guard.sh"
 NAME=idea-validator-jenkins
 STATE="${XDG_CONFIG_HOME:-$HOME/.config}/idea-validator-jenkins"
 PORT="${JENKINS_PORT:-8085}"
+DOCKER_SOCK="${DOCKER_SOCK:-/var/run/docker.sock}"
+BRANCH="${JENKINS_BRANCH:-*/main}"
 
 if [ "${1:-}" = stop ]; then docker rm -f "$NAME" >/dev/null 2>&1 || true; echo "stopped $NAME"; exit 0; fi
+
+if ! [[ "$BRANCH" =~ ^\*/[A-Za-z0-9._/-]+$ ]] || [[ "$BRANCH" == *..* ]]; then
+  echo "refusing JENKINS_BRANCH '$BRANCH': expected */<branch> with letters, digits, . _ - /" >&2
+  exit 1
+fi
 
 use_project_cluster || exit 1   # refuses any cluster that is not kind-idea-validator
 mkdir -p "$STATE"; chmod 700 "$STATE"
@@ -23,14 +32,14 @@ cp "$PROJECT_KUBECONFIG" "$STATE/kubeconfig"; chmod 600 "$STATE/kubeconfig"
 docker build -q -t idea-validator/jenkins:local jenkins >/dev/null
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" --restart unless-stopped --network host \
-  --group-add "$(stat -c %g /var/run/docker.sock)" \
-  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$(stat -c %g "$DOCKER_SOCK")" \
+  -v "$DOCKER_SOCK":/var/run/docker.sock \
   -v "$PWD":/repo:ro \
   -v idea-validator-jenkins-home:/var/jenkins_home \
   -v "$STATE/kubeconfig":/run/secrets/kubeconfig:ro \
-  -e JENKINS_ADMIN_PASSWORD="$(cat "$STATE/admin-password")" \
+  -v "$STATE/admin-password":/run/secrets/admin-password:ro \
   -e JENKINS_OPTS="--httpPort=$PORT --httpListenAddress=127.0.0.1" \
-  -e JENKINS_BRANCH="${JENKINS_BRANCH:-*/main}" \
+  -e JENKINS_BRANCH="$BRANCH" \
   idea-validator/jenkins:local >/dev/null
 
 for _ in $(seq 1 60); do
