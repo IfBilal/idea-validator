@@ -16,6 +16,7 @@ class Settings(ServiceSettings):
     llm_judge_enabled: bool | None = None  # default: on when tools_url is set
     llm_judge_model: str = "hosted-cheap"  # alias from config/llm.yaml
     llm_judge_max_claims: int = Field(default=8, ge=1)  # LLM calls per request
+    llm_judge_deadline_s: float = Field(default=40.0, gt=0)  # all judge calls of one request
     llm_judge_timeout_s: float = Field(default=20.0, gt=0)
     llm_judge_max_evidence_chars: int = Field(default=1500, ge=1)  # per evidence record
     prompts_dir: Path = Path("/app/prompts")

@@ -52,6 +52,7 @@ def build_app(
                 llm,
                 settings.prompts_dir,
                 max_claims=settings.llm_judge_max_claims,
+                deadline_s=settings.llm_judge_deadline_s,
                 max_evidence_chars=settings.llm_judge_max_evidence_chars,
                 max_quote_chars=settings.max_quote_chars,
             )
