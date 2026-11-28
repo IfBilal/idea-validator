@@ -1,0 +1,38 @@
+# Jenkins configuration as code. Secrets come from the container environment / mounted files, never from git.
+jenkins:
+  systemMessage: "idea-validator delivery pipeline (Build, Push, Deploy, Smoke, nightly Eval)"
+  numExecutors: 1
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          password: ${readFile:/run/secrets/admin-password}
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - file:
+              scope: GLOBAL
+              id: kubeconfig-kind
+              fileName: kubeconfig
+              description: kubeconfig of the project's kind cluster (never committed)
+              secretBytes: ${base64:${readFile:/run/secrets/kubeconfig}}
+unclassified:
+  location:
+    url: http://127.0.0.1:8085/
+jobs:
+  - script: >
+      pipelineJob('idea-validator') {
+        description('Build, push, deploy and smoke-test every merge to main; nightly evaluation')
+        definition {
+          cpsScm {
+            scm { git { remote { url('file:///repo') }; branch('${JENKINS_BRANCH:-*/main}') } }
+            scriptPath('Jenkinsfile')
+            lightweight(false)
+          }
+        }
+      }
