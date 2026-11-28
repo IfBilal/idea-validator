@@ -20,6 +20,14 @@ from .entailment import REASON_NO_SUPPORT, EntailmentJudge, JudgeVerdict
 
 REASON_UNAVAILABLE = "judge unavailable"
 PROMPT_FILE = "critic@v1.md"
+MIN_QUOTE_CHARS = (
+    15  # a one-word "quote" proves nothing; a paraphrase may share no word with its quote
+)
+MIN_QUOTE_WORDS = 3
+JSON_HINT = (
+    '\n\nReply with one JSON object only: {"supported": true or false, "supporting_quote": '
+    '"a verbatim sentence from the evidence" or null}.'
+)
 MAX_TOKENS = 600  # the hosted models spend part of this on reasoning tokens (config/llm.yaml)
 
 log = get_logger("critic.llm_judge")
@@ -62,8 +70,11 @@ class LlmEntailmentJudge:
             f'<evidence id="{eid}">{html.escape(text, quote=False)}</evidence>'
             for eid, text in shown
         )
-        values = {"claim_text": " ".join(claim.split()), "evidence_blocks": blocks}
-        user = _PLACEHOLDER.sub(lambda m: values[m.group(1)], self._user)
+        values = {
+            "claim_text": html.escape(" ".join(claim.split()), quote=False),
+            "evidence_blocks": blocks,
+        }
+        user = _PLACEHOLDER.sub(lambda m: values[m.group(1)], self._user) + JSON_HINT
         try:
             raw = await self._client.complete(system=self._system, user=user, max_tokens=MAX_TOKENS)
             answer = json.loads(raw)
@@ -76,6 +87,7 @@ class LlmEntailmentJudge:
         if not supported or not isinstance(quote, str):
             return JudgeVerdict(False, None, REASON_NO_SUPPORT)
         quote = quote.strip()
-        if not quote or len(quote) > self._max_quote or not any(quote in t for _, t in shown):
+        too_thin = len(quote) < MIN_QUOTE_CHARS or len(quote.split()) < MIN_QUOTE_WORDS
+        if too_thin or len(quote) > self._max_quote or not any(quote in t for _, t in shown):
             return JudgeVerdict(False, None, REASON_NO_SUPPORT)
         return JudgeVerdict(True, quote, "ok")
