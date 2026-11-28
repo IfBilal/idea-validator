@@ -20,7 +20,7 @@ COPY --from=build --chown=10001:10001 /app/.venv /app/.venv
 COPY --from=build --chown=10001:10001 /app/services/kb/alembic.ini /app/alembic.ini
 COPY --from=build --chown=10001:10001 /app/services/kb/migrations /app/migrations
 COPY --from=build --chown=10001:10001 /models /models
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MODEL_CACHE_DIR=/models HF_HUB_OFFLINE=1
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MODEL_SEED_DIR=/models MODEL_CACHE_DIR=/tmp/models HF_HUB_OFFLINE=1
 USER 10001
 EXPOSE 8000
 CMD ["uvicorn", "svc_kb.main:app", "--host", "0.0.0.0", "--port", "8000"]

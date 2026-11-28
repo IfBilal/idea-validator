@@ -428,7 +428,8 @@ def test_jenkins_up_accepts_a_normal_branch(tmp_path: Path, branch: str) -> None
 def test_the_kb_image_bakes_the_models_in_and_runs_offline() -> None:
     text = (ROOT / "services" / "kb" / "Dockerfile").read_text()
     assert "FastEmbedModels('/models')" in text, "download the three models at build time"
-    assert "MODEL_CACHE_DIR=/models" in text and "HF_HUB_OFFLINE=1" in text
+    assert "MODEL_SEED_DIR=/models" in text and "MODEL_CACHE_DIR=/tmp/models" in text
+    assert "HF_HUB_OFFLINE=1" in text
 
 
 def test_the_kb_deployment_asks_for_enough_memory_to_hold_three_onnx_models() -> None:

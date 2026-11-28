@@ -38,3 +38,10 @@ async def test_real_models_rank_the_semantically_right_card_first_in_every_mode(
         assert hits[0].card_id == "card_0000000b", mode
     keyword = await idx.search("freelancers invoicing", mode="keyword", k=3)
     assert keyword[0].card_id == "card_0000000a"
+
+
+def test_warm_loads_the_three_models_and_sets_the_flag() -> None:
+    models = FastEmbedModels()
+    assert models.loaded is False
+    models.warm()
+    assert models.loaded is True
