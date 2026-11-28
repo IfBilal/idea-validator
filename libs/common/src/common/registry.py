@@ -63,8 +63,15 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _tagged(value: Any) -> dict[str, str]:
+    """YAML dates and the like: keep the type in the hash so 2026-01-01 and "2026-01-01" differ."""
+    return {"__type__": type(value).__name__, "value": str(value)}
+
+
 def _canonical(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    """Config hashes cover the parsed content: comments, key order and quoting style do not
+    change them, a changed value, key or type does."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=_tagged)
 
 
 def _hash_data(value: Any) -> str:
@@ -102,7 +109,12 @@ def _versioned_files(
         return []
     found: list[Entry] = []
     for path in sorted(directory.iterdir()):
-        if path.name.startswith(".") or path.is_dir():
+        if path.name.startswith("."):
+            continue
+        if path.is_dir() or path.is_symlink():
+            problems.append(
+                f"{directory.name}/{path.name}: directories and symlinks are not allowed here"
+            )
             continue
         match = _FILE.fullmatch(path.name)
         raw = _read(path)
@@ -237,6 +249,31 @@ def compare(lock: dict[str, str], current: dict[str, Entry]) -> list[str]:
         for key, entry in sorted(current.items())
         if key not in lock
     ]
+    return problems
+
+
+def compare_to_base(base: dict[str, str], pr_lock: dict[str, str]) -> list[str]:
+    """What the PR's lock changed about entries the base branch already registered.
+
+    The PR's own lock proves nothing (a PR can edit a file and its hash together), so every base
+    key must survive with the same hash. Only a config key may go, and only for a newer version of
+    the same name.
+    """
+    problems: list[str] = []
+    for key, locked in sorted(base.items()):
+        mine = pr_lock.get(key)
+        if mine is None:
+            kind, _, rest = key.partition(":")
+            name = rest.partition("@")[0]
+            bumped = kind not in IMMUTABLE_KINDS and any(
+                k != key and k.startswith(f"{kind}:{name}@") for k in pr_lock
+            )
+            if not bumped:
+                problems.append(f"removed from the lock: {key} is registered on the base branch")
+        elif mine != locked:
+            problems.append(
+                f"{key} differs from the base branch's lock; registered hashes are never rewritten"
+            )
     return problems
 
 

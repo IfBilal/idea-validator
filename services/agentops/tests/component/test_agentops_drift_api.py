@@ -12,7 +12,7 @@ from svc_agentops.repositories.drift_store import DriftStore
 from svc_agentops.repositories.files import JsonlTraceFiles
 from svc_agentops.testing import Rig
 
-NOW = datetime(2026, 11, 28, 12, 0, tzinfo=UTC)
+NOW = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=3)
 
 
 def report(at: datetime = NOW) -> Any:
@@ -43,7 +43,7 @@ async def test_post_then_latest_returns_the_newest(tmp_path: Path) -> None:
             body = report(NOW + timedelta(hours=hours)).model_dump_json()
             assert (await client.post("/drift", content=body)).status_code == 200
         latest = (await client.get("/drift/latest")).json()
-    assert latest["generated_at"].startswith("2026-11-28T14:00")
+    assert latest["generated_at"].startswith((NOW + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M"))
     assert len(list((rig.dir / "drift").glob("drift-*.json"))) == 3
 
 
@@ -142,3 +142,24 @@ def test_cli_second_run_uses_the_previous_report_for_coverage(tmp_path: Path) ->
     data = json.loads(sorted(out.glob("drift-*.json"))[-1].read_text())
     assert data["coverage"]["basis"] == "stats_delta"
     assert "no_new_cards:a" in data["flags"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("days", [-3, 3, 3650])
+async def test_a_report_dated_far_from_now_is_refused(tmp_path: Path, days: int) -> None:
+    rig = Rig(tmp_path)
+    body = report(datetime.now(UTC) + timedelta(days=days)).model_dump_json()
+    async with rig.client() as client:
+        response = await client.post("/drift", content=body)
+        latest = await client.get("/drift/latest")
+    assert response.status_code == 422
+    assert latest.status_code == 404  # a bad clock can never shadow later reports
+
+
+@pytest.mark.asyncio
+async def test_a_report_within_a_day_of_now_is_accepted(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+    async with rig.client() as client:
+        for hours in (-20, 20):
+            body = report(datetime.now(UTC) + timedelta(hours=hours)).model_dump_json()
+            assert (await client.post("/drift", content=body)).status_code == 200

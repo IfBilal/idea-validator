@@ -1,6 +1,7 @@
 """HTTP layer only: parse, validate, call a service, map errors. Internal endpoints."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -19,6 +20,8 @@ from ..services.query import QueryService
 from ..services.registry import RegistryService
 
 USER_ID = r"^[A-Za-z0-9_.:-]{1,128}$"
+
+MAX_DRIFT_SKEW = timedelta(days=1)
 
 
 def make_router(settings: Settings) -> APIRouter:
@@ -50,6 +53,8 @@ def make_router(settings: Settings) -> APIRouter:
             report = DriftReport.model_validate_json(raw)
         except ValidationError as exc:
             raise ValidationFailed("body is not a drift report") from exc
+        if abs(datetime.now(UTC) - report.generated_at) > MAX_DRIFT_SKEW:
+            raise ValidationFailed("generated_at must be within a day of the server clock")
         store: DriftStore = request.app.state.drift
         try:
             await asyncio.to_thread(store.save, report)

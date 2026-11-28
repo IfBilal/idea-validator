@@ -28,3 +28,7 @@ scripts
 *.md
 !README.md
 !prompts/*.md
+**/.env
+**/.env.*
+config/*.local.*
+config/secrets*

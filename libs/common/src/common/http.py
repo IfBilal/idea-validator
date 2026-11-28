@@ -5,6 +5,7 @@ exponential back-off, only on timeouts, transport errors, 429, 502, 503, 504. Ot
 retried. The number of retries used is exposed on ``response.extensions["retries"]``.
 """
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -146,6 +147,39 @@ class ServiceClient:
         if response.status_code >= 400:
             raise _error_for_status(response, self._base_url)
         return response
+
+    async def get_json_capped(
+        self,
+        path: str,
+        *,
+        max_bytes: int,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Any:
+        """GET and parse JSON, reading at most ``max_bytes``: one attempt, never retried.
+
+        A declared ``Content-Length`` over the cap is refused before any byte is read; otherwise
+        the body is abandoned as soon as the running count passes the cap.
+        """
+        try:
+            async with self._client.stream(
+                "GET", path, params=params, headers=self._headers(headers)
+            ) as response:
+                if response.status_code >= 400:
+                    raise _error_for_status(response, self._base_url)
+                declared = response.headers.get("content-length", "")
+                if declared.isdigit() and int(declared) > max_bytes:
+                    raise UpstreamError(f"{self._base_url} answer exceeds {max_bytes} bytes")
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise UpstreamError(f"{self._base_url} answer exceeds {max_bytes} bytes")
+        except httpx.TimeoutException as exc:
+            raise UpstreamTimeout(f"{self._base_url}{path} timed out") from exc
+        except httpx.TransportError as exc:
+            raise UpstreamError(f"{self._base_url}{path} unreachable") from exc
+        return json.loads(body)
 
     async def get_json(self, path: str, **kwargs: Any) -> Any:
         return (await self.request("GET", path, **kwargs)).json()

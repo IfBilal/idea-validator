@@ -1,2 +1,5 @@
 # Both members review everything (Dev A = Taimoor (T361), Dev B = Bilal (IfBilal))
 * @IfBilal @T361
+
+# the registry lock is the anchor of the prompt/rubric/config version check: both members review it
+/registry.lock.json @IfBilal @T361

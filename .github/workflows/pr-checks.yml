@@ -128,9 +128,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: astral-sh/setup-uv@v6
-      # prompts/rubrics are immutable versions, config changes need a version bump (docs/harness/12 section 4)
-      - run: uv run --no-project --with pyyaml python scripts/check_registry.py
+      # prompts/rubrics are immutable versions, config changes need a version bump (docs/harness/12 section 4).
+      # The PR's own lock proves nothing, so the base branch's lock is the anchor: every entry in it must
+      # survive unchanged (registry.lock.json is also CODEOWNERS-protected).
+      - run: |
+          git show "origin/${BASE_REF}:registry.lock.json" > "$RUNNER_TEMP/base.lock" || true
+        env: { BASE_REF: "${{ github.base_ref }}" }
+      - run: uv run --no-project --with pyyaml==6.0.4 python scripts/check_registry.py --base-lock "$RUNNER_TEMP/base.lock"
   security:
     runs-on: ubuntu-latest
     steps:

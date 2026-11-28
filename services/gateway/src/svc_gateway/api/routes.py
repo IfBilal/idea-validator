@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Path, Query, Request
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from common.errors import RateLimited, Unauthorized, ValidationFailed
@@ -178,7 +178,10 @@ def make_router(
         return await runs.get(user_id, run_id)
 
     @router.get("/runs/{run_id}/trace")
-    async def run_trace(run_id: RunId, user_id: User, flat: bool = False) -> dict[str, Any]:
+    async def run_trace(
+        run_id: RunId, user_id: User, response: Response, flat: bool = False
+    ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "no-store"
         await user_limit("user_trace", settings.user_trace_per_min, user_id)
         return await runs.trace(user_id, run_id, flat)
 

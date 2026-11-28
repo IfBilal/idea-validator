@@ -7,7 +7,9 @@ emitter cannot blow up the number of series.
 
 import re
 from collections.abc import Iterable
+from pathlib import Path
 
+import yaml
 from prometheus_client import CollectorRegistry, Counter, Histogram
 
 from common.schemas.trace import TraceRecord
@@ -18,14 +20,82 @@ DECISION = "m11_verdict"
 LATENCY_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120)
 
 
+SERVICE_NAMES = frozenset(
+    [
+        "gateway",
+        "profile",
+        "orchestrator",
+        "scouts",
+        "tools",
+        "kb",
+        "analyst",
+        "ideation",
+        "validators",
+        "scorer",
+        "verdict",
+        "critic",
+        "agentops",
+        "ingestion",
+    ]
+)
+MAX_DISTINCT = 64  # distinct values per label; later ones are counted as "other"
+
+
 def label(value: str | None, default: str = "none") -> str:
     if value is None:
         return default
     return value if _SAFE.fullmatch(value) else "other"
 
 
+def known_names(config_dir: Path) -> tuple[frozenset[str] | None, frozenset[str] | None]:
+    """Agent and model names the config knows (prompts.yaml agents, llm.yaml aliases), or None."""
+    agents: set[str] = set(SERVICE_NAMES)
+    models: set[str] = set()
+    found = False
+    try:
+        prompts = yaml.safe_load((config_dir / "prompts.yaml").read_text()) or {}
+        agents |= {str(k) for k in (prompts.get("active") or {})}
+        llm = yaml.safe_load((config_dir / "llm.yaml").read_text()) or {}
+        for alias, spec in (llm.get("aliases") or {}).items():
+            models.add(str(alias))
+            if isinstance(spec, dict) and spec.get("model"):
+                models.add(str(spec["model"]))
+        found = True
+    except (OSError, yaml.YAMLError, AttributeError):
+        pass
+    return (frozenset(agents), frozenset(models)) if found else (None, None)
+
+
+class _Bounded:
+    """Maps free strings to a fixed vocabulary: allow-list first, then at most N distinct values."""
+
+    def __init__(self, allowed: frozenset[str] | None, limit: int = MAX_DISTINCT) -> None:
+        self._allowed = allowed
+        self._limit = limit
+        self._seen: set[str] = set()
+
+    def __call__(self, value: str | None, default: str = "none") -> str:
+        text = label(value, default)
+        if text in (default, "other"):
+            return text
+        if self._allowed is not None and text not in self._allowed:
+            return "other"
+        if text not in self._seen:
+            if len(self._seen) >= self._limit:
+                return "other"
+            self._seen.add(text)
+        return text
+
+
 class TraceMetrics:
-    def __init__(self, registry: CollectorRegistry) -> None:
+    def __init__(
+        self,
+        registry: CollectorRegistry,
+        agents: frozenset[str] | None = None,
+        models: frozenset[str] | None = None,
+    ) -> None:
+        self._agent = _Bounded(agents)
+        self._model = _Bounded(models)
         self.latency = Histogram(
             "agent_step_latency_seconds",
             "Latency of one traced step",
@@ -63,7 +133,7 @@ class TraceMetrics:
 
     def observe(self, records: Iterable[TraceRecord]) -> None:
         for r in records:
-            agent = label(r.agent)
+            agent = self._agent(r.agent)
             self.latency.labels(agent, r.kind).observe(max(0, r.latency_ms) / 1000)
             if r.cost_usd > 0:
                 self.cost.labels(agent).inc(r.cost_usd)
@@ -74,7 +144,7 @@ class TraceMetrics:
             if r.kind in ("tool_call", "llm_call"):
                 self.cache.labels(r.kind, "hit" if r.cache_hit else "miss").inc()
             if r.kind == "llm_call":
-                model = label(r.model, "unknown")
+                model = self._model(r.model, "unknown")
                 if r.tokens_in > 0:
                     self.tokens.labels(agent, model, "in").inc(r.tokens_in)
                 if r.tokens_out > 0:

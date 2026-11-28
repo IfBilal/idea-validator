@@ -121,3 +121,56 @@ async def test_stress_many_records_keep_series_bounded(tmp_path: Path) -> None:
         sum(1 for line in text.splitlines() if line.startswith("agent_step_latency_seconds_count"))
         == 5
     )
+
+
+def registry_copy(tmp_path: Path) -> Path:
+    import shutil
+
+    root = tmp_path / "reg"
+    shutil.copytree(Path(__file__).resolve().parents[4] / "config", root / "config")
+    return root
+
+
+@pytest.mark.asyncio
+async def test_a_thousand_distinct_agent_names_stay_bounded(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+    async with rig.client() as client:
+        for start in range(0, 1000, 100):
+            batch = [rec(i + 1, agent=f"agent{start + i}") for i in range(100)]
+            await client.post("/traces", json=batch)
+        text = (await client.get("/metrics")).text
+    series = [ln for ln in text.splitlines() if ln.startswith("agent_step_latency_seconds_count")]
+    assert 0 < len(series) <= 65  # 64 distinct values, the rest folded into "other"
+    assert sum(float(ln.rsplit(" ", 1)[1]) for ln in series) == 1000
+
+
+@pytest.mark.asyncio
+async def test_unknown_agents_and_models_fold_into_other_when_config_is_known(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path, registry_dir=registry_copy(tmp_path))
+    batch = [
+        rec(1, agent="scorer", kind="llm_call", model="openai/gpt-oss-120b", tokens_in=5),
+        rec(2, agent="made-up-agent", kind="llm_call", model="made-up-model", tokens_in=7),
+    ]
+    async with rig.client() as client:
+        await client.post("/traces", json=batch)
+        text = (await client.get("/metrics")).text
+    assert sample(text, "llm_tokens_total", agent="scorer", model="openai/gpt-oss-120b") == 5
+    assert sample(text, "llm_tokens_total", agent="other", model="other", direction="in") == 7
+    assert "made-up" not in text
+
+
+@pytest.mark.asyncio
+async def test_a_failing_metrics_observer_never_fails_a_stored_batch(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+
+    def boom(_: Any) -> None:
+        raise RuntimeError("metrics broke")
+
+    rig.app.state.ingest._metrics.observe = boom
+    async with rig.client() as client:
+        response = await client.post("/traces", json=[rec(1)])
+        trace = await client.get("/runs/run_1/trace?flat=true")
+    assert response.status_code == 200 and response.json()["accepted"] == 1
+    assert len(trace.json()["records"]) == 1

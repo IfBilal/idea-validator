@@ -203,3 +203,95 @@ def test_the_run_listing_of_m13_is_not_exposed(env: Env) -> None:
         response = env.client.get(path, headers=env.headers())
         assert response.status_code in (404, 405)
     assert env.m13.calls == []
+
+
+def test_a_huge_body_is_abandoned_early_not_buffered(env: Env) -> None:
+    own_run(env)
+    env.m13.endless_chunks = 400  # 25 MiB if it were read to the end
+    response = env.client.get(f"/runs/{RUN}/trace", headers=env.headers())
+    assert response.status_code == 502
+    assert env.m13.served_chunks <= 20  # stopped shortly after the 1 MiB cap
+    assert len(env.m13.calls) == 1  # and not retried
+
+
+def test_a_declared_length_over_the_cap_is_refused_before_reading(env: Env) -> None:
+    own_run(env)
+    env.m13.declared_length = 500 * 1024 * 1024
+    response = env.client.get(f"/runs/{RUN}/trace", headers=env.headers())
+    assert response.status_code == 502
+    assert env.m13.served_chunks == 0
+
+
+def test_the_answer_is_validated_unknown_top_level_fields_are_dropped(env: Env) -> None:
+    own_run(env)
+    env.m13.add_trace(RUN, internal_path="/var/lib/agentops/traces", db_dsn="postgres://x")
+    body = env.client.get(f"/runs/{RUN}/trace", headers=env.headers()).json()
+    assert "internal_path" not in body and "db_dsn" not in body
+    assert set(body) <= {"run_id", "totals", "by_agent", "truncated", "tree", "records"}
+
+
+def test_a_record_with_a_verdict_comes_through_unchanged(env: Env) -> None:
+    own_run(env)
+    node = {
+        "record_id": "r1",
+        "record": {"kind": "decision", "output": {"decision": "m11_verdict", "verdict": "NO-GO"}},
+        "children": [],
+    }
+    env.m13.add_trace(RUN, tree=[node])
+    body = env.client.get(f"/runs/{RUN}/trace", headers=env.headers()).json()
+    assert body["tree"] == [node]
+    env.m13.add_trace(RUN, records=[node["record"]])
+    body = env.client.get(f"/runs/{RUN}/trace?flat=true", headers=env.headers()).json()
+    assert body["records"] == [node["record"]]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [{"tree": "not a list"}, {"records": [1, 2]}, {"truncated": "maybe"}, {"totals": []}],
+)
+def test_a_malformed_answer_is_a_generic_502(env: Env, bad: dict[str, Any]) -> None:
+    own_run(env)
+    env.m13.add_trace(RUN, **bad)
+    response = env.client.get(f"/runs/{RUN}/trace", headers=env.headers())
+    assert response.status_code == 502
+    no_leaks(response.text)
+
+
+def test_more_records_than_the_bound_are_refused(env: Env) -> None:
+    own_run(env)
+    env.m13.add_trace(RUN, records=[{} for _ in range(5001)])
+    assert env.client.get(f"/runs/{RUN}/trace", headers=env.headers()).status_code == 502
+
+
+def test_the_trace_is_never_cached(env: Env) -> None:
+    own_run(env)
+    response = env.client.get(f"/runs/{RUN}/trace", headers=env.headers())
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "path", ["/runs/..%2f..%2fx/trace", "/runs/a%3Fb/trace", f"/runs/{'a' * 65}/trace"]
+)
+def test_path_injection_never_reaches_the_upstreams(env: Env, path: str) -> None:
+    own_run(env)
+    response = env.client.get(path, headers=env.headers())
+    assert response.status_code in (404, 422)
+    assert env.m13.calls == [] and env.m3.calls == []
+
+
+def test_foreign_and_unknown_runs_have_identical_status_and_body(env: Env) -> None:
+    own_run(env, user=BOB)
+    a = env.client.get(f"/runs/{RUN}/trace", headers=env.headers(ALICE))
+    b = env.client.get("/runs/run_0000000dead0/trace", headers=env.headers(ALICE))
+    assert (a.status_code, a.json()["error"]["code"], a.json()["error"]["message"]) == (
+        b.status_code,
+        b.json()["error"]["code"],
+        b.json()["error"]["message"],
+    )
+
+
+def test_m13_is_only_ever_asked_for_a_single_run_trace(env: Env) -> None:
+    own_run(env)
+    for suffix in ("", "?flat=true", "?flat=false"):
+        env.client.get(f"/runs/{RUN}/trace{suffix}", headers=env.headers())
+    assert {(m, p) for m, p, _ in env.m13.calls} == {("GET", f"/runs/{RUN}/trace")}

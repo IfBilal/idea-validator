@@ -244,3 +244,76 @@ def test_the_committed_lock_matches_the_repository() -> None:
     assert found.problems == []
     assert registry.compare(registry.load_lock(ROOT / registry.LOCK_NAME), found.entries) == []
     assert {"prompt:scorer@v1", "rubric:risk@v1"} <= set(found.entries)
+
+
+# ---- the base branch's lock is the anchor (a PR must not rewrite its own lock) -------------------
+def with_base(tree: Path, tmp_path: Path) -> Path:
+    base = tmp_path / "base.lock"
+    base.write_text((tree / "registry.lock.json").read_text())
+    return base
+
+
+def test_editing_a_prompt_and_its_lock_hash_fails_against_the_base_lock(
+    tree: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = with_base(tree, tmp_path)
+    (tree / "prompts/scorer@v1.md").write_text("sneaky\n")
+    lock = json.loads((tree / "registry.lock.json").read_text())
+    lock["entries"]["prompt:scorer@v1"] = registry.sha256_bytes(b"sneaky\n")
+    (tree / "registry.lock.json").write_text(json.dumps(lock))
+    assert run(tree) == 0  # the PR's own lock is self-consistent: this is the hole
+    assert run(tree, "--base-lock", str(base)) == 1
+    assert "differs from the base branch" in capsys.readouterr().err
+
+
+def test_dropping_a_base_entry_from_the_pr_lock_fails(tree: Path, tmp_path: Path) -> None:
+    base = with_base(tree, tmp_path)
+    lock = json.loads((tree / "registry.lock.json").read_text())
+    del lock["entries"]["rubric:demand_pain@v1"]
+    (tree / "registry.lock.json").write_text(json.dumps(lock))
+    assert run(tree, "--base-lock", str(base)) == 1
+
+
+def test_a_new_version_and_a_config_bump_pass_against_the_base_lock(
+    tree: Path, tmp_path: Path
+) -> None:
+    base = with_base(tree, tmp_path)
+    shutil.copy(tree / "prompts/scorer@v1.md", tree / "prompts/scorer@v2.md")
+    changed = VERDICT.replace("demand_pain: 100", "demand_pain: 99").replace('"w1"', '"w2"')
+    (tree / "config/verdict.yaml").write_text(changed)
+    assert run(tree, "--update") == 0
+    assert run(tree, "--base-lock", str(base)) == 0
+
+
+def test_a_missing_or_corrupt_base_lock_is_exit_2_and_an_empty_one_is_the_first_lock(
+    tree: Path, tmp_path: Path
+) -> None:
+    assert run(tree, "--base-lock", str(tmp_path / "nope.lock")) == 2
+    bad = tmp_path / "bad.lock"
+    bad.write_text("garbage")
+    assert run(tree, "--base-lock", str(bad)) == 2
+    empty = tmp_path / "empty.lock"
+    empty.write_text("")  # `git show` of a file that does not exist on the base yet
+    assert run(tree, "--base-lock", str(empty)) == 0
+
+
+def test_a_subdirectory_in_prompts_is_a_problem_not_silently_skipped(tmp_path: Path) -> None:
+    root = build(tmp_path)
+    (root / "prompts" / "drafts").mkdir()
+    assert any("drafts" in p for p in registry.scan(root).problems)
+
+
+def test_a_symlinked_directory_in_rubrics_is_a_problem(tmp_path: Path) -> None:
+    root = build(tmp_path)
+    (root / "rubrics" / "link").symlink_to(tmp_path)
+    assert any("link" in p for p in registry.scan(root).problems)
+
+
+def test_config_values_of_other_types_are_tagged_not_stringified(tmp_path: Path) -> None:
+    root = build(tmp_path)
+    as_date = "\nstart: 2026-01-01\n"
+    as_text = '\nstart: "2026-01-01"\n'
+    (root / "config/budgets.yaml").write_text('version: "b1"' + as_date)
+    first = registry.scan(root).entries["config:budgets@b1"].sha256
+    (root / "config/budgets.yaml").write_text('version: "b1"' + as_text)
+    assert registry.scan(root).entries["config:budgets@b1"].sha256 != first

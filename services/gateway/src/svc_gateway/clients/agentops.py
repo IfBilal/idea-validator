@@ -9,7 +9,8 @@ from typing import Any
 from common.errors import UpstreamError
 from common.http import ServiceClient
 
-from .upstream import UNEXPECTED, guarded
+from ..models.trace import TraceView
+from .upstream import UNEXPECTED, guarded, parse
 
 DEFAULT_MAX_BYTES = 1024 * 1024
 
@@ -21,15 +22,12 @@ class AgentOpsClient:
 
     async def trace(self, run_id: str, flat: bool) -> dict[str, Any]:
         params = {"flat": "true"} if flat else None
-
-        async def fetch() -> dict[str, Any]:
-            response = await self._client.request("GET", f"/runs/{run_id}/trace", params=params)
-            if len(response.content) > self._max_bytes:
-                raise UpstreamError(UNEXPECTED)  # the browser never gets a megabyte-class answer
-            return {"body": response.json()}
-
-        data = (await guarded(fetch, "trace"))["body"]
+        path = f"/runs/{run_id}/trace"
+        data = await guarded(
+            lambda: self._client.get_json_capped(path, max_bytes=self._max_bytes, params=params),
+            "trace",
+        )
         # a mixed-up answer for another run must never be forwarded
         if not isinstance(data, dict) or data.get("run_id") != run_id:
             raise UpstreamError(UNEXPECTED)
-        return data
+        return parse(TraceView, data).model_dump(exclude_none=True)

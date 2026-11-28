@@ -34,6 +34,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--root", type=Path, default=ROOT, help="repository root (default: this one)"
     )
+    parser.add_argument(
+        "--base-lock",
+        type=Path,
+        help="the base branch's registry.lock.json (empty file = none yet): every entry in it "
+        "must survive unchanged, so a PR cannot rewrite its own lock",
+    )
     parser.add_argument("--update", action="store_true", help="add new versions to the lock")
     args = parser.parse_args(argv)
     reg = _registry()
@@ -60,6 +66,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     found = reg.compare(lock, scanned.entries)
+    if args.base_lock is not None and not args.update:
+        try:
+            text = args.base_lock.read_text()
+            base = reg.load_lock(args.base_lock) if text.strip() else {}
+        except (OSError, ValueError) as exc:
+            print(f"registry: base lock unusable: {exc}", file=sys.stderr)
+            return 2
+        found += reg.compare_to_base(base, lock)
     broken = [p for p in found if not p.startswith("not registered")]
 
     if args.update:

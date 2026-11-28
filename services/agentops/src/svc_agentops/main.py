@@ -13,7 +13,7 @@ from .repositories.drift_store import DriftStore
 from .repositories.files import JsonlTraceFiles
 from .repositories.index import PgTraceIndex
 from .services.ingest import IngestService
-from .services.metrics import TraceMetrics
+from .services.metrics import TraceMetrics, known_names
 from .services.ports import TraceFiles, TraceIndex
 from .services.query import QueryService
 from .services.registry import RegistryService
@@ -61,7 +61,9 @@ def build_app(
             max_run_bytes=settings.max_run_bytes,
             max_run_records=settings.max_run_records,
             min_free_bytes=settings.min_free_bytes,
-            metrics=TraceMetrics(app.state.metrics_registry),
+            metrics=TraceMetrics(
+                app.state.metrics_registry, *known_names(settings.registry_dir / "config")
+            ),
         )
         app.state.query = QueryService(
             index,

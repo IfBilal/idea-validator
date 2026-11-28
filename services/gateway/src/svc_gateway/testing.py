@@ -7,7 +7,7 @@ gateway code over ``httpx.MockTransport``. Nothing here is imported by the runni
 import asyncio
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -307,6 +307,14 @@ class FakeM13:
         self.fail: int | None = None
         self.timeout = False
         self.wrong_run = False
+        self.endless_chunks: int | None = None  # answer with this many 64 KiB chunks, no length
+        self.declared_length: int | None = None  # answer with a huge Content-Length header
+        self.served_chunks = 0
+
+    async def _chunks(self, count: int) -> AsyncIterator[bytes]:
+        for _ in range(count):
+            self.served_chunks += 1
+            yield b" " * 65536
 
     def add_trace(self, run_id: str, **extra: Any) -> None:
         self.traces[run_id] = {
@@ -331,6 +339,14 @@ class FakeM13:
             body = self.traces.get(parts[1])
             if body is None:
                 return httpx.Response(404, json={"error": {"message": "no trace for run"}})
+            if self.endless_chunks is not None:
+                return httpx.Response(200, content=self._chunks(self.endless_chunks))
+            if self.declared_length is not None:
+                return httpx.Response(
+                    200,
+                    headers={"content-length": str(self.declared_length)},
+                    content=self._chunks(1),
+                )
             if self.wrong_run:
                 body = {**body, "run_id": "run_someoneelse"}
             return httpx.Response(200, json=body)
