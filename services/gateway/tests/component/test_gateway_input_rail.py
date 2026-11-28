@@ -133,3 +133,31 @@ def test_blank_text_never_reaches_the_rail() -> None:
     with env.client:
         r = post(env, "/validate", {**IDEA, "idea_text": "   "})
     assert r.status_code == 422 and m12.calls == []
+
+
+def test_the_cluster_setting_makes_a_missing_rail_url_stop_the_service() -> None:
+    from common.config import ConfigError
+
+    m2, m3 = FakeM2(), FakeM3()
+    ideas, orchestrator, profiles = clients(m2, m3)
+    app = build_app(
+        Settings(
+            jwt_secret=SecretStr(SECRET), ui_origin="https://ui.test", require_input_rail=True
+        ),
+        limiter=MemoryRateLimiter(datetime.now(UTC).timestamp),
+        profiles=profiles,
+        ideas=ideas,
+        orchestrator=orchestrator,
+        events=ScriptedBus(),
+        store=MemoryIdempotencyStore(),
+        gate=MemoryStreamGate(),
+    )
+    with pytest.raises(ConfigError, match="CRITIC_URL"), TestClient(app):
+        pass
+
+
+def test_the_generated_gateway_manifest_requires_the_rail() -> None:
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[4] / "k8s/base/services/gateway.yaml").read_text()
+    assert "REQUIRE_INPUT_RAIL" in text and "CRITIC_URL" in text

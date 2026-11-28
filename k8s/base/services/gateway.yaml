@@ -57,6 +57,8 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: REDIS_URL
+        - name: REQUIRE_INPUT_RAIL
+          value: 'true'
         - name: INTERNAL_TOKEN
           valueFrom:
             secretKeyRef:

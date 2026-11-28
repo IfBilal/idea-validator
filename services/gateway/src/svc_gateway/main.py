@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import BlockingConnectionPool, Redis
@@ -29,6 +30,8 @@ from .security import MIN_SECRET_LENGTH
 from .services.auth import AuthFlow
 from .services.ideas import IdeaFlow
 from .services.runs import RunFlow, RunFlowConfig
+
+log = structlog.get_logger("gateway")
 
 
 def build_app(
@@ -106,6 +109,12 @@ def build_app(
             m12 = connect(settings.critic_url, "CRITIC_URL", token)
             owned.append(m12)
             active_rail = InputRail(m12)
+        if active_rail is None and settings.require_input_rail:
+            raise ConfigError("CRITIC_URL is not set but REQUIRE_INPUT_RAIL is on")
+        if active_rail is None:
+            log.warning(
+                "input_rail_disabled", reason="CRITIC_URL is not set: user text is not pre-checked"
+            )
         holder.update(redis=redis, profiles=active_profiles, orchestrator=active_orch)
         auth = AuthFlow(active_profiles, settings, secret)
         assert active_limiter and active_events and active_store and active_gate
