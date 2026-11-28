@@ -97,3 +97,36 @@ def test_concurrent_processes_never_interleave_lines(tmp_path: Path) -> None:
         assert p.exitcode == 0
     rows, _ = files.read("r1", 1000)
     assert len(rows) == 60
+
+
+def test_a_torn_last_line_is_closed_before_the_next_append(tmp_path: Path) -> None:
+    files = store(tmp_path)
+    files.append("r1", [("a", {"n": 1})])
+    with files.path_for("r1").open("ab") as handle:
+        handle.write(b'{"id": "torn", "record": {"n"')  # a crash mid-write: no newline
+    files.append("r1", [("b", {"n": 2})])
+    rows, _ = files.read("r1", 10)
+    assert [r[0] for r in rows] == ["a", "b"]  # the good record is not glued to the torn one
+
+
+def test_the_byte_cap_is_enforced_under_the_lock(tmp_path: Path) -> None:
+    from svc_agentops.repositories.files import RunFull
+
+    files = store(tmp_path)
+    files.append("r1", [("a", {"pad": "x" * 100})], 400)
+    with pytest.raises(RunFull):
+        files.append("r1", [("b", {"pad": "y" * 400})], 400)
+    assert [r[0] for r in files.read("r1", 10)[0]] == ["a"]
+
+
+def test_listing_and_deleting_runs_only_touches_valid_names(tmp_path: Path) -> None:
+    files = store(tmp_path)
+    files.append("r1", [("a", {})])
+    (tmp_path / "t" / "not a run.jsonl").write_text("x")
+    (tmp_path / "t" / "r2.txt").write_text("x")
+    assert files.run_ids() == ["r1"]
+    assert files.mtime("r1") is not None
+    assert files.mtime("nope") is None
+    files.delete("r1")
+    files.delete("r1")  # idempotent
+    assert files.run_ids() == []

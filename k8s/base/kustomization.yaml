@@ -35,6 +35,7 @@ resources:
 - cronjobs/scout-reddit.yaml
 - cronjobs/scout-producthunt.yaml
 - cronjobs/drift-report.yaml
+- cronjobs/agentops-retention.yaml
 - ingress.yaml
 - ingress-ui.yaml
 - hpa.yaml

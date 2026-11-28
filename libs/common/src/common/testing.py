@@ -136,3 +136,39 @@ class EmulatedRedis:
             h["steps"] = n("steps") + e_steps
         self.ttls[str(key)] = int(ttl)
         return over
+
+
+# Shared redaction corpus: (text, fragment that must not survive). Secret-shaped strings are built
+# from parts so that secret scanners do not flag this file.
+def _j(*parts: str) -> str:
+    return "".join(parts)
+
+
+REDACTION_POSITIVE: list[tuple[str, str]] = [
+    ("Authorization: Bearer abc.def-123_x", "abc.def-123_x"),
+    ("Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==", "dXNlcjpwYXNzd29yZDEyMw"),
+    (_j("key sk", "-abcdefghijklmnopqrstuvwx ok"), "abcdefghijklmnopqrstuvwx"),
+    (_j("stripe sk", "_live_", "4eC39HqLyjWDarjtT1zdp7dc"), "4eC39HqLyjWDarjtT1zdp7dc"),
+    (_j("stripe sk", "_test_", "4eC39HqLyjWDarjtT1zdp7dc"), "4eC39HqLyjWDarjtT1zdp7dc"),
+    (_j("gh", "p_", "a" * 36), "a" * 36),
+    (_j("github", "_pat_", "11ABCDEFG0abcdefghijkl_mnopqrstuvwxyz"), "11ABCDEFG0abcdefghijkl"),
+    (_j("aws ", "AKIA", "IOSFODNN7EXAMPLE", " here"), "IOSFODNN7EXAMPLE"),
+    (_j("slack ", "xox", "b-123456789012-abcdefghijkl"), "123456789012-abcdefghijkl"),
+    (_j("google ", "AIza", "SyA1234567890abcdefghijklmnopqrstuv"), "SyA1234567890abcdef"),
+    ("postgres://admin:hunter2pw@db.internal:5432/app", "hunter2pw"),
+    ("https://user:p4ssw0rd@example.com/x", "p4ssw0rd"),
+    (_j("api", "_key=", "abcd1234efgh5678 failed"), "abcd1234efgh5678"),
+    (_j("retry with api", "key: ", "zzzz9999yyyy"), "zzzz9999yyyy"),
+    (_j("pass", "word=", "correct-horse-battery"), "correct-horse-battery"),
+    (_j("tok", "en = ", "9f8e7d6c5b4a"), "9f8e7d6c5b4a"),
+]
+REDACTION_NEGATIVE: list[str] = [
+    "a student idea about invoices",
+    "max_tokens=100 and token_count: 5",
+    "the keyboard key was pressed",
+    "see https://example.com/path?x=1",
+    "skill-based sk-short",
+    "email-like text without at sign",
+    "cost 0.0123 usd over 12 steps",
+    "card_aaaaaaaa#c3 is evidence",
+]

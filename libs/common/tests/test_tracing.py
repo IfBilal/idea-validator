@@ -89,3 +89,30 @@ def test_an_active_run_keeps_counting_after_other_runs_come_and_go() -> None:
 
 def test_the_default_bound_is_generous_for_real_use() -> None:
     assert Tracer("x").max_runs >= 10_000
+
+
+def test_error_text_never_carries_exception_payloads_such_as_validation_input() -> None:
+    from pydantic import BaseModel, ValidationError
+
+    class M(BaseModel):
+        n: int
+
+    tracer, records = make()
+    with pytest.raises(ValidationError), tracer.span("a", "tool_call", run_id="r"):
+        M.model_validate({"n": "my secret startup idea about invoices"})
+    error = records[0].error or ""
+    assert "invoices" not in error
+    assert error.startswith("ValidationError")
+
+
+def test_domain_error_messages_are_kept_but_capped_and_redacted() -> None:
+    from common.errors import UpstreamError
+
+    tracer, records = make()
+    long = "x" * 1000 + " Bearer abc.def.ghi"
+    with pytest.raises(UpstreamError), tracer.span("a", "tool_call", run_id="r"):
+        raise UpstreamError(long, {"body": "idea text"})
+    error = records[0].error or ""
+    assert error.startswith("UpstreamError: ")
+    assert len(error) <= 260
+    assert "idea text" not in error

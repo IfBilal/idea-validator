@@ -38,7 +38,10 @@ SERVICES: dict[str, dict[str, Any]] = {
         "secrets": ["DATABASE_URL"],
         # full trace records as JSONL on a PVC (docs/harness/12 section 1); one writer pod, so the
         # ReadWriteOnce volume is handed over with Recreate instead of a surge pod
+        # 1Gi: records are capped at 16 KB and runs at 8 MiB / 5000 records, a typical run is
+        # ~100 KB, so 1Gi holds thousands of runs; the retention CronJob keeps 14 days
         "pvc": {"name": "agentops-traces", "mount": "/var/lib/agentops/traces", "storage": "1Gi"},
+        "grace_s": 30,  # finish the in-flight append (flock + fsync) before the pod is killed
     },
 }
 
@@ -113,6 +116,7 @@ JOBS: dict[str, dict[str, Any]] = {
         "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
+        "deadline_s": 300,  # a stuck migration must not hold the deploy forever
     },
     # M6i seed: restores the newest snapshot baked into the ingestion image through M6 /ingest.
     # `manual`: kept out of the kustomization (it is applied by `make seed`, which first builds
@@ -159,6 +163,17 @@ CRONJOBS: dict[str, dict[str, Any]] = {
         "command": ["python", "-m", "agentops.drift", "--post"],
         "calls": ["agentops", "kb"],
         "secrets": ["INTERNAL_TOKEN"],
+    },
+    # M13 retention: deletes trace files and index rows older than `days` (the PVC is
+    # finite). Needs Postgres and the trace PVC only: no INTERNAL_TOKEN, no other service.
+    "agentops-retention": {
+        "image": "agentops",
+        "module": "m13",
+        "schedule": "30 3 * * *",
+        "command": ["python", "-m", "agentops.retention", "--days", "14"],
+        "calls": ["postgres"],
+        "secrets": ["DATABASE_URL"],
+        "pvc": True,
     },
 }
 CRONJOB_CALLS = ["postgres", "tools"]
@@ -316,6 +331,8 @@ def _deployment(name: str) -> str:
             "ports": [{"name": "http", "port": PORT, "targetPort": "http"}],
         },
     }
+    if "grace_s" in svc:
+        deployment["spec"]["template"]["spec"]["terminationGracePeriodSeconds"] = svc["grace_s"]
     docs = [deployment, service]
     if pvc := svc.get("pvc"):
         pod = deployment["spec"]["template"]["spec"]
@@ -620,6 +637,7 @@ def _job(name: str) -> str:
         "metadata": _meta(name),
         "spec": {
             "backoffLimit": spec.get("backoff_limit", 6),
+            **({"activeDeadlineSeconds": spec["deadline_s"]} if "deadline_s" in spec else {}),
             "ttlSecondsAfterFinished": 3600,
             "template": {
                 "metadata": {"labels": {"app": name}},
@@ -662,7 +680,11 @@ def _cronjob(name: str) -> str:
         {"name": "LOG_LEVEL", "value": "INFO"},
     ]
     if "calls" in spec:  # not a scout: only the services it names, only the secrets it lists
-        env += [{"name": f"{c.upper()}_URL", "value": _url(c)} for c in sorted(spec["calls"])]
+        env += [
+            {"name": f"{c.upper()}_URL", "value": _url(c)}
+            for c in sorted(spec["calls"])
+            if c != "postgres"
+        ]
         keys = list(spec["secrets"])
     else:
         env.append({"name": "TOOLS_URL", "value": _url("tools")})
@@ -713,6 +735,22 @@ def _cronjob(name: str) -> str:
             {"name": "app-config", "configMap": {"name": "app-config"}},
         ],
     }
+    if spec.get("pvc"):
+        pvc = SERVICES["agentops"]["pvc"]
+        env.append({"name": "TRACE_DIR", "value": pvc["mount"]})
+        container["volumeMounts"].append({"name": "data", "mountPath": pvc["mount"]})
+        pod["volumes"].append({"name": "data", "persistentVolumeClaim": {"claimName": pvc["name"]}})
+        # a ReadWriteOnce volume can only be attached on one node: run beside the agentops pod
+        pod["affinity"] = {
+            "podAffinity": {
+                "requiredDuringSchedulingIgnoredDuringExecution": [
+                    {
+                        "labelSelector": {"matchLabels": {"app": "agentops"}},
+                        "topologyKey": "kubernetes.io/hostname",
+                    }
+                ]
+            }
+        }
     cron = {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
