@@ -209,6 +209,32 @@ def build_verdict_request(
     }
 
 
+REPLAY_DECISION = "m11_verdict"  # name of the trace decision that M13 replay reads
+_REPLAY_SCORE_KEYS = ("dimension", "score", "confidence", "evidence_ids")
+
+
+def replay_record(
+    request: Mapping[str, Any], verdict: Mapping[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """What M13 needs to re-run M11 offline: the engine inputs and the verdict M11 returned.
+
+    Only numbers and ids are kept: the scorer's free-text ``reason`` and ``features`` stay out of
+    the trace (docs/harness/13 §8). The summary is copied from M11's answer, never computed here.
+    """
+    engine_input = {
+        "idea_id": request.get("idea_id"),
+        "version": request.get("version"),
+        "run_id": request.get("run_id"),
+        "profile": request.get("profile"),
+        "scores": [{k: s.get(k) for k in _REPLAY_SCORE_KEYS} for s in request.get("scores") or []],
+        "gate_inputs": request.get("gate_inputs"),
+        "objections_accepted": request.get("objections_accepted") or [],
+    }
+    summary = {k: verdict.get(k) for k in ("verdict", "stability", "score", "confidence", "gates")}
+    summary["versions"] = verdict.get("versions")
+    return engine_input, summary
+
+
 # ---- clarifying questions ------------------------------------------------------------------
 def pending_unknowns(
     extra: Mapping[str, Any],

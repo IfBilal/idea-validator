@@ -15,9 +15,17 @@ async def test_health_identifies_the_service() -> None:
     assert body["module"] == "M13"
 
 
-async def test_ready_is_200_with_no_dependencies() -> None:
+async def test_ready_is_503_without_a_database() -> None:
     async with _client() as client:
-        assert (await client.get("/ready")).status_code == 200
+        response = await client.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["checks"]["database"] is False
+
+
+async def test_trace_endpoints_answer_503_when_the_store_is_not_configured() -> None:
+    async with _client() as client:
+        response = await client.get("/runs", headers={"X-Internal-Token": "x"})
+    assert response.status_code in (401, 503)
 
 
 async def test_metrics_are_exposed() -> None:

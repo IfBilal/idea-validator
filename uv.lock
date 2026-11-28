@@ -715,13 +715,21 @@ name = "idea-validator-agentops"
 version = "0.1.0"
 source = { editable = "services/agentops" }
 dependencies = [
+    { name = "alembic" },
+    { name = "asyncpg" },
     { name = "idea-validator-common" },
+    { name = "idea-validator-verdict" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "alembic", specifier = ">=1.14" },
+    { name = "asyncpg", specifier = ">=0.30" },
     { name = "idea-validator-common", editable = "libs/common" },
+    { name = "idea-validator-verdict", editable = "services/verdict" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 

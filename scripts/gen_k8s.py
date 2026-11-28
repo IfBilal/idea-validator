@@ -32,7 +32,14 @@ SERVICES: dict[str, dict[str, Any]] = {
     "scorer": {"module": "m10", "replicas": 1, "secrets": []},
     "verdict": {"module": "m11", "replicas": 2, "secrets": []},
     "critic": {"module": "m12", "replicas": 1, "secrets": []},
-    "agentops": {"module": "m13", "replicas": 1, "secrets": ["DATABASE_URL"]},
+    "agentops": {
+        "module": "m13",
+        "replicas": 1,
+        "secrets": ["DATABASE_URL"],
+        # full trace records as JSONL on a PVC (docs/harness/12 section 1); one writer pod, so the
+        # ReadWriteOnce volume is handed over with Recreate instead of a surge pod
+        "pvc": {"name": "agentops-traces", "mount": "/var/lib/agentops/traces", "storage": "1Gi"},
+    },
 }
 
 # caller -> callees (docs/harness/03 section 1 and 16 section 5). Every service also posts traces to agentops.
@@ -97,6 +104,12 @@ JOBS: dict[str, dict[str, Any]] = {
     },
     "migrate-scouts": {  # the scouts schema (raw_pages, scout_state): own Alembic history
         "image": "scouts",
+        "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
+        "secrets": ["DATABASE_URL"],
+        "calls": ["postgres"],
+    },
+    "migrate-agentops": {  # the ops schema (traces_index): own Alembic history
+        "image": "agentops",
         "command": ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"],
         "secrets": ["DATABASE_URL"],
         "calls": ["postgres"],
@@ -206,6 +219,8 @@ def _env(name: str) -> list[dict[str, Any]]:
             continue
         var = URL_ENV.get((name, callee), f"{callee.upper()}_URL")
         env.append({"name": var, "value": _url(callee)})
+    if pvc := SERVICES[name].get("pvc"):
+        env.append({"name": "TRACE_DIR", "value": pvc["mount"]})
     for key in ["INTERNAL_TOKEN", *SERVICES[name]["secrets"]]:
         env.append(
             {"name": key, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}}}
@@ -291,7 +306,24 @@ def _deployment(name: str) -> str:
             "ports": [{"name": "http", "port": PORT, "targetPort": "http"}],
         },
     }
-    return _dump(deployment, service)
+    docs = [deployment, service]
+    if pvc := svc.get("pvc"):
+        pod = deployment["spec"]["template"]["spec"]
+        container["volumeMounts"].append({"name": "data", "mountPath": pvc["mount"]})
+        pod["volumes"].append({"name": "data", "persistentVolumeClaim": {"claimName": pvc["name"]}})
+        deployment["spec"]["strategy"] = {"type": "Recreate"}
+        docs.append(
+            {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": _meta(pvc["name"], svc["module"]),
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": pvc["storage"]}},
+                },
+            }
+        )
+    return _dump(*docs)
 
 
 def _ui_workload() -> str:

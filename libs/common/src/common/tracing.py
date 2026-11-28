@@ -1,6 +1,6 @@
 """Trace spans: every agent step, tool call, model call and decision becomes a TraceRecord.
 
-Records go to stdout as a JSON line and to an optional sink (the M13 client, added in Phase 2).
+Records go to stdout as a JSON line and to an optional sink (``common.trace_sink.AgentOpsSink``).
 Tracing must never break a run, so sink failures are logged and swallowed.
 """
 
@@ -23,13 +23,16 @@ DEFAULT_MAX_RUNS = 10_000  # step counters kept per process; the least recently 
 Sink = Callable[[TraceRecord], None]
 
 
-def _bounded(value: Any) -> Any:
-    """Redact secrets and cap payloads at 4 KB (docs/harness/12 §1)."""
+def bound_payload(value: Any) -> Any:
+    """Redact secrets and cap payloads at 4 KB (docs/harness/12 §1). M13 applies it again."""
     safe = redact(value)
     text = json.dumps(safe, default=str, sort_keys=True)
     if len(text) <= MAX_PAYLOAD_CHARS:
         return json.loads(text)
     return {"_truncated": True, "preview": text[:MAX_PAYLOAD_CHARS]}
+
+
+_bounded = bound_payload
 
 
 class SpanHandle:
