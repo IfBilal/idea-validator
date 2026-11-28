@@ -41,6 +41,14 @@ import { RunAccepted } from "./schemas";
 
 const ideaPath = (ideaId: string) => `/ideas/${encodeURIComponent(ideaId)}`;
 
+/** `count` is 1..10; `niche` null means "anything that fits my profile". */
+export const startDiscover = (body: { niche: string | null; count: number; deep_search: boolean }, key: string) =>
+  apiFetch("/discover", RunAccepted, { method: "POST", json: body, headers: { "Idempotency-Key": key } });
+
+/** One stored version of an idea. The shape is validated by the card parser that renders it. */
+export const getIdeaVersion = (ideaId: string, version: number): Promise<unknown> =>
+  apiFetch(`${ideaPath(ideaId)}/versions/${version}`, z.unknown());
+
 /** Challenge one claim of a stored verdict version (U8). `key` makes a double click start one run. */
 export const startChallenge = (ideaId: string, body: { version: number; claim_id: string }, key: string) =>
   apiFetch(`${ideaPath(ideaId)}/challenge`, RunAccepted, { method: "POST", json: body, headers: { "Idempotency-Key": key } });

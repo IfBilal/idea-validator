@@ -26,6 +26,7 @@ validated with unknown fields refused. Errors use the standard envelope (`{"erro
 | `GET /runs/{id}` | `{run_id, kind, state, progress, spent, budget, pending_question, pending_approval, result, error}`; `result` is M3's card verbatim |
 | `POST /runs/{id}/answer` | `{question_id, answer}` (a number, or a numeric string of at most 1000 characters; M3 asks numeric questions) -> 202 `{run_id, state}` |
 | `POST /runs/{id}/approve` | `{approval_id, decision: approve|decline}` -> 202 |
+| `GET /runs/{id}/trace?flat=` | the recorded trace of the caller's own run, proxied from M13 `GET /runs/{id}/trace` (ordered tree, `totals`, `by_agent`; `flat=true` for the raw ordered list). M2 confirms ownership first, so an unknown and a foreign run both give the same 404 and never reach M13. Answers larger than `MAX_TRACE_BYTES` or naming another run are refused (502, generic); M13 failures are generic 502/504; 503 when `AGENTOPS_URL` is unset. Own limit `USER_TRACE_PER_MIN` (default 30). M13's `GET /runs` (every user's runs) is never proxied |
 | `GET /runs/{id}/events` | SSE, see below |
 | `GET /ideas?limit=1..50&cursor=` | `{items:[{idea_id,title,source,latest_version,latest_verdict,score,updated_at}], next_cursor}` |
 | `GET /ideas/{id}/versions`, `GET /ideas/{id}/versions/{v}` | history; the single version has `card` (the stored verdict card, `null` until validated) |
@@ -65,6 +66,7 @@ Per IP on every route (`IP_PER_MIN`, default 100). Per user: every authenticated
 | `ORCHESTRATOR_URL` | M3 base URL; the gateway also needs `/ready` of M3 for its own `/ready` |
 | `USER_RUNS_PER_MIN` / `USER_PER_MIN` / `SSE_PER_MIN` / `SSE_HEARTBEAT_S` / `SSE_MAX_S` | Defaults 10 / 120 / 30 / 15 / 900 |
 | `SSE_STREAMS_PER_USER` / `SSE_STREAMS_GLOBAL` / `SSE_POOL_SIZE` / `SSE_MAX_FRAME_BYTES` | Defaults 3 / 100 / 110 / 65536 |
+| `AGENTOPS_URL` / `MAX_TRACE_BYTES` / `USER_TRACE_PER_MIN` | M13 base URL (optional: unset means the trace route answers 503), response cap (default 1 MiB), per-user trace limit (default 30). The gateway's `/ready` does not check M13: tracing being down must not take the API out of rotation |
 | `PROFILE_URL` | M2 base URL (cluster DNS), e.g. `http://profile.idea-validator.svc.cluster.local:8000` |
 | `INTERNAL_TOKEN` | Secret shared with M2 (`X-Internal-Token`) |
 | `REDIS_URL` | Rate-limit counters and the `run:{id}` event channels (Secret) |

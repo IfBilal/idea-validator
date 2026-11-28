@@ -11,6 +11,10 @@ class Settings(ServiceSettings):
     service_name: str = "agentops"
     database_url: SecretStr | None = None
     trace_dir: Path = Path("/var/lib/agentops/traces")
+    # prompts/, rubrics/, config/ and registry.lock.json as shipped in the image (GET /registry)
+    registry_dir: Path = Path("/app/registry")
+    drift_dir: Path | None = None  # drift reports; default: <trace_dir>/drift
+    max_drift_bytes: int = 256 * 1024
     max_batch: int = 100  # records per POST /traces
     max_body_bytes: int = 2 * 1024 * 1024
     max_record_bytes: int = 16 * 1024  # one sanitised record; larger ones are rejected

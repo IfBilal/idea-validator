@@ -177,6 +177,11 @@ def make_router(
     async def get_run(run_id: RunId, user_id: User) -> RunView:
         return await runs.get(user_id, run_id)
 
+    @router.get("/runs/{run_id}/trace")
+    async def run_trace(run_id: RunId, user_id: User, flat: bool = False) -> dict[str, Any]:
+        await user_limit("user_trace", settings.user_trace_per_min, user_id)
+        return await runs.trace(user_id, run_id, flat)
+
     @router.post("/runs/{run_id}/answer", status_code=202, response_model=StepAccepted)
     async def answer(run_id: RunId, body: AnswerBody, user_id: User) -> StepAccepted:
         return await runs.answer(user_id, run_id, body)

@@ -13,6 +13,7 @@ class Settings(ServiceSettings):
     service_name: str = "gateway"
     profile_url: str | None = None  # M2, e.g. http://profile.idea-validator.svc.cluster.local:8000
     orchestrator_url: str | None = None  # M3, e.g. http://orchestrator.idea-validator.svc:8000
+    agentops_url: str | None = None  # M13; optional: without it GET /runs/{id}/trace is a 503
     redis_url: SecretStr | None = None  # rate-limit counters and the run event channels
     jwt_secret: SecretStr | None = None
     jwt_ttl_s: int = 3600
@@ -27,6 +28,8 @@ class Settings(ServiceSettings):
     register_per_min: int = 10
     # Starting a run costs money (LLM and fetch budget), so it has its own per-user limit.
     user_runs_per_min: int = Field(default=10, ge=1)
+    user_trace_per_min: int = Field(default=30, ge=1)  # traces are big: tighter than other reads
+    max_trace_bytes: int = Field(default=1024 * 1024, ge=1024)
     sse_per_min: int = Field(default=30, ge=1)  # new event streams per user and minute
     user_per_min: int = Field(default=120, ge=1)  # every authenticated request, per user
     sse_streams_per_user: int = Field(default=3, ge=1)  # open streams at one time
