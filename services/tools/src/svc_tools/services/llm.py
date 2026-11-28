@@ -30,6 +30,10 @@ from .url_policy import CheckedUrl, UrlPolicy
 MAX_RETRIES = 2
 BACKOFF_S = 0.5
 RETRY_STATUSES = frozenset({500, 502, 503, 504})
+# A provider 429 with a short retry-after is waited out (the token-per-minute limit of a free tier is
+# hit when several scorers run at once); a longer one is the caller's call and is passed on at once.
+RATE_WAIT_MAX_S = 20
+MAX_RATE_WAITS = 3
 MAX_REPLY_BYTES = 2_000_000
 MAX_COUNT = 10_000_000
 MILLION = Decimal(1_000_000)
@@ -179,7 +183,8 @@ class LlmService:
     async def _send_with_retries(
         self, checked: CheckedUrl, headers: dict[str, str], body: bytes, alias: Alias
     ) -> RawResponse:
-        for attempt in range(MAX_RETRIES + 1):
+        attempt = rate_waits = 0
+        while attempt <= MAX_RETRIES:
             last = attempt == MAX_RETRIES
             try:
                 raw = await self._poster.post(
@@ -189,14 +194,24 @@ class LlmService:
                 if last:
                     raise
                 await self._sleep(BACKOFF_S * 2**attempt)
+                attempt += 1
                 continue
             if raw.status in RETRY_STATUSES:
                 if last:
                     raise UpstreamError("the model provider keeps failing", {"status": raw.status})
                 await self._sleep(BACKOFF_S * 2**attempt)
+                attempt += 1
                 continue
             if raw.status == 429:
                 after = raw.headers.get("retry-after", "")
+                if (
+                    after.isdigit()
+                    and int(after) <= RATE_WAIT_MAX_S
+                    and rate_waits < MAX_RATE_WAITS
+                ):
+                    rate_waits += 1
+                    await self._sleep(float(int(after)))
+                    continue
                 raise RateLimited(
                     "the model provider is rate limiting us",
                     {"retry_after": int(after) if after.isdigit() else 30},
