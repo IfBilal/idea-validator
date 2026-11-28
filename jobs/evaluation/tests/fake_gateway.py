@@ -27,31 +27,40 @@ def good_card(verdict: str | None = "GO", **over: Any) -> dict[str, Any]:
     return card
 
 
-def good_trace() -> list[dict[str, Any]]:
+def good_trace(verdict: str = "GO") -> list[dict[str, Any]]:
+    """Flat records as M13 returns them through the gateway (``?flat=true``)."""
     return [
         {
             "step_id": 1,
+            "service": "orchestrator",
             "agent": "orchestrator",
             "kind": "tool_call",
             "tool": "m6.search",
+            "ts": "2026-11-28T02:00:01Z",
             "latency_ms": 20,
             "cost_usd": 0.0,
         },
         {
             "step_id": 2,
-            "agent": "validators",
-            "kind": "tool_call",
-            "tool": "m9.score_all",
+            "service": "validators",
+            "agent": "scorer_demand",
+            "kind": "llm_call",
+            "tool": None,
+            "ts": "2026-11-28T02:00:03Z",
             "latency_ms": 400,
             "cost_usd": 0.01,
         },
         {
             "step_id": 3,
+            "service": "orchestrator",
             "agent": "orchestrator",
-            "kind": "tool_call",
-            "tool": "m11.verdict",
+            "kind": "decision",
+            "name": "m11_verdict",
+            "tool": "transition",
+            "ts": "2026-11-28T02:00:04Z",
             "latency_ms": 5,
             "cost_usd": 0.0,
+            "output": {"verdict": verdict},
         },
     ]
 
@@ -70,6 +79,8 @@ class FakeGateway:
         self.runs: dict[str, dict[str, Any]] = {}
         self.polls: dict[str, int] = {}
         self.idem_keys: list[str] = []
+        self.trace_calls: list[str] = []
+        self.trace_auth: list[str] = []
         self.login_status = 200
 
     def transport(self) -> httpx.MockTransport:
@@ -100,6 +111,8 @@ class FakeGateway:
         if path == "/validate":
             return self._validate(request, body)
         if path.endswith("/trace"):
+            self.trace_auth.append(request.headers.get("authorization", ""))
+            assert request.url.params.get("flat") == "true"
             return self._trace(path.split("/")[2])
         if path.endswith("/answer"):
             self.answers.append(body)
@@ -167,8 +180,15 @@ class FakeGateway:
         if mode == "missing":
             return self._json(404, {})
         if mode == "bad":
-            return self._json(200, {"records": ["x"]})
+            return self._json(200, {"run_id": run_id, "records": ["x"]})
+        if mode == "empty":
+            return self._json(200, {"run_id": run_id, "records": []})
+        if mode == "foreign":
+            return self._json(200, {"run_id": "other", "records": good_trace()})
         if mode == "down":
             return self._json(503, {})
-        records = self.runs[run_id]["spec"].get("trace_records", good_trace())
-        return self._json(200, records)
+        spec = self.runs[run_id]["spec"]
+        verdict = (spec.get("card") or {}).get("verdict") or spec.get("verdict", "GO")
+        records = spec.get("trace_records", good_trace(verdict))
+        self.trace_calls.append(run_id)
+        return self._json(200, {"run_id": run_id, "records": records})

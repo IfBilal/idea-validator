@@ -25,8 +25,6 @@ ENV = {
     "GATEWAY_URL": "http://gw",
     "EVAL_USER": "ev@example.com",
     "EVAL_PASSWORD": "s3cret-pw-x",
-    "AGENTOPS_URL": "http://ops",
-    "INTERNAL_TOKEN": "t",
 }
 
 
@@ -86,7 +84,7 @@ def test_end_to_end_metrics_and_final_json_line(
     assert doc["confusion_matrix"][2][0] == 1 and doc["n_errors"] == 0
     assert [r["id"] for r in doc["rows"]] == ["L0", "L1", "L2", "L3"]
     assert doc["behaviour"]["search_kb_before_scoring"] == 1.0
-    assert doc["cost_per_verdict_usd"] == 0.01 and doc["agent_latency_ms"]["validators"] == 400
+    assert doc["cost_per_verdict_usd"] == 0.01 and doc["agent_latency_ms"]["scorer_demand"] == 400
     last = capsys.readouterr().out.strip().splitlines()[-1]
     assert json.loads(last)["agreement"] == 0.75
     assert not (tmp_path / "out" / "baseline.json").exists()  # never automatic
@@ -223,13 +221,21 @@ def test_result_feeds_the_existing_gate(tmp_path: Path) -> None:
     assert cli_main(["gate", str(out / "baseline.json"), str(current)]) == 0
 
 
-def test_no_trace_source_is_stated_and_fails_trace_behaviour(tmp_path: Path) -> None:
-    env = {k: v for k, v in ENV.items() if k != "INTERNAL_TOKEN"}
-    assert (
-        invoke(tmp_path, FakeGateway(), "--labelled", str(labelled(tmp_path, ["GO"])), env=env) == 0
-    )
+def test_missing_trace_fails_trace_behaviour(tmp_path: Path) -> None:
+    fake = FakeGateway({"eval L0": {"trace": "missing"}})
+    assert invoke(tmp_path, fake, "--labelled", str(labelled(tmp_path, ["GO"]))) == 0
     doc = results(tmp_path)
     assert doc["behaviour"]["search_kb_before_scoring"] == 0.0 and doc["traces_available"] == 0
+    assert doc["behaviour"]["budget_kept"] == 0.0 and doc["rows"][0]["status"] == "ok"
+
+
+def test_traces_come_only_through_the_gateway_with_the_users_token(tmp_path: Path) -> None:
+    fake = FakeGateway()
+    assert invoke(tmp_path, fake, "--labelled", str(labelled(tmp_path, ["GO", "GO"]))) == 0
+    assert len(fake.trace_calls) == 2 and set(fake.trace_auth) == {"Bearer tok"}
+    assert all("x-internal-token" not in k for k in ENV) and "INTERNAL_TOKEN" not in ENV
+    doc = results(tmp_path)
+    assert doc["traces_available"] == 2 and doc["behaviour"]["search_kb_before_scoring"] == 1.0
 
 
 def test_report_with_no_rows_for_a_check_is_vacuously_complete() -> None:

@@ -39,13 +39,6 @@ spec:
         env:
         - name: GATEWAY_URL
           value: http://gateway:8000
-        - name: AGENTOPS_URL
-          value: http://agentops:8000
-        - name: INTERNAL_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: INTERNAL_TOKEN
         - name: EVAL_USER
           valueFrom:
             secretKeyRef:

@@ -33,6 +33,8 @@ class RunConfig:
     poll_s: float = 2.0
     item_retries: int = 2
     max_cost_usd: float = 0.05
+    trace_tries: int = 3
+    trace_wait_s: float = 1.0
     run_tag: str = "eval"
 
 
@@ -131,19 +133,32 @@ async def _drive(
         await sleep(cfg.poll_s)
 
 
-async def _fetch_trace(trace_gateway: Gateway | None, run_id: str) -> list[dict[str, Any]] | None:
-    if trace_gateway is None:
-        return None
-    try:
-        data = await trace_gateway.request("GET", f"/runs/{run_id}/trace")
-    except (NotFoundError, GatewayError):
-        return None
-    records = data.get("records") if isinstance(data, dict) else data
-    if not isinstance(records, list) or not records:
-        return None
-    if not all(isinstance(r, dict) for r in records):
-        return None
-    return records
+async def _fetch_trace(
+    gateway: Gateway, session: Session, run_id: str, cfg: RunConfig, sleep: Sleep
+) -> list[dict[str, Any]] | None:
+    """The run's flat trace through the gateway with the eval user's own token.
+
+    Records reach M13 in batches a moment after the run ends, so an empty or 404 answer is
+    retried ``cfg.trace_tries`` times. ``None`` means no usable trace (the checks then fail).
+    """
+    for attempt in range(cfg.trace_tries):
+        try:
+            data = await gateway.request(
+                "GET", f"/runs/{run_id}/trace?flat=true", token=session.token
+            )
+        except (NotFoundError, GatewayError):
+            data = None
+        records = data.get("records") if isinstance(data, dict) else data
+        if (
+            isinstance(records, list)
+            and records
+            and all(isinstance(r, dict) for r in records)
+            and not (isinstance(data, dict) and data.get("run_id") not in (None, run_id))
+        ):
+            return records
+        if attempt + 1 < cfg.trace_tries:
+            await sleep(cfg.trace_wait_s)
+    return None
 
 
 def _card(view: Mapping[str, Any]) -> dict[str, Any]:
@@ -168,7 +183,6 @@ def _card(view: Mapping[str, Any]) -> dict[str, Any]:
 
 async def _attempt(
     gateway: Gateway,
-    trace_gateway: Gateway | None,
     session: Session,
     item: LabelledItem,
     cfg: RunConfig,
@@ -196,7 +210,7 @@ async def _attempt(
         ) from None
     card = _card(view)
     system = str(card["verdict"])
-    trace = await _fetch_trace(trace_gateway, run_id)
+    trace = await _fetch_trace(gateway, session, run_id, cfg, sleep)
     raw_spent, raw_budget = view.get("spent"), view.get("budget")
     spent: dict[str, Any] = raw_spent if isinstance(raw_spent, dict) else {}
     budget: dict[str, Any] = raw_budget if isinstance(raw_budget, dict) else {}
@@ -221,7 +235,6 @@ async def _attempt(
 
 async def run_item(
     gateway: Gateway,
-    trace_gateway: Gateway | None,
     session: Session,
     item: LabelledItem,
     cfg: RunConfig,
@@ -242,7 +255,7 @@ async def run_item(
     for attempt in range(cfg.item_retries + 1):
         attempts = attempt + 1
         try:
-            row = await _attempt(gateway, trace_gateway, session, item, cfg, sleep, attempt)
+            row = await _attempt(gateway, session, item, cfg, sleep, attempt)
         except ItemError as exc:
             code = exc.code
             if not exc.retryable:
@@ -276,7 +289,6 @@ async def run_all(
     items: Sequence[LabelledItem],
     sessions: Sequence[Session],
     gateway: Gateway,
-    trace_gateway: Gateway | None,
     cfg: RunConfig,
     *,
     on_row: Callable[[Row], Awaitable[None] | None] | None = None,
@@ -294,7 +306,7 @@ async def run_all(
                 item = queue.get_nowait()
             except asyncio.QueueEmpty:
                 return
-            row = await run_item(gateway, trace_gateway, session, item, cfg, sleep=sleep)
+            row = await run_item(gateway, session, item, cfg, sleep=sleep)
             rows[item.id] = row
             if on_row is not None:
                 result = on_row(row)

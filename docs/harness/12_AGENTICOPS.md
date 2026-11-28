@@ -44,7 +44,7 @@ Outputs `eval/results/<timestamp>.json`:
   budget kept, injection resisted (poisoned items in the set), max debate rounds ≤ 3.
 - Cost per verdict, latency per agent, fallbacks.
 Implementation note (P9-T04): the runner is `python -m evaluation.run` (see `jobs/evaluation/README.md`). It drives
-the public gateway Validate path with a dedicated eval user (no `run_kind=eval` exists in M3; each item is a new
+the public gateway Validate path (traces through the gateway's `GET /runs/{id}/trace?flat=true` with the eval user's JWT; no internal token, egress to the gateway only) with a dedicated eval user (no `run_kind=eval` exists in M3; each item is a new
 idea so the cache cannot answer), declines every approval, and reports errored items instead of dropping them.
 The Job is manual (`k8s/jobs/eval.yaml`, started by `make eval` / the nightly Jenkins stage) and hands its result
 out as the last log line (`make eval-results`). `baseline.json` is written only by an explicit `--write-baseline`.

@@ -33,7 +33,7 @@ async def run_one(fake: FakeGateway, item: LabelledItem, cfg: RunConfig = CFG) -
     async with httpx.AsyncClient(base_url="http://gw", transport=fake.transport()) as client:
         gw = Gateway(client, sleep=no_sleep)
         session = await sign_in(gw, "e+w0@example.com", "pw")
-        return await run_item(gw, gw, session, item, cfg, sleep=no_sleep)
+        return await run_item(gw, session, item, cfg, sleep=no_sleep)
 
 
 @pytest.mark.parametrize("verdict", ["GO", "PIVOT", "NO-GO", "INSUFFICIENT_EVIDENCE"])
@@ -43,7 +43,7 @@ async def test_every_verdict_is_passed_through_untouched(verdict: str) -> None:
     assert row["status"] == "ok" and row["system"] == verdict
     assert row["behaviour"]["search_kb_before_scoring"] is True
     assert row["run_id"].startswith("run_L1") and row["trace_available"] is True
-    assert row["cost_usd"] == 0.01 and row["agent_latency_ms"]["validators"] == 400
+    assert row["cost_usd"] == 0.01 and row["agent_latency_ms"]["scorer_demand"] == 400
 
 
 async def test_registers_the_user_once_when_login_is_refused() -> None:
@@ -115,7 +115,7 @@ async def test_malformed_cards_are_errors(card: Any, code: str) -> None:
     assert row["status"] == "error" and row["error"] == code
 
 
-@pytest.mark.parametrize("mode", ["missing", "bad", "down"])
+@pytest.mark.parametrize("mode", ["missing", "bad", "down", "empty", "foreign"])
 async def test_missing_trace_keeps_the_verdict_but_fails_trace_checks(mode: str) -> None:
     row = await run_one(FakeGateway({"eval L1": {"trace": mode}}), make_item())
     assert row["status"] == "ok" and row["system"] == "GO" and row["trace_available"] is False
@@ -176,7 +176,7 @@ async def test_run_all_orders_rows_by_input_and_bounds_workers() -> None:
         sessions = [await sign_in(gw, slot_email("e@example.com", s), "pw") for s in range(2)]
         seen: list[str] = []
         rows = await run_all(
-            items, sessions, gw, gw, CFG, on_row=lambda r: seen.append(r["id"]), sleep=no_sleep
+            items, sessions, gw, CFG, on_row=lambda r: seen.append(r["id"]), sleep=no_sleep
         )
     assert [r["id"] for r in rows] == [i.id for i in items]
     assert sorted(seen) == sorted(i.id for i in items)

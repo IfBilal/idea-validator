@@ -656,9 +656,6 @@ spec:
           app: critic
     - podSelector:
         matchLabels:
-          app: eval
-    - podSelector:
-        matchLabels:
           app: gateway
     - podSelector:
         matchLabels:
@@ -939,13 +936,6 @@ spec:
   - Egress
   ingress: []
   egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: agentops
-    ports:
-    - protocol: TCP
-      port: 8000
   - to:
     - podSelector:
         matchLabels:

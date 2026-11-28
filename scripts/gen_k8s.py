@@ -117,7 +117,7 @@ JOBS: dict[str, dict[str, Any]] = {
     },
     # M13 evaluation: runs the labelled set through the gateway like a user (docs/harness/12 section 5).
     # `manual` (applied by scripts/run_eval.sh / make eval, never by a plain deploy): it spends LLM budget.
-    # It reaches the gateway (the browser-facing API) and M13 for traces, nothing else; the internet stays M5's.
+    # It reaches only the gateway (the user-facing API, traces included), holds no internal token; the internet stays M5's.
     # The result is the last stdout line (`kubectl logs`); /tmp is an emptyDir (no PVC).
     "eval": {
         "image": "evaluation",
@@ -132,8 +132,7 @@ JOBS: dict[str, dict[str, Any]] = {
         ],
         "secrets": [],
         "optional_secrets": ["EVAL_USER", "EVAL_PASSWORD"],  # random defaults: create_secrets.py
-        "token": True,  # INTERNAL_TOKEN: the M13 trace read
-        "calls": ["gateway", "agentops"],
+        "calls": ["gateway"],  # traces too: GET /runs/{id}/trace with the eval user's own token
         "manual": True,
         "backoff_limit": 0,  # a rerun is a new spend: a human or Jenkins starts it again
         "deadline_s": 7200,

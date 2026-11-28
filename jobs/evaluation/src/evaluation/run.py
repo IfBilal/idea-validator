@@ -37,7 +37,6 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("eval/results"))
     p.add_argument("--limit", type=int, default=None, help="first N items only")
     p.add_argument("--base-url", default=None, help="gateway URL (default $GATEWAY_URL)")
-    p.add_argument("--trace-url", default=None, help="M13 URL for traces (default $AGENTOPS_URL)")
     p.add_argument("--concurrency", type=int, default=2)
     p.add_argument("--item-timeout", type=float, default=900.0)
     p.add_argument("--poll-interval", type=float, default=2.0)
@@ -110,52 +109,25 @@ async def _execute(
         run_tag=now().strftime("%m%d%H%M%S"),
     )
     started = now()
-    trace_url = args.trace_url or env.get("AGENTOPS_URL", "")
-    token = env.get("INTERNAL_TOKEN", "")
     timeout = httpx.Timeout(30.0)
     async with httpx.AsyncClient(base_url=base, timeout=timeout, transport=transport) as client:
         gateway = Gateway(client, retries=cfg.item_retries, sleep=sleep)
-        trace_client = (
-            httpx.AsyncClient(base_url=trace_url, timeout=timeout, transport=transport)
-            if trace_url and token
-            else None
-        )
+        sessions: list[Session] = []
         try:
-            trace_gateway = (
-                Gateway(
-                    trace_client,
-                    retries=cfg.item_retries,
-                    sleep=sleep,
-                    default_headers={"X-Internal-Token": token},
-                )
-                if trace_client is not None
-                else None
-            )
-            if trace_gateway is None:
-                _say("no trace source (AGENTOPS_URL and INTERNAL_TOKEN): trace checks will fail")
-            sessions: list[Session] = []
-            try:
-                for slot in range(min(cfg.concurrency, max(1, len(todo)))):
-                    sessions.append(await sign_in(gateway, slot_email(user, slot), password))
-            except GatewayError as exc:
-                _say(f"cannot sign in the eval user: {exc}")
-                return 3
+            for slot in range(min(cfg.concurrency, max(1, len(todo)))):
+                sessions.append(await sign_in(gateway, slot_email(user, slot), password))
+        except GatewayError as exc:
+            _say(f"cannot sign in the eval user: {exc}")
+            return 3
 
-            def record(row: dict[str, Any]) -> None:
-                with progress.open("a") as handle:
-                    handle.write(json.dumps(row, sort_keys=True) + "\n")
-                _say(f"{row['id']}: {row['status']} {row.get('system') or row.get('error')}")
+        def record(row: dict[str, Any]) -> None:
+            with progress.open("a") as handle:
+                handle.write(json.dumps(row, sort_keys=True) + "\n")
+            _say(f"{row['id']}: {row['status']} {row.get('system') or row.get('error')}")
 
-            fresh = (
-                await run_all(
-                    todo, sessions, gateway, trace_gateway, cfg, on_row=record, sleep=sleep
-                )
-                if todo
-                else []
-            )
-        finally:
-            if trace_client is not None:
-                await trace_client.aclose()
+        fresh = (
+            await run_all(todo, sessions, gateway, cfg, on_row=record, sleep=sleep) if todo else []
+        )
     by_id = {r["id"]: r for r in [*previous.values(), *fresh]}
     rows = [by_id[i.id] for i in items if i.id in by_id]
     finished = now()
