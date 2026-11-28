@@ -12,4 +12,7 @@ class Settings(ServiceSettings):
     qdrant_url: str | None = None
     qdrant_collection: str = "chunks"
     model_cache_dir: str | None = None
+    model_seed_dir: str | None = (
+        None  # read-only models baked into the image, copied to the cache dir
+    )
     max_body_bytes: int = 1_000_000

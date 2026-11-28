@@ -342,3 +342,20 @@ async def test_a_client_supplied_content_hash_is_ignored(client: httpx.AsyncClie
     forged = _new(text="Entirely different words about quantum widgets.", content_hash="a" * 64)
     res = (await client.post("/ingest", json={"cards": [forged]})).json()["results"][0]
     assert res["changed"], "the server recomputed the hash from the text"
+
+
+async def test_ready_waits_until_the_models_are_loaded() -> None:
+    class SlowModels(FakeModels):
+        loaded = False
+
+    models = SlowModels()
+    index = ChunkIndex(AsyncQdrantClient(":memory:"), models, collection="w", dim=DIM)
+    await index.ensure_collection()
+    app = build_app(
+        Settings(internal_token=SecretStr(TOKEN)), store=InMemoryStore([], {}), index=index
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        assert (await c.get("/health")).status_code == 200, "alive while still loading"
+        assert (await c.get("/ready")).status_code == 503
+        models.loaded = True
+        assert (await c.get("/ready")).status_code == 200
