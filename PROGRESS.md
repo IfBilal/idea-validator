@@ -6,11 +6,11 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Everything is built and merged except the evaluation runner (#98, in review) and the remaining UI slices. Not yet proven: a full run through real evidence on the cluster, the Jenkins Build-Deploy-Smoke run, and the human labels.** Merged: K8s base and deploy on kind, M6 KB (storage, hybrid search, API, ingest, write token), M4 scouts, M6i ingestion, first real snapshot, retrieval eval and gate, M3 recovery, M13 trace store/registry/drift/metrics, UI shell to verdict card and what-if, scorer local-first, fine-tune pipeline |
-| Current task | Dev A: first end-to-end on the cluster with the snapshot (seed, real LLM key, resource measurement, rollout/rollback demo, #88), Jenkins full run, UI History/Versions/Compare/trace viewer/Playwright (#87). Dev B: eval runner (#98) then tuning once labels exist, judgment-day audit. Humans: verdict labels and retrieval-label spot-check (#92, #89) |
-| Not built yet / unproven | human-labelled verdict set (0 of 74 drafts reviewed), a validate run over real evidence on the cluster, Jenkins pipeline run, UI History/Versions/Compare/trace viewer/E2E, fine-tune on the real snapshot, measured resource requests, rollback demo, final report numbers and screenshots |
-| Last green main commit | merge of #99 (2026-11-28) |
-| Last Jenkins deploy | none: Jenkins starts and checks out, but a full Build-Deploy-Smoke run was cut off by a full disk (since cleaned) |
+| Current phase | **All planned services, the UI (shell, auth, run panel, verdict card, challenge/what-if, discover, history/versions/compare, trace viewer), ingestion, scouts, eval runner, trace store, registry and drift are built and merged. A real validate on the kind cluster now reaches a stored card; it is INSUFFICIENT_EVIDENCE because most dimensions abstain (free provider tier limits and claims the checker cannot support). Still unproven: a Jenkins Build-Deploy-Smoke-Eval run, a GO/PIVOT/NO-GO verdict on real data, human labels, fine-tuning.** |
+| Current task | Dev A: second full Jenkins run (running), layman browser test with Playwright and screenshots, rubric and marks table, fine-tune Phase B (needs the GPU session). Dev B: verdict tuning once the human labels exist. Humans: verdict labels and retrieval-label spot-check (#92, #89), API keys (#92) |
+| Not built yet / unproven | human-labelled verdict set (0 of 74 drafts reviewed), a non-abstaining verdict on real evidence, a green Jenkins run, UI Playwright E2E, fine-tune on the real snapshot, screenshots, final report numbers |
+| Last green main commit | merge of #115 (2026-11-28) |
+| Last Jenkins deploy | none yet: run 1 found two defects (UI image needed BuildKit, fresh Jenkins home had no ~/.kube), both fixed in #115; run 2 in progress |
 | Cards in KB | 1,387 / 1,500 (sources 3 / 3: Hacker News 497, GitHub 500, Stack Exchange 390; Lobsters is off, its robots.txt forbids crawlers) |
 | Retrieval baseline (Recall@5 / MRR) | 0.599 / 0.818 (hybrid+rerank, 24 AI-assisted labelled queries; a human spot-check is pending) |
 | Fine-tune examples (total / hand-checked) | 0 / 0 (pipeline ready, waits for the KB snapshot) |
