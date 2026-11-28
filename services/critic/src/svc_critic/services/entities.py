@@ -75,7 +75,8 @@ def _vocabulary() -> frozenset[str]:
 @cache
 def _brand_words() -> frozenset[str]:
     text = (resources.files("svc_critic") / "data" / "brand_words.txt").read_text(encoding="utf-8")
-    return frozenset(w for w in text.split() if not w.startswith("#"))
+    lines = (ln.strip() for ln in text.splitlines())
+    return frozenset(ln for ln in lines if ln and not ln.startswith("#"))
 
 
 def _stems(word: str) -> set[str]:
@@ -98,8 +99,11 @@ def _stems(word: str) -> set[str]:
 
 def _ordinary_sentence_word(word: str) -> bool:
     """A word that only looks like a name because a sentence starts with it ("Effort fits.")."""
-    if word.lower() in _brand_words():
+    low = word.lower()
+    if low in _brand_words():
         return False
+    if low.endswith("ing") and len(low) > 5:
+        return True  # "Detecting keys ...": a gerund opens the sentence (-ing brands: deny list)
     return not _stems(word).isdisjoint(_vocabulary())
 
 
@@ -113,7 +117,7 @@ _SENTENCE_START = re.compile(r"(?:^|[.!?:;\n]\s*|\s[-*#]\s+)$")
 
 
 def _starts_a_sentence(text: str, index: int) -> bool:
-    return _SENTENCE_START.search(text[:index]) is not None
+    return _SENTENCE_START.search(text[max(0, index - 8) : index]) is not None  # bounded window
 
 
 def _trim(words: list[str]) -> list[str]:
@@ -130,11 +134,15 @@ def extract_entities(text: str) -> list[str]:
     for match in _CAPITALISED.finditer(text):
         words = _trim(match.group(0).split(" "))
         if words and _starts_a_sentence(text, match.start()):
-            while words and _ordinary_sentence_word(words[0]):
-                words = words[1:]  # "Teaches Git" -> "Git": the first word is sentence case
+            kept = list(words)
+            while len(kept) > 1 and _ordinary_sentence_word(kept[0]):
+                kept = kept[1:]  # "Teaches Git" -> "Git": the first word is sentence case
+            if len(kept) == 1 and len(words) == 1 and _ordinary_sentence_word(kept[0]):
+                continue  # a lone "Effort" / "Detecting": sentence case, not a brand
+            words = (
+                kept  # "Habit Tracker" stays whole: a phrase of ordinary words is a product name
+            )
         phrase = " ".join(words)
-        if not words:
-            continue  # "Effort", "Detecting": sentence case, not a brand
         if words and len(phrase) >= 2:
             found.append((match.start(), phrase))
     found.extend((m.start(), m.group(0)) for m in _MIXED_CASE.finditer(text))

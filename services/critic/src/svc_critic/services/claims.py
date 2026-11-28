@@ -17,7 +17,7 @@ from .competitors import matches_any, names_competitors
 from .entailment import REASON_NO_SUPPORT, EntailmentJudge
 from .entities import find_unsupported_entities
 
-_ANNOTATION = re.compile(r"\s*\[[^\]]*\]\s*$")  # M9's ' [model 4.0; prior ...]' note
+_ANNOTATION = re.compile(r"\s*\[model [^\]]*\]\s*$")  # only M9's ' [model 4.0; prior ...]' note
 REASON_MISSING = "evidence id missing"
 REASON_NO_EVIDENCE = "no evidence cited"
 REASON_COMPETITOR = "competitor not in knowledge base"

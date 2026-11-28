@@ -281,3 +281,12 @@ async def test_the_critic_never_rewrites_the_claim_or_emits_a_verdict() -> None:
         "checked_evidence_ids",
     }
     assert "GO" not in r.reason
+
+
+async def test_only_the_validators_model_note_is_stripped_not_any_trailing_bracket() -> None:
+    """'[Notion]' at the end is claim content: it must still be checked (hard rule 2)."""
+    (r,) = await run(
+        checker(),
+        claim("c1", "Students struggle with study schedules [Notion]", [E1], "demand_pain"),
+    )
+    assert r.supported is False
