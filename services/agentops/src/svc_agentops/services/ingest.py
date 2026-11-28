@@ -11,6 +11,7 @@ from common.logging import get_logger
 from common.schemas.trace import TraceRecord
 
 from ..models.traces import IndexRow, IngestResult, Rejection
+from .metrics import TraceMetrics
 from .ports import TraceFiles, TraceIndex
 from .sanitize import RejectedRecord, canonical, record_id, sanitize
 
@@ -19,8 +20,15 @@ log = get_logger("ingest")
 
 class IngestService:
     def __init__(
-        self, index: TraceIndex, files: TraceFiles, *, max_batch: int, max_record_bytes: int
+        self,
+        index: TraceIndex,
+        files: TraceFiles,
+        *,
+        max_batch: int,
+        max_record_bytes: int,
+        metrics: TraceMetrics | None = None,
     ) -> None:
+        self._metrics = metrics
         self._index = index
         self._files = files
         self._max_batch = max_batch
@@ -76,6 +84,8 @@ class IngestService:
                 log.error("trace_append_failed", run_id=run_id, exc_info=True)
                 raise
             accepted += len(fresh)
+            if self._metrics is not None:
+                self._metrics.observe(r for _, r in fresh)
         return IngestResult(accepted=accepted, duplicates=duplicates, rejected=rejected)
 
 

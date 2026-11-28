@@ -16,6 +16,7 @@ import httpx
 from common.http import ServiceClient
 from common.schemas import RunEvent
 
+from .clients.agentops import AgentOpsClient
 from .clients.events import Subscription
 from .clients.ideas import IdeaClient
 from .clients.orchestrator import OrchestratorClient
@@ -295,6 +296,57 @@ class FakeM3:
             "error": run.get("error"),
             "internal_only": "never shown",
         }
+
+
+class FakeM13:
+    """M13 internal API: one run's trace (a GET /runs here would be a bug)."""
+
+    def __init__(self) -> None:
+        self.traces: dict[str, dict[str, Any]] = {}
+        self.calls: list[tuple[str, str, dict[str, str]]] = []
+        self.fail: int | None = None
+        self.timeout = False
+        self.wrong_run = False
+
+    def add_trace(self, run_id: str, **extra: Any) -> None:
+        self.traces[run_id] = {
+            "run_id": run_id,
+            "totals": {"steps": 2, "cost_usd": 0.01},
+            "by_agent": {},
+            "truncated": False,
+            "tree": [],
+            **extra,
+        }
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append((request.method, request.url.path, dict(request.url.params)))
+        if self.timeout:
+            raise httpx.ReadTimeout("slow")
+        if request.headers.get("x-internal-token") != INTERNAL_TOKEN:
+            return httpx.Response(401, json={})
+        if self.fail:
+            return httpx.Response(self.fail, json={"error": {"message": "secret internal detail"}})
+        parts = request.url.path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "runs" and parts[2] == "trace":
+            body = self.traces.get(parts[1])
+            if body is None:
+                return httpx.Response(404, json={"error": {"message": "no trace for run"}})
+            if self.wrong_run:
+                body = {**body, "run_id": "run_someoneelse"}
+            return httpx.Response(200, json=body)
+        return httpx.Response(404, json={})
+
+
+def agentops_client(m13: FakeM13, max_bytes: int = 1024 * 1024) -> AgentOpsClient:
+    transport = httpx.MockTransport(m13)
+    http = ServiceClient(
+        "http://agentops.internal.test:8000",
+        timeout_s=1,
+        backoff_s=0,
+        internal_token=INTERNAL_TOKEN,
+        transport=transport,
+    )
+    return AgentOpsClient(http, max_bytes)
 
 
 def make_event(run_id: str, seq: int, type_: str = "agent_started", **payload: Any) -> RunEvent:

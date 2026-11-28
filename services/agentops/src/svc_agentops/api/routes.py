@@ -1,17 +1,22 @@
 """HTTP layer only: parse, validate, call a service, map errors. Internal endpoints."""
 
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import ValidationError
 
-from common.errors import Unavailable, ValidationFailed
+from common.errors import NotFound, Unavailable, ValidationFailed
 from common.service import require_internal_token
 
 from ..config import Settings
+from ..models.drift import DriftReport
+from ..models.registry import RegistryView
 from ..models.traces import IngestResult, RunList, TraceFlat, TraceTree
+from ..repositories.drift_store import DriftStore
 from ..services.ingest import IngestService
 from ..services.query import QueryService
+from ..services.registry import RegistryService
 
 
 def make_router(settings: Settings) -> APIRouter:
@@ -28,6 +33,35 @@ def make_router(settings: Settings) -> APIRouter:
         if service is None:
             raise Unavailable("trace store is not configured (DATABASE_URL)")
         return service
+
+    @router.get("/registry", response_model=RegistryView)
+    async def get_registry(request: Request) -> RegistryView:
+        registry_service: RegistryService = request.app.state.registry
+        return await registry_service.view()
+
+    @router.post("/drift", response_model=DriftReport)
+    async def post_drift(request: Request) -> DriftReport:
+        raw = await request.body()
+        if len(raw) > settings.max_drift_bytes:
+            raise ValidationFailed("drift report is too large")
+        try:
+            report = DriftReport.model_validate_json(raw)
+        except ValidationError as exc:
+            raise ValidationFailed("body is not a drift report") from exc
+        store: DriftStore = request.app.state.drift
+        try:
+            await asyncio.to_thread(store.save, report)
+        except OSError as exc:
+            raise Unavailable("drift reports cannot be stored") from exc
+        return report
+
+    @router.get("/drift/latest", response_model=DriftReport)
+    async def get_drift_latest(request: Request) -> DriftReport:
+        store: DriftStore = request.app.state.drift
+        report = await asyncio.to_thread(store.latest)
+        if report is None:
+            raise NotFound("no drift report yet")
+        return report
 
     @router.post("/traces", response_model=IngestResult)
     async def post_traces(

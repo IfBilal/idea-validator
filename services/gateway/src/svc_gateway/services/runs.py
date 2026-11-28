@@ -30,6 +30,7 @@ from common.errors import (
 )
 from common.logging import get_logger
 
+from ..clients.agentops import AgentOpsClient
 from ..clients.coordination import PENDING_TTL_S, IdempotencyStore, StreamGate
 from ..clients.events import EventBus
 from ..clients.ideas import IdeaClient
@@ -115,7 +116,9 @@ class RunFlow:
         store: IdempotencyStore,
         gate: StreamGate,
         config: RunFlowConfig | None = None,
+        agentops: AgentOpsClient | None = None,
     ) -> None:
+        self._agentops = agentops
         self._ideas = ideas
         self._orchestrator = orchestrator
         self._bus = bus
@@ -320,6 +323,13 @@ class RunFlow:
             raise ValidationFailed("approval_id does not belong to this run")
         state = await self._orchestrator.approve(run_id, user_id, body.approval_id, body.decision)
         return StepAccepted(run_id=run_id, state=state)
+
+    async def trace(self, user_id: str, run_id: str, flat: bool) -> dict[str, Any]:
+        """The recorded trace of one of the caller's own runs (M13), never anybody else's."""
+        await self._ideas.get_run(run_id, user_id)  # ownership first: unknown and foreign are 404
+        if self._agentops is None:
+            raise Unavailable("run traces are not available")
+        return await self._agentops.trace(run_id, flat)
 
     # ---- the event stream --------------------------------------------------------------------
     async def open_events(

@@ -150,6 +150,16 @@ CRONJOBS: dict[str, dict[str, Any]] = {
         "suspend": True,
         "optional": ["PRODUCTHUNT_TOKEN"],
     },
+    # M13 drift report (docs/harness/12 section 6): reads M6 /stats and the traces through M13 and
+    # posts the report back to M13. No Postgres, no tools, no internet: only agentops and kb.
+    "drift-report": {
+        "image": "agentops",
+        "module": "m13",
+        "schedule": "20 5 * * *",
+        "command": ["python", "-m", "agentops.drift", "--post"],
+        "calls": ["agentops", "kb"],
+        "secrets": ["INTERNAL_TOKEN"],
+    },
 }
 CRONJOB_CALLS = ["postgres", "tools"]
 
@@ -175,7 +185,7 @@ def edges() -> dict[str, list[str]]:
     for job, spec in JOBS.items():
         out[job] = sorted(spec["calls"])
     for cron in CRONJOBS:
-        out[cron] = sorted(CRONJOB_CALLS)
+        out[cron] = sorted(CRONJOBS[cron].get("calls", CRONJOB_CALLS))
     return out
 
 
@@ -650,20 +660,31 @@ def _cronjob(name: str) -> str:
     env: list[dict[str, Any]] = [
         {"name": "CONFIG_DIR", "value": "/etc/idea-validator"},
         {"name": "LOG_LEVEL", "value": "INFO"},
-        {"name": "TOOLS_URL", "value": _url("tools")},
     ]
-    for key in ("INTERNAL_TOKEN", "DATABASE_URL"):
+    if "calls" in spec:  # not a scout: only the services it names, only the secrets it lists
+        env += [{"name": f"{c.upper()}_URL", "value": _url(c)} for c in sorted(spec["calls"])]
+        keys = list(spec["secrets"])
+    else:
+        env.append({"name": "TOOLS_URL", "value": _url("tools")})
+        keys = ["INTERNAL_TOKEN", "DATABASE_URL"]
+    for key in keys:
         env.append(
             {"name": key, "valueFrom": {"secretKeyRef": {"name": "app-secrets", "key": key}}}
         )
-    optional = ["GITHUB_TOKEN"] if spec["source"] == "github" else spec.get("optional", [])
+    optional = (
+        []
+        if "calls" in spec
+        else ["GITHUB_TOKEN"]
+        if spec["source"] == "github"
+        else spec.get("optional", [])
+    )
     for key in optional:  # the pod starts without it: the source stays keyless or off
         ref = {"name": "app-secrets", "key": key, "optional": True}
         env.append({"name": key, "valueFrom": {"secretKeyRef": ref}})
     container = {
         "name": name,
-        "image": f"{NAMESPACE}/scouts:{IMAGE_TAG}",
-        "command": ["python", "-m", "scouts", "--source", spec["source"]],
+        "image": f"{NAMESPACE}/{spec.get('image', 'scouts')}:{IMAGE_TAG}",
+        "command": spec.get("command") or ["python", "-m", "scouts", "--source", spec["source"]],
         "env": env,
         "resources": RESOURCES,
         "securityContext": {
@@ -695,7 +716,7 @@ def _cronjob(name: str) -> str:
     cron = {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
-        "metadata": _meta(name, "m4"),
+        "metadata": _meta(name, spec.get("module", "m4")),
         "spec": {
             "schedule": spec["schedule"],
             "concurrencyPolicy": "Forbid",
@@ -709,7 +730,7 @@ def _cronjob(name: str) -> str:
                     "activeDeadlineSeconds": 1200,
                     "ttlSecondsAfterFinished": 3600,
                     "template": {
-                        "metadata": {"labels": {"app": name, "module": "m4"}},
+                        "metadata": {"labels": {"app": name, "module": spec.get("module", "m4")}},
                         "spec": pod,
                     },
                 }
