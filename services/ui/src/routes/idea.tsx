@@ -5,9 +5,12 @@ import { VerdictCard } from "@/components/VerdictCard";
 import { getIdeaVersion } from "@/lib/endpoints";
 import { errorMessage } from "@/lib/errors";
 
-/** The stored version may wrap the card (`{idea_id, version, text, card}`) or be the card itself. */
+/**
+ * The gateway returns a stored version as `{idea_id, version, title, text, verdict, ..., card}`; `card` is the
+ * verdict card (null until validated). A bare card (no `card` key) is accepted too.
+ */
 export function cardOf(raw: unknown): unknown {
-  if (typeof raw === "object" && raw !== null && !Array.isArray(raw) && "card" in raw && !("verdict" in raw)) {
+  if (typeof raw === "object" && raw !== null && !Array.isArray(raw) && "card" in raw) {
     return (raw as { card: unknown }).card;
   }
   return raw;

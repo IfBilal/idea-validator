@@ -262,7 +262,15 @@ describe("discover page", () => {
       finish(frame(2, "run_completed", {})),
       result({ ideas: [idea()], dropped: [] }),
       http.get(`${API}/ideas/idea_a/versions/1`, () =>
-        HttpResponse.json({ verdict: null, partial: true, needs_input: ["estimated_effort_hours"] }),
+        HttpResponse.json({
+          idea_id: "idea_a",
+          version: 1,
+          title: "Notion exporter",
+          text: "x",
+          verdict: null,
+          score: null,
+          card: { verdict: null, partial: true, needs_input: ["estimated_effort_hours"] },
+        }),
       ),
     );
     const router = renderAt();
