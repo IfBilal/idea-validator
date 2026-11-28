@@ -1,1 +1,35 @@
-{"note": "fill after first labelled run (P3-T12)", "hybrid_rerank": {"recall@5": null, "mrr@10": null}}
+{
+  "note": "first labelled run on snapshot cards-20261127 (1,387 cards, 24 queries); change only in a reviewed PR with a reason",
+  "snapshot": "cards-20261127.jsonl.gz",
+  "queries": 24,
+  "hybrid_rerank": {
+    "recall@5": 0.5993,
+    "mrr@10": 0.8181
+  },
+  "modes": {
+    "vector": {
+      "recall@5": 0.4686,
+      "recall@10": 0.5992,
+      "mrr@10": 0.7326,
+      "ndcg@10": 0.6034
+    },
+    "keyword": {
+      "recall@5": 0.4079,
+      "recall@10": 0.5054,
+      "mrr@10": 0.6692,
+      "ndcg@10": 0.4902
+    },
+    "hybrid": {
+      "recall@5": 0.5468,
+      "recall@10": 0.7463,
+      "mrr@10": 0.7955,
+      "ndcg@10": 0.6944
+    },
+    "hybrid+rerank": {
+      "recall@5": 0.5993,
+      "recall@10": 0.7659,
+      "mrr@10": 0.8181,
+      "ndcg@10": 0.6956
+    }
+  }
+}

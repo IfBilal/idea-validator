@@ -14,7 +14,7 @@ spec:
   startingDeadlineSeconds: 300
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
-  suspend: false
+  suspend: true
   jobTemplate:
     spec:
       backoffLimit: 0

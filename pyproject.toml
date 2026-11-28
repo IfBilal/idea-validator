@@ -57,7 +57,10 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 addopts = "-q -p common.testing"
 testpaths = ["libs", "services", "jobs", "eval"]
-markers = ["integration: needs Postgres/Redis/Qdrant (testcontainers; needs a running Docker)"]
+markers = [
+  "integration: needs Postgres/Redis/Qdrant (testcontainers; needs a running Docker)",
+  "retrieval: indexes the snapshot with the real embedding models (slow); run by make test-retrieval",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

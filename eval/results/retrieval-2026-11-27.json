@@ -1,0 +1,30 @@
+{
+  "queries": 24,
+  "modes": {
+    "vector": {
+      "recall@5": 0.4686,
+      "recall@10": 0.5992,
+      "mrr@10": 0.7326,
+      "ndcg@10": 0.6034
+    },
+    "keyword": {
+      "recall@5": 0.4079,
+      "recall@10": 0.5054,
+      "mrr@10": 0.6692,
+      "ndcg@10": 0.4902
+    },
+    "hybrid": {
+      "recall@5": 0.5468,
+      "recall@10": 0.7463,
+      "mrr@10": 0.7955,
+      "ndcg@10": 0.6944
+    },
+    "hybrid+rerank": {
+      "recall@5": 0.5993,
+      "recall@10": 0.7659,
+      "mrr@10": 0.8181,
+      "ndcg@10": 0.6956
+    }
+  },
+  "snapshot": "cards-20261127.jsonl.gz"
+}
