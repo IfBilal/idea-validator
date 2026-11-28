@@ -59,3 +59,9 @@ def test_same_idea_groups_use_different_profiles() -> None:
         assert len({m["idea_text"] for m in members}) == 1, name
         profiles = {json.dumps(m["profile"], sort_keys=True) for m in members}
         assert len(profiles) == len(members) >= 2, name
+
+
+def test_new_candidates_are_unique_dev_ideas_with_hints() -> None:
+    new = [r for r in ROWS if r["id"] >= "L044"]
+    assert len(new) == 31
+    assert len({r["id"] for r in new}) == 31
