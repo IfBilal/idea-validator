@@ -106,6 +106,7 @@ def test_every_cluster_script_sources_the_guard_before_using_kubectl() -> None:
         "deploy.sh",
         "smoke_test.sh",
         "netpol_test.sh",
+        "rollback_changed.sh",
     ):
         text = (ROOT / "scripts" / name).read_text()
         assert "lib/kube_guard.sh" in text, f"{name} must source the guard"
