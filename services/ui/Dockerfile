@@ -13,7 +13,9 @@ FROM nginxinc/nginx-unprivileged:1.29.3-alpine
 USER root
 RUN apk upgrade --no-cache libcrypto3 libssl3
 COPY --chown=101:101 nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY --chown=101:101 --chmod=0755 nginx/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
+COPY --chown=101:101 nginx/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
+# the mode is set in a RUN step: the copy-time mode flag needs BuildKit, absent from the Jenkins docker CLI
+RUN chmod 0755 /docker-entrypoint.d/40-runtime-config.sh
 COPY --from=build --chown=101:101 /app/dist /usr/share/nginx/html
 ENV API_BASE_URL=/api
 USER 101
