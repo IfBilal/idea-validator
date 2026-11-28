@@ -57,6 +57,17 @@ async def test_the_scorers_only_get_evidence_that_exists_and_the_features() -> N
     assert body["run_id"] == "run_1"
 
 
+async def test_the_analyst_gets_the_whole_student_profile_not_the_verdict_subset() -> None:
+    """M7's /features takes a full StudentProfile; the verdict engine's four-field subset gave HTTP 422."""
+    from common.schemas import StudentProfile
+
+    h = Harness()
+    await run(h)
+    sent = h.world.bodies("analyst", "POST /features")[0]["profile"]
+    StudentProfile.model_validate(sent)  # extra fields or missing ones would raise
+    assert sent["user_id"] and sent["skills"] and sent["compute"]
+
+
 async def test_evidence_queries_cover_the_four_angles() -> None:
     h = Harness()
     await run(h)

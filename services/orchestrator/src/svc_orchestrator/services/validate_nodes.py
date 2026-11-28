@@ -410,7 +410,7 @@ class ValidateNodes:
         ids = [e["evidence_id"] for e in state.evidence]
 
         async def call() -> Any:
-            profile = builders.profile_for_verdict(state.profile or {})
+            profile = builders.profile_for_analyst(state.profile or {})
             return await self.ctx.clients.analyst.features(state.idea_text, ids, profile)
 
         try:

@@ -141,6 +141,26 @@ def profile_for_verdict(profile: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+ANALYST_PROFILE_FIELDS = (
+    "user_id",
+    "skills",
+    "hours_per_week",
+    "weeks_available",
+    "team_size",
+    "compute",
+    "goal",
+    "interests",
+    "version",
+)
+
+
+def profile_for_analyst(profile: Mapping[str, Any]) -> dict[str, Any]:
+    """The whole ``StudentProfile`` that M7 /features validates, and nothing extra."""
+    return {
+        k: profile[k] for k in ANALYST_PROFILE_FIELDS if k in profile and profile[k] is not None
+    }
+
+
 def _number(value: Any) -> float | None:
     """A usable effort: finite, non-bool, within 0..EFFORT_CAP. Anything else is unknown."""
     if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
