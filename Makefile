@@ -14,10 +14,10 @@ lint: ## ruff + import layering + eslint
 typecheck: ## mypy + tsc
 	uv run mypy && { [ ! -f services/ui/package.json ] || (cd services/ui && npm run typecheck); }
 test: ## unit/component/behaviour tests
-	uv run pytest -m "not integration" && { [ ! -f services/ui/package.json ] || (cd services/ui && npm test -- --run); }
+	uv run pytest -m "not integration and not retrieval" && { [ ! -f services/ui/package.json ] || (cd services/ui && npm test -- --run); }
 test-verdict: ## M11 unit + golden vectors (P2)
 	uv run pytest services/verdict -q
-test-retrieval: ## retrieval quality gate (P3)
+test-retrieval: ## retrieval quality gate (P3): indexes the snapshot with the real models, several minutes
 	uv run pytest eval/retrieval -q
 dev-env: ## create the missing dev credentials in the git-ignored .env (random, never committed)
 	uv run python scripts/create_secrets.py --dev-env

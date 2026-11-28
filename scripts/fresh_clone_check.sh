@@ -50,7 +50,7 @@ uv run mypy
 ok typecheck
 
 step "unit tests (not integration)"
-uv run pytest -q -m "not integration"
+uv run pytest -q -m "not integration and not retrieval"
 ok unit-tests
 
 step "verdict engine tests (golden vectors)"

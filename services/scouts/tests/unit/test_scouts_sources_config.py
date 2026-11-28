@@ -39,8 +39,13 @@ def test_every_connector_has_a_source_entry_and_the_reverse() -> None:
 
 def test_credential_gated_sources_are_off_and_keyless_ones_are_on() -> None:
     enabled = {n for n, c in SOURCES.sources.items() if c.enabled}
-    assert {"hackernews", "github", "lobsters", "stackexchange"} <= enabled
+    assert {"hackernews", "github", "stackexchange"} <= enabled
     assert not enabled & {"reddit", "producthunt", "yc"}
+
+
+def test_lobsters_stays_off_because_its_robots_txt_disallows_crawlers() -> None:
+    """Found live on 2026-11-27: `User-agent: *  Disallow: /` and ai-train=no. M5 refuses; so do we."""
+    assert not SOURCES.sources["lobsters"].enabled
 
 
 def test_every_source_host_is_on_the_m5_allow_list() -> None:

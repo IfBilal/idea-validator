@@ -122,7 +122,8 @@ JOBS: dict[str, dict[str, Any]] = {
 CRONJOBS: dict[str, dict[str, Any]] = {
     "scout-hackernews": {"source": "hackernews", "schedule": "0 */6 * * *"},
     "scout-github": {"source": "github", "schedule": "30 */12 * * *"},
-    "scout-lobsters": {"source": "lobsters", "schedule": "45 */6 * * *"},
+    # lobste.rs robots.txt: "User-agent: *  Disallow: /" and ai-train=no, so M5 refuses it (docs/data-sources.md)
+    "scout-lobsters": {"source": "lobsters", "schedule": "45 */6 * * *", "suspend": True},
     "scout-stackexchange": {"source": "stackexchange", "schedule": "0 4 * * *"},
     "scout-reddit": {
         "source": "reddit",
