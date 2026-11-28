@@ -26,14 +26,32 @@ for s in postgres redis redis-tools qdrant; do
   r="$(kubectl -n "$NS" get sts "$s" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)"
   [ "${r:-0}" -ge 1 ] && pass "StatefulSet $s ready" || fail "StatefulSet $s not ready"
 done
+# a finished Job is deleted after ttlSecondsAfterFinished (1 h): gone is fine (the services that need the
+# schema are Ready, checked above), present-and-not-succeeded is not
 for j in migrate migrate-kb migrate-scouts migrate-agentops; do
-  [ "$(kubectl -n "$NS" get job "$j" -o jsonpath='{.status.succeeded}' 2>/dev/null)" = 1 ] && pass "$j Job succeeded" || fail "$j Job did not succeed"
+  if ! kubectl -n "$NS" get job "$j" >/dev/null 2>&1; then
+    pass "$j Job already cleaned up (TTL), services are Ready"
+  elif [ "$(kubectl -n "$NS" get job "$j" -o jsonpath='{.status.succeeded}' 2>/dev/null)" = 1 ]; then
+    pass "$j Job succeeded"
+  else
+    fail "$j Job did not succeed"
+  fi
 done
 
 # 2. public surface: health yes, ops endpoints no
 check 200 "$(code "$BASE/api/health")" "GET /api/health through the ingress"
-check 404 "$(code "$BASE/api/metrics")" "GET /api/metrics is NOT exposed"
-check 404 "$(code "$BASE/api/ready")" "GET /api/ready is NOT exposed"
+# the UI's SPA fallback answers any unknown path with its index.html (200), so "not exposed" means the
+# gateway's ops output is not what comes back, not that the status is 404
+not_ops() {
+  local body; body="$(curl -s -m 10 "$BASE$1")"
+  if printf '%s' "$body" | grep -qE 'http_requests_total|"status": ?"(ready|not_ready)"'; then
+    fail "GET $1 exposes ops output"
+  else
+    pass "GET $1 does not expose ops output"
+  fi
+}
+not_ops /api/metrics
+not_ops /api/ready
 check 401 "$(code "$BASE/api/profile")" "GET /api/profile without a token is refused"
 
 # 3. a real user journey through gateway -> profile -> postgres/redis

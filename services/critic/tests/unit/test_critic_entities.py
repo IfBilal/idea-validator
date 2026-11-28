@@ -138,3 +138,83 @@ def test_the_result_is_deduplicated_and_ordered() -> None:
 def test_empty_inputs_are_safe() -> None:
     assert find_unsupported_entities("", [], []) == []
     assert find_unsupported_entities("no names here", [], []) == []
+
+
+# ---- ordinary words that merely start a sentence are not brands (found on the first real run) -----
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Effort fits within the available hours.",
+        "Detecting API keys in commits is a local check.",
+        "Teaches Git hygiene to students.",
+        "Requires only a laptop and Python.",
+        "Scanning APIs and PDFs is out of scope.",
+    ],
+)
+def test_a_capitalised_ordinary_word_at_the_start_of_a_sentence_is_not_a_name(text: str) -> None:
+    evidence = ["a note about hooks, Git and Python"]
+    assert find_unsupported_entities(text, evidence, []) == []
+
+
+@pytest.mark.parametrize("text", ["Asana charges $10.", "Zoom charges $10.", "Notion charges $10."])
+def test_a_product_at_the_start_of_a_sentence_is_still_checked(text: str) -> None:
+    assert find_unsupported_entities(text, ["Trello charges $10."], ["Trello"]) == [text.split()[0]]
+
+
+def test_plural_acronyms_are_acronyms() -> None:
+    assert find_unsupported_entities("Most APIs and PDFs are fine.", ["x"], []) == []
+
+
+# ---- review of #112: the sentence-initial exemption must not open a hole in hard rule 2 ----------
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Buffer charges $5.",
+        "Medium charges $5.",
+        "Gitlab charges $5.",
+        "Later charges $5.",
+        "Focus charges $5.",
+        "Threads charges $5.",
+        "Remember charges $5.",
+    ],
+)
+def test_ordinary_looking_product_names_stay_checked_at_the_start_of_a_sentence(text: str) -> None:
+    assert find_unsupported_entities(text, ["Trello charges $5."], ["Trello"]) != []
+
+
+@pytest.mark.parametrize("text", ["Habit Tracker charges $5.", "Focus Keeper charges $5."])
+def test_multi_word_product_names_made_of_ordinary_words_are_still_checked(text: str) -> None:
+    assert find_unsupported_entities(text, ["Trello charges $5."], ["Trello"]) != []
+
+
+def test_every_brand_word_is_never_ordinary() -> None:
+    from importlib import resources
+
+    lines = (resources.files("svc_critic") / "data" / "brand_words.txt").read_text().splitlines()
+    words = [w.strip() for w in lines if w.strip() and not w.startswith("#")]
+    assert len(words) >= 40
+    for word in words:
+        assert find_unsupported_entities(f"{word.title()} charges $5.", ["x"], []) != [], word
+
+
+def test_the_vocabulary_file_is_exactly_what_the_build_script_makes_from_the_snapshot() -> None:
+    """Reproducible, and the script excludes every rare word that appears in a card name."""
+    import gzip
+    import importlib.util
+    import json
+    import re
+    from importlib import resources
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[4]
+    spec = importlib.util.spec_from_file_location("bcw", root / "scripts" / "build_common_words.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    snapshot = sorted((root / "data" / "snapshots").glob("cards-*.jsonl.gz"))[-1]
+    with gzip.open(snapshot, "rt", encoding="utf-8") as handle:
+        rows = [json.loads(line) for line in handle]
+    texts = [f"{r['name']}. {r['text']}" for r in rows]
+    names = frozenset(w.lower() for r in rows for w in re.findall(r"[A-Za-z]{3,}", r["name"]))
+    shipped = (resources.files("svc_critic") / "data" / "common_words.txt").read_text().split()
+    assert shipped == module.build(texts, names)

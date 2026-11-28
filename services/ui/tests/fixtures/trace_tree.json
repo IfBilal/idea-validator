@@ -1,0 +1,172 @@
+{
+ "run_id": "run_abc",
+ "totals": {
+  "steps": 4,
+  "tokens_in": 2000,
+  "tokens_out": 400,
+  "cost_usd": 0.0163,
+  "latency_ms": 12600,
+  "errors": 1,
+  "started_at": "2026-01-01T00:00:01Z",
+  "ended_at": "2026-01-01T00:00:10Z",
+  "wall_ms": 9000
+ },
+ "by_agent": {
+  "orchestrator": {
+   "steps": 1,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "cost_usd": 0.0,
+   "latency_ms": 9000,
+   "errors": 0
+  },
+  "researcher": {
+   "steps": 2,
+   "tokens_in": 1200,
+   "tokens_out": 300,
+   "cost_usd": 0.0123,
+   "latency_ms": 2700,
+   "errors": 0
+  },
+  "risk": {
+   "steps": 1,
+   "tokens_in": 800,
+   "tokens_out": 100,
+   "cost_usd": 0.004,
+   "latency_ms": 900,
+   "errors": 1
+  }
+ },
+ "truncated": false,
+ "tree": [
+  {
+   "record_id": "r1",
+   "record": {
+    "run_id": "run_abc",
+    "step_id": 1,
+    "parent_step": null,
+    "agent": "orchestrator",
+    "kind": "decision",
+    "tool": null,
+    "input": {
+     "q": "x"
+    },
+    "output": {
+     "ok": true
+    },
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "cost_usd": 0.0,
+    "latency_ms": 9000,
+    "retries": 0,
+    "model": null,
+    "cache_hit": false,
+    "error": null,
+    "ts": "2026-01-01T00:00:10Z",
+    "service": "m3",
+    "prompt_version": null,
+    "rubric_version": null,
+    "fallback": null
+   },
+   "children": [
+    {
+     "record_id": "r2",
+     "record": {
+      "run_id": "run_abc",
+      "step_id": 2,
+      "parent_step": 1,
+      "agent": "researcher",
+      "kind": "tool_call",
+      "tool": "web_search",
+      "input": {
+       "q": "x"
+      },
+      "output": {
+       "ok": true
+      },
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "cost_usd": 0.0,
+      "latency_ms": 1200,
+      "retries": 0,
+      "model": null,
+      "cache_hit": false,
+      "error": null,
+      "ts": "2026-01-01T00:00:04Z",
+      "service": "m3",
+      "prompt_version": null,
+      "rubric_version": null,
+      "fallback": null
+     },
+     "children": [],
+     "orphan": false
+    },
+    {
+     "record_id": "r3",
+     "record": {
+      "run_id": "run_abc",
+      "step_id": 3,
+      "parent_step": 1,
+      "agent": "researcher",
+      "kind": "llm_call",
+      "tool": null,
+      "input": {
+       "q": "x"
+      },
+      "output": {
+       "ok": true
+      },
+      "tokens_in": 1200,
+      "tokens_out": 300,
+      "cost_usd": 0.0123,
+      "latency_ms": 1500,
+      "retries": 0,
+      "model": "gpt-x",
+      "cache_hit": false,
+      "error": null,
+      "ts": "2026-01-01T00:00:06Z",
+      "service": "m3",
+      "prompt_version": null,
+      "rubric_version": null,
+      "fallback": null
+     },
+     "children": [],
+     "orphan": false
+    },
+    {
+     "record_id": "r4",
+     "record": {
+      "run_id": "run_abc",
+      "step_id": 4,
+      "parent_step": 1,
+      "agent": "risk",
+      "kind": "llm_call",
+      "tool": null,
+      "input": {
+       "q": "x"
+      },
+      "output": {
+       "ok": true
+      },
+      "tokens_in": 800,
+      "tokens_out": 100,
+      "cost_usd": 0.004,
+      "latency_ms": 900,
+      "retries": 0,
+      "model": null,
+      "cache_hit": false,
+      "error": "timeout",
+      "ts": "2026-01-01T00:00:08Z",
+      "service": "m3",
+      "prompt_version": null,
+      "rubric_version": null,
+      "fallback": null
+     },
+     "children": [],
+     "orphan": false
+    }
+   ],
+   "orphan": false
+  }
+ ]
+}

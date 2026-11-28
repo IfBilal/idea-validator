@@ -81,3 +81,52 @@ record kind), `scorer_fallback_total{agent}`, `trace_errors_total{agent}`, `verd
 **Blocked injections** needs M5 (tools) to emit `blocked_injections_total{source}`, **Budget stops** needs M3 (orchestrator)
 to emit `runs_total{kind,status}` with `status="budget_stopped"`. Prometheus scraping and the Grafana deployment are not part
 of the manifests yet.
+## Safety properties (security review of PR #94)
+- **Bounded work.** Every string is clipped to 4096 chars (and containers to 200 items, depth 8) before any
+  regex runs; redaction patterns use bounded quantifiers (`common.redaction`), so cost is linear. An error
+  text is cut to 2000 chars first. Sanitising runs in a worker thread, off the event loop. A shared
+  positive/negative corpus (`common.testing.REDACTION_POSITIVE/NEGATIVE`) pins what is and is not redacted.
+- **File first, then index.** `POST /traces` appends to the run's JSONL first (the source of truth), then inserts
+  the index rows; nothing is ever deleted on failure. A failed write is cut back under the same `flock`, a torn
+  last line is closed with a newline before the next append, readers de-duplicate by record id. A crash between
+  the two steps leaves a line without an index row: `python -m agentops.reindex` (needs `DATABASE_URL`,
+  `TRACE_DIR`) rebuilds missing rows and run owners from the files. Idempotent.
+- **Growth.** A run holds at most `MAX_RUN_RECORDS` (5000) records and `MAX_RUN_BYTES` (8 MiB), enforced under the
+  lock (413-style per-record rejection). Below `MIN_FREE_BYTES` (64 MiB) free, ingest answers 507 and `/ready`
+  fails. `python -m agentops.retention --days N [--dry-run]` deletes runs older than N days (file and index);
+  the CronJob `agentops-retention` runs it daily at 03:30 for 14 days and is scheduled beside the agentops pod
+  because the PVC is ReadWriteOnce. PVC size: a run is ~100 KB, 1 Gi holds thousands of runs, 14 days of
+  retention keeps it well below the free-space guard.
+- **Ownership.** The orchestrator traces a `run_owner` decision (`user_id`) at run start; M13 stores it in
+  `ops.run_owners` (first owner wins). `GET /runs?user_id=` lists only that user's runs and
+  `GET /runs/{id}/trace?user_id=` answers 404 (same as unknown) for another user's or an unowned run.
+  M13 trusts its caller: **the gateway must verify ownership via M2, pass the verified `user_id`, and must
+  never proxy `/runs` or `/traces` to a browser.**
+- **Trusted decisions.** `m11_verdict` and `run_owner` decisions are accepted only from service `orchestrator`
+  (others are rejected); replay only reads those. The `m11_verdict` input is kept up to 32 KB (the engine
+  input is numbers and ids); everything else stays at 4 KB.
+- **What traces hold.** Step outputs are summarised (field names, counts, numbers, ids, hash), never text; error
+  text is the type plus a capped, redacted message for our own errors, and only the type for others.
+- **Replay proves M11 determinism for the recorded input** (same engine, same rules, same numbers give the same
+  verdict). It does not prove what the user was shown. A rules-version change fails unless
+  `--allow-version-drift`; a truncated trace or truncated input is exit 2; the report prints how many M11
+  steps were replayed.
+
+## Accepted risks and follow-ups
+- **One shared internal token.** Every service reaches `POST /traces` with the same `INTERNAL_TOKEN` (a
+  NetworkPolicy cannot filter by path, and all services must send traces). So any pod that holds the token can
+  claim `service: "orchestrator"` and post `m11_verdict` / `run_owner` records. Follow-up: a per-service token
+  (or mTLS identity) checked against the `service` field, so only the orchestrator pod can post privileged
+  decisions. Until then these records are trusted only as far as the pods in the namespace are.
+- **Owner squatting.** The first `run_owner` for a run id wins and is not tied to earlier records of the run
+  (the orchestrator sends it right after `run_started`, so a "run has other records first" rule would be
+  fragile). Run ids are random (`run_` plus 12 hex) and a trace is readable only with `user_id=` of its owner.
+  A holder of the token could still pre-claim a guessed run id; the per-service token above closes that.
+- **Timestamps.** A record whose `ts` is more than one day in the future is rejected (it would keep a run out
+  of the retention window); a record far in the past is accepted and simply purged early.
+- **Ids are not PII-scrubbed.** `m11_verdict` and `run_owner` records skip e-mail/phone masking (secrets are still
+  redacted): they hold numbers and ids only, and masking a uuid or a date-like id would break replay or the
+  owner check. The phone pattern itself only matches a leading `+`, a parenthesised area code, `555-123-4567`
+  or digit groups separated by single spaces, never bare digit runs, dates or hyphenated ids.
+- **Caps are checked under the file lock** (records and bytes, after dropping ids already stored), so retries
+  and concurrent batches neither overshoot them nor burn them.

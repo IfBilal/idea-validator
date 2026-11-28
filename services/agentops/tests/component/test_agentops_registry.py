@@ -45,7 +45,7 @@ async def test_registry_lists_every_version_with_hashes(tmp_path: Path) -> None:
         "weights": "w1",
         "thresholds": "t1",
         "rubric_set": "r1",
-        "budgets": "b1",
+        "budgets": "b2",
         "prompts": "p1",
         "llm": "l2",
     }

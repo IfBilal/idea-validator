@@ -15,6 +15,7 @@ from svc_analyst.services.features import (
     complaint_count,
     compute_fit,
     cv_signal,
+    duplicate_of,
     estimated_effort_hours,
     extract_required_skills,
     infer_scope,
@@ -27,6 +28,7 @@ from svc_analyst.services.features import (
     platform_dependency,
     recency_share,
     required_compute,
+    risk_blocker,
     risk_flags,
     same_user,
     skill_novelty,
@@ -258,6 +260,42 @@ def test_max_similarity_takes_the_stronger_of_cosine_and_core_feature_jaccard() 
 def test_max_similarity_empty_and_ties() -> None:
     assert max_similarity([]) == 0.0
     assert max_similarity([scored(0.5), scored(0.5)]) == 0.5
+
+
+# ---- duplicate_of / risk_blocker (inputs of the M11 gates) ---------------------------------------
+
+
+def test_duplicate_of_names_the_most_similar_card_of_the_same_user_at_or_above_the_threshold() -> (
+    None
+):
+    items = [
+        scored(0.7, 0.2, id="card_00000010"),
+        scored(0.9, 0.1, id="card_00000011"),
+        scored(0.86, 0.0, id="card_00000012"),
+    ]
+    assert duplicate_of(items) == "card_00000011"
+    assert duplicate_of([scored(0.85, 0.0, id="card_00000013")]) == "card_00000013"  # inclusive
+
+
+def test_duplicate_of_is_none_below_the_threshold_for_another_user_or_with_no_cards() -> None:
+    assert duplicate_of([]) is None
+    assert duplicate_of([scored(0.84, 0.84)]) is None
+    assert duplicate_of([scored(0.99, 0.99, user=False)]) is None, (
+        "another target user is not a clone"
+    )
+
+
+def test_duplicate_of_counts_the_core_feature_jaccard_too_and_breaks_ties_by_id() -> None:
+    assert duplicate_of([scored(0.1, 0.9, id="card_00000020")]) == "card_00000020"
+    tie = [scored(0.9, id="card_00000031"), scored(0.9, id="card_00000030")]
+    assert duplicate_of(tie) == "card_00000030"
+
+
+def test_risk_blocker_is_the_blocker_flag_itself_never_free_text() -> None:
+    assert risk_blocker(["blocker", "pii", "scraping_logged_in"]) == "scraping_logged_in"
+    assert risk_blocker(["pii", "minors"]) is None
+    assert risk_blocker([]) is None
+    assert risk_blocker(risk_flags("scrape LinkedIn behind login")) == "scraping_logged_in"
 
 
 # ---- gaps ------------------------------------------------------------------------------------

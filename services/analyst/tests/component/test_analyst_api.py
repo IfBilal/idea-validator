@@ -46,6 +46,8 @@ FEATURE_NAMES = {
     "cv_signal",
     "required_skills",
     "rejected_evidence_count",
+    "duplicate_of",
+    "risk_blocker",
 }
 
 

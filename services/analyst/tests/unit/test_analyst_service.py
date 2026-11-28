@@ -250,7 +250,11 @@ async def test_features_returns_exactly_the_documented_names() -> None:
     out = await svc.features(
         req("an invoice reminder tool for freelance designers", invoice_evidence())
     )
-    assert set(out.model_dump()) == FEATURE_NAMES | {"rejected_evidence_count"}
+    assert set(out.model_dump()) == FEATURE_NAMES | {
+        "rejected_evidence_count",
+        "duplicate_of",
+        "risk_blocker",
+    }
 
 
 async def test_features_from_evidence() -> None:
@@ -560,3 +564,34 @@ async def test_an_unrelated_idea_has_no_unaddressed_gaps() -> None:
         req("remind clients about late payment of invoices for freelancers", [])
     )
     assert related.unaddressed_gap_count >= 1
+
+
+# ---- the two M11 gate inputs the audit found missing ----------------------------------------------
+
+
+async def test_a_clone_of_an_existing_product_gets_its_card_id_as_duplicate_of() -> None:
+    svc = service()
+    out = await svc.features(
+        req("InvoicingPro0 is a billing invoice tool for freelance designers", invoice_evidence())
+    )
+    product_ids = {c.id for c in CARDS if c.kind in ("product", "repo")}
+    assert out.duplicate_of in product_ids
+    assert out.max_similarity >= 0.85
+
+
+async def test_an_original_idea_has_no_duplicate_and_no_blocker() -> None:
+    svc = service()
+    out = await svc.features(req("a telescope alignment helper for amateur astronomers", []))
+    assert out.duplicate_of is None and out.risk_blocker is None
+
+
+async def test_scraping_behind_a_login_is_the_risk_blocker_token() -> None:
+    svc = service()
+    out = await svc.features(
+        req(
+            "scrape pages behind a login for a competitor price tracker",
+            [],
+        )
+    )
+    assert "scraping_logged_in" in out.risk_flags
+    assert out.risk_blocker == "scraping_logged_in"

@@ -150,7 +150,9 @@ class KbService:
         return await self._store.stats()
 
     async def ready(self) -> bool:
-        return await self._store.ping() and await self._index.ready()
+        return (
+            await self._store.ping() and await self._index.ready() and self._index.models_loaded()
+        )
 
 
 class UnconfiguredKb:

@@ -410,7 +410,7 @@ class ValidateNodes:
         ids = [e["evidence_id"] for e in state.evidence]
 
         async def call() -> Any:
-            profile = builders.profile_for_verdict(state.profile or {})
+            profile = builders.profile_for_analyst(state.profile or {})
             return await self.ctx.clients.analyst.features(state.idea_text, ids, profile)
 
         try:
@@ -650,7 +650,9 @@ class ValidateNodes:
         ):
             raise UpstreamError("M11 returned a verdict for a different idea or version")
         engine_input, summary = builders.replay_record(request, out.value)
-        self.ctx.runner.decision(builders.REPLAY_DECISION, engine_input, summary)  # M13 replay
+        self.ctx.runner.decision(
+            builders.REPLAY_DECISION, engine_input, summary, input_limit=builders.REPLAY_INPUT_LIMIT
+        )  # M13 replay
         return {
             "verdict": out.value,
             "recomputed": recomputed,

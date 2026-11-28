@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any
 
 import pytest
@@ -82,3 +83,84 @@ def test_record_id_is_stable_and_changes_with_content() -> None:
 
 def test_error_text_is_capped() -> None:
     assert len(clean(error="e" * 50_000).error or "") <= 2000
+
+
+ADVERSARIAL = ["a" * 100_000, "a." * 50_000, "1-" * 50_000, "1" * 100_000, "a@" * 200_000]
+
+
+@pytest.mark.parametrize("text", ADVERSARIAL, ids=lambda t: f"{t[:4]}x{len(t)}")
+@pytest.mark.parametrize("where", ["error", "input", "output"])
+def test_sanitize_is_fast_on_adversarial_strings(text: str, where: str) -> None:
+    over: dict[str, Any] = {where: text if where == "error" else {"k": [text, {"n": text}]}}
+    started = time.perf_counter()
+    clean(**over)
+    assert time.perf_counter() - started < 0.5
+
+
+def test_a_two_megabyte_error_is_truncated_before_any_scan() -> None:
+    started = time.perf_counter()
+    out = clean(error="a" * 2_000_000)
+    assert time.perf_counter() - started < 0.5
+    assert len(out.error or "") <= 2000
+
+
+def test_many_small_strings_are_bounded_too() -> None:
+    started = time.perf_counter()
+    out = clean(input={"items": ["x@" * 500] * 5000})
+    assert time.perf_counter() - started < 0.5
+    assert len(canonical(out)) < MAX
+
+
+def test_new_secret_shapes_are_redacted_in_payloads_and_errors() -> None:
+    from common.testing import REDACTION_POSITIVE
+
+    for text, secret in REDACTION_POSITIVE:
+        out = clean(input={"msg": text}, error=text)
+        assert secret not in json.dumps(out.model_dump(mode="json")), text
+
+
+UUID = "12345678-1234-4abc-8def-0123456789ab"
+
+
+def test_the_m11_engine_input_keeps_ids_and_numbers_exactly() -> None:
+    engine_input = {
+        "idea_id": UUID,
+        "run_id": "run_20261128-123456",
+        "scores": [
+            {"dimension": "risk", "score": 3.5, "evidence_ids": [f"ev-{UUID}", "card_aaaaaaaa#c3"]}
+        ],
+        "gate_inputs": {"n_sources": 5, "risk_blocker": None},
+    }
+    out = clean(
+        kind="decision",
+        tool="transition",
+        input=engine_input,
+        output={"decision": "m11_verdict", "verdict": "GO", "score": 71.25},
+    )
+    assert out.input == engine_input
+
+
+def test_the_run_owner_user_id_is_stored_as_given() -> None:
+    for user in (UUID, "20261128-123456", "user_0123456789012", "ev-12345678-1234"):
+        out = clean(
+            kind="decision",
+            tool="transition",
+            output={"decision": "run_owner", "user_id": user},
+        )
+        assert out.output["user_id"] == user
+
+
+def test_other_records_are_still_scrubbed_for_pii() -> None:
+    out = clean(input={"msg": "call +92 300 1234567 or bob@example.com"})
+    assert "1234567" not in json.dumps(out.input)
+    assert "bob@example.com" not in json.dumps(out.input)
+
+
+def test_secrets_are_still_redacted_inside_a_privileged_record() -> None:
+    out = clean(
+        kind="decision",
+        tool="transition",
+        input={"scores": [], "note": "Bearer abc.def.ghi"},
+        output={"decision": "m11_verdict"},
+    )
+    assert "abc.def" not in json.dumps(out.input)

@@ -7,7 +7,7 @@ from pydantic import Field, StringConstraints, field_validator
 
 from common.schemas.base import Message
 from common.schemas.profile import StudentProfile
-from common.schemas.types import EvidenceId
+from common.schemas.types import CardId, EvidenceId
 
 from .domain import Gap, MonthStat, NicheStatus
 
@@ -59,6 +59,8 @@ class FeaturesResponse(Message):
     cv_signal: float
     required_skills: list[str]
     rejected_evidence_count: int  # cited ids M6 does not know (ignored in every count)
+    duplicate_of: CardId | None = None  # M11 duplicate gate input, from stored cards only
+    risk_blocker: str | None = None  # M11 risk gate input: a BLOCKER_FLAGS token only
 
 
 class MatchRequest(Message):

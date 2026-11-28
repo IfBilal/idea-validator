@@ -537,3 +537,18 @@ def test_jenkins_up_accepts_a_normal_branch(tmp_path: Path, branch: str) -> None
     done = _run([str(SCRIPTS / "jenkins_up.sh")], env)
     assert done.returncode == 0, done.stderr
     assert f"JENKINS_BRANCH={branch}" in log.read_text()
+
+
+# --- the kb pod has no internet: its models must ship inside the image ------------------------
+
+
+def test_the_kb_image_bakes_the_models_in_and_runs_offline() -> None:
+    text = (ROOT / "services" / "kb" / "Dockerfile").read_text()
+    assert "FastEmbedModels('/models')" in text, "download the three models at build time"
+    assert "MODEL_SEED_DIR=/models" in text and "MODEL_CACHE_DIR=/tmp/models" in text
+    assert "HF_HUB_OFFLINE=1" in text
+
+
+def test_the_kb_deployment_asks_for_enough_memory_to_hold_three_onnx_models() -> None:
+    text = (ROOT / "k8s" / "base" / "services" / "kb.yaml").read_text()
+    assert "memory: 2Gi" in text and "memory: 768Mi" in text

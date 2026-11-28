@@ -4,6 +4,7 @@ Deterministic checks run first; the entailment judge only runs when they pass. T
 marks supported / unsupported with a reason. It never edits a claim and never touches a verdict.
 """
 
+import re
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -16,6 +17,12 @@ from .competitors import matches_any, names_competitors
 from .entailment import REASON_NO_SUPPORT, EntailmentJudge
 from .entities import find_unsupported_entities
 
+# exactly what the validators runner appends: " [model 4.0; prior unavailable: <why>]" or
+# " [model 4.0, prior 3.0, alpha 0.5]"; any other bracket is claim content
+_NUM = r"\d+(?:\.\d+)?"
+_ANNOTATION = re.compile(
+    rf"\s*\[model {_NUM}(?:; prior unavailable: [^\]]*|, prior {_NUM}, alpha {_NUM})\]\s*$"
+)
 REASON_MISSING = "evidence id missing"
 REASON_NO_EVIDENCE = "no evidence cited"
 REASON_COMPETITOR = "competitor not in knowledge base"
@@ -81,18 +88,19 @@ class ClaimChecker:
             return fail(REASON_MISSING)
         records = [found[e] for e in cited]
 
-        names = names_competitors(claim.text, claim.dimension)
+        text = _ANNOTATION.sub("", claim.text)  # check the claim, not the annotation M9 appended
+        names = names_competitors(text, claim.dimension)
         kb_names = [r.card_name for r in records if r.card_name]
         unknown = [n for n in names if not matches_any(n, kb_names)]
         if unknown:
             return fail(f"{REASON_COMPETITOR}: {', '.join(unknown)}")
 
-        unnamed = find_unsupported_entities(claim.text, (r.body for r in records), kb_names)
+        unnamed = find_unsupported_entities(text, (r.body for r in records), kb_names)
         if unnamed:
             return fail(f"{REASON_ENTITY}: {', '.join(unnamed)}")
 
         try:
-            verdict = await self._judge.judge(claim.text, records)
+            verdict = await self._judge.judge(text, records)
         except DomainError:
             raise
         except Exception as exc:

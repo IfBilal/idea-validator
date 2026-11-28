@@ -12,6 +12,8 @@ unsupported claim is dropped, never rewritten.
 
 import re
 from collections.abc import Iterable
+from functools import cache
+from importlib import resources
 
 from .competitors import matches_any
 
@@ -63,8 +65,65 @@ _GENERIC_AFTER_CUE = _COMMON | _words(
 )
 
 
+@cache
+def _vocabulary() -> frozenset[str]:
+    """Ordinary English words, built from the card corpus (scripts/build_common_words.py)."""
+    text = (resources.files("svc_critic") / "data" / "common_words.txt").read_text(encoding="utf-8")
+    verbs = (resources.files("svc_critic") / "data" / "ordinary_verbs.txt").read_text(
+        encoding="utf-8"
+    )
+    words = text.split()
+    for verb in (v for v in verbs.splitlines() if v and not v.startswith("#")):
+        words += [verb, verb + "s", verb + "es", verb + "ed", verb + "d", verb + "ing"]
+        words += [verb[:-1] + "ing"] if verb.endswith("e") else []
+        words += [verb + verb[-1] + "ing", verb + verb[-1] + "ed"]  # scan -> scanning, scanned
+    return frozenset(stem for word in words for stem in _stems(word))
+
+
+@cache
+def _brand_words() -> frozenset[str]:
+    text = (resources.files("svc_critic") / "data" / "brand_words.txt").read_text(encoding="utf-8")
+    lines = (ln.strip() for ln in text.splitlines())
+    return frozenset(ln for ln in lines if ln and not ln.startswith("#"))
+
+
+def _stems(word: str) -> set[str]:
+    low = word.lower()
+    out = {low}
+    for suffix, add in (
+        ("ing", ""),
+        ("ing", "e"),
+        ("ed", ""),
+        ("ed", "e"),
+        ("es", ""),
+        ("s", ""),
+        ("ers", ""),
+        ("er", ""),
+    ):
+        if low.endswith(suffix) and len(low) - len(suffix) >= 3:
+            out.add(low[: -len(suffix)] + add)
+    return out
+
+
+def _ordinary_sentence_word(word: str) -> bool:
+    """A word that only looks like a name because a sentence starts with it ("Effort fits.")."""
+    low = word.lower()
+    if low in _brand_words():
+        return False
+    return not _stems(word).isdisjoint(_vocabulary())
+
+
 def _ordinary(word: str) -> bool:
-    return word.lower() in _COMMON or word.lower() in _ACRONYMS
+    low = word.lower()
+    plural_acronym = low.endswith("s") and low[:-1] in _ACRONYMS  # APIs, PDFs
+    return low in _COMMON or low in _ACRONYMS or plural_acronym
+
+
+_SENTENCE_START = re.compile(r"(?:^|[.!?:;\n]\s*|\s[-*#]\s+)$")
+
+
+def _starts_a_sentence(text: str, index: int) -> bool:
+    return _SENTENCE_START.search(text[max(0, index - 8) : index]) is not None  # bounded window
 
 
 def _trim(words: list[str]) -> list[str]:
@@ -80,6 +139,15 @@ def extract_entities(text: str) -> list[str]:
     found: list[tuple[int, str]] = []
     for match in _CAPITALISED.finditer(text):
         words = _trim(match.group(0).split(" "))
+        if words and _starts_a_sentence(text, match.start()):
+            kept = list(words)
+            while len(kept) > 1 and _ordinary_sentence_word(kept[0]):
+                kept = kept[1:]  # "Teaches Git" -> "Git": the first word is sentence case
+            if len(kept) == 1 and len(words) == 1 and _ordinary_sentence_word(kept[0]):
+                continue  # a lone "Effort" / "Detecting": sentence case, not a brand
+            words = (
+                kept  # "Habit Tracker" stays whole: a phrase of ordinary words is a product name
+            )
         phrase = " ".join(words)
         if words and len(phrase) >= 2:
             found.append((match.start(), phrase))

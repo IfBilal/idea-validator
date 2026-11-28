@@ -15,9 +15,13 @@ from .models.traces import IndexRow, RunSummary
 class MemoryIndex:
     def __init__(self) -> None:
         self.rows: dict[tuple[str, str], IndexRow] = {}
+        self.owners: dict[str, str] = {}
         self.up = True
+        self.fail_inserts = False  # simulate a database error after the file was written
 
     async def insert_new(self, rows: list[IndexRow]) -> set[str]:
+        if self.fail_inserts:
+            raise ConnectionError("database down")
         new: set[str] = set()
         for r in rows:
             key = (r.run_id, r.record_id)
@@ -26,14 +30,25 @@ class MemoryIndex:
                 new.add(r.record_id)
         return new
 
-    async def delete(self, run_id: str, record_ids: set[str]) -> None:
-        for rid in record_ids:
-            self.rows.pop((run_id, rid), None)
+    async def existing(self, run_id: str, record_ids: list[str]) -> set[str]:
+        return {rid for rid in record_ids if (run_id, rid) in self.rows}
 
-    async def list_runs(self, limit: int, after: tuple[datetime, str] | None) -> list[RunSummary]:
+    async def count_run(self, run_id: str) -> int:
+        return sum(1 for r, _ in self.rows if r == run_id)
+
+    async def set_owner(self, run_id: str, user_id: str) -> None:
+        self.owners.setdefault(run_id, user_id)
+
+    async def owner_of(self, run_id: str) -> str | None:
+        return self.owners.get(run_id)
+
+    async def list_runs(
+        self, limit: int, after: tuple[datetime, str] | None, user_id: str | None = None
+    ) -> list[RunSummary]:
         groups: dict[str, list[IndexRow]] = {}
         for r in self.rows.values():
-            groups.setdefault(r.run_id, []).append(r)
+            if user_id is None or self.owners.get(r.run_id) == user_id:
+                groups.setdefault(r.run_id, []).append(r)
         summaries = []
         for run_id, rs in groups.items():
             started = min(r.ts for r in rs)
@@ -53,6 +68,18 @@ class MemoryIndex:
             )
         summaries.sort(key=lambda s: (s.started_at, s.run_id), reverse=True)
         return summaries[:limit]
+
+    async def old_runs(self, cutoff: datetime) -> list[str]:
+        newest: dict[str, datetime] = {}
+        for r in self.rows.values():
+            newest[r.run_id] = max(newest.get(r.run_id, r.ts), r.ts)
+        return sorted(run for run, ts in newest.items() if ts < cutoff)
+
+    async def delete_runs(self, run_ids: list[str]) -> None:
+        for key in [k for k in self.rows if k[0] in run_ids]:
+            del self.rows[key]
+        for run in run_ids:
+            self.owners.pop(run, None)
 
     async def ping(self) -> bool:
         return self.up
@@ -97,7 +124,7 @@ class Rig:
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=self.app),
+            transport=httpx.ASGITransport(app=self.app, raise_app_exceptions=False),
             base_url="http://t",
             headers=self.headers,
         )

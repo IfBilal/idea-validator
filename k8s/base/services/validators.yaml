@@ -52,6 +52,8 @@ spec:
           value: http://scorer:8000
         - name: TOOLS_URL
           value: http://tools:8000
+        - name: SCORER_TIMEOUT_S
+          value: '240'
         - name: INTERNAL_TOKEN
           valueFrom:
             secretKeyRef:

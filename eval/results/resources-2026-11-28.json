@@ -1,0 +1,344 @@
+{
+  "agentops": {
+    "cpu_m": {
+      "max": 8,
+      "p95": 8
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 62,
+      "p95": 62
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "80Mi"
+    },
+    "samples": 27
+  },
+  "analyst": {
+    "cpu_m": {
+      "max": 8,
+      "p95": 8
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "160Mi"
+    },
+    "mem_mi": {
+      "max": 79,
+      "p95": 79
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "96Mi"
+    },
+    "samples": 27
+  },
+  "critic": {
+    "cpu_m": {
+      "max": 9,
+      "p95": 9
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 44,
+      "p95": 44
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "gateway": {
+    "cpu_m": {
+      "max": 493,
+      "p95": 483
+    },
+    "limits": {
+      "cpu": "990m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 57,
+      "p95": 57
+    },
+    "requests": {
+      "cpu": "580m",
+      "memory": "80Mi"
+    },
+    "samples": 93
+  },
+  "ideation": {
+    "cpu_m": {
+      "max": 14,
+      "p95": 14
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 45,
+      "p95": 45
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "kb": {
+    "cpu_m": {
+      "max": 14,
+      "p95": 14
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "1424Mi"
+    },
+    "mem_mi": {
+      "max": 710,
+      "p95": 710
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "864Mi"
+    },
+    "samples": 27
+  },
+  "orchestrator": {
+    "cpu_m": {
+      "max": 18,
+      "p95": 18
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "192Mi"
+    },
+    "mem_mi": {
+      "max": 93,
+      "p95": 93
+    },
+    "requests": {
+      "cpu": "30m",
+      "memory": "112Mi"
+    },
+    "samples": 27
+  },
+  "postgres": {
+    "cpu_m": {
+      "max": 66,
+      "p95": 66
+    },
+    "limits": {
+      "cpu": "140m",
+      "memory": "160Mi"
+    },
+    "mem_mi": {
+      "max": 76,
+      "p95": 76
+    },
+    "requests": {
+      "cpu": "80m",
+      "memory": "96Mi"
+    },
+    "samples": 27
+  },
+  "profile": {
+    "cpu_m": {
+      "max": 499,
+      "p95": 499
+    },
+    "limits": {
+      "cpu": "1000m",
+      "memory": "288Mi"
+    },
+    "mem_mi": {
+      "max": 139,
+      "p95": 139
+    },
+    "requests": {
+      "cpu": "600m",
+      "memory": "176Mi"
+    },
+    "samples": 27
+  },
+  "qdrant": {
+    "cpu_m": {
+      "max": 2,
+      "p95": 2
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "144Mi"
+    },
+    "mem_mi": {
+      "max": 66,
+      "p95": 66
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "80Mi"
+    },
+    "samples": 27
+  },
+  "redis": {
+    "cpu_m": {
+      "max": 74,
+      "p95": 74
+    },
+    "limits": {
+      "cpu": "150m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 7,
+      "p95": 7
+    },
+    "requests": {
+      "cpu": "90m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "redis-tools": {
+    "cpu_m": {
+      "max": 60,
+      "p95": 60
+    },
+    "limits": {
+      "cpu": "120m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 15,
+      "p95": 15
+    },
+    "requests": {
+      "cpu": "80m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "scorer": {
+    "cpu_m": {
+      "max": 13,
+      "p95": 13
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 44,
+      "p95": 44
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "scouts": {
+    "cpu_m": {
+      "max": 8,
+      "p95": 8
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 64,
+      "p95": 64
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "80Mi"
+    },
+    "samples": 27
+  },
+  "tools": {
+    "cpu_m": {
+      "max": 11,
+      "p95": 11
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "144Mi"
+    },
+    "mem_mi": {
+      "max": 65,
+      "p95": 65
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "80Mi"
+    },
+    "samples": 27
+  },
+  "ui": {
+    "cpu_m": {
+      "max": 1,
+      "p95": 1
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 10,
+      "p95": 10
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "validators": {
+    "cpu_m": {
+      "max": 9,
+      "p95": 9
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 44,
+      "p95": 44
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  },
+  "verdict": {
+    "cpu_m": {
+      "max": 8,
+      "p95": 8
+    },
+    "limits": {
+      "cpu": "40m",
+      "memory": "128Mi"
+    },
+    "mem_mi": {
+      "max": 40,
+      "p95": 40
+    },
+    "requests": {
+      "cpu": "20m",
+      "memory": "64Mi"
+    },
+    "samples": 27
+  }
+}
