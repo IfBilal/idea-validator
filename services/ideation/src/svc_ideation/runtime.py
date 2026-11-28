@@ -7,7 +7,7 @@ import httpx
 from common.errors import DomainError, UpstreamError
 from common.http import ServiceClient
 from common.logging import get_logger
-from common.tracing import Tracer
+from common.trace_sink import tracer_for
 
 from .clients.analyst import AnalystClient
 from .clients.kb import KnowledgeBaseClient
@@ -84,7 +84,7 @@ class Runtime:
                 LlmClient(self._tools, model=s.llm_model),
                 s.prompts_dir,
                 max_tokens=s.llm_max_tokens,
-                tracer=Tracer(s.service_name),
+                tracer=tracer_for(s.service_name, s),
             )
             analyst = AnalystClient(self._analyst) if self._analyst else None
             self._agents = Agents(

@@ -23,6 +23,7 @@ class ServiceSettings(BaseSettings):
     service_name: str = "service"
     log_level: str = "INFO"
     internal_token: SecretStr | None = None
+    agentops_url: str | None = None  # M13 trace store; unset = traces go to stdout only
     config_dir: Path = DEFAULT_CONFIG_DIR
 
 

@@ -8,7 +8,7 @@ and notice when they get worse.**
   (tool_call|llm_call|decision), tool, input, output, tokens_in, tokens_out, cost_usd, latency_ms, retries, model,
   cache_hit, error, ts` (+ ➕ `prompt_version`, `rubric_version`, `fallback`, `service`).
 - Emission: `libs/common/tracing.span()` (OpenTelemetry span → our exporter) writes a JSON line to stdout **and** posts to
-  `M13 POST /trace` (batched every 500 ms, buffered on failure; tracing must never break a run).
+  `M13 POST /traces` (batched every 500 ms, at most 100 records, buffered on failure; tracing must never break a run).
 - `step_id` is monotonic per run (Redis `INCR trace:seq:{run_id}`); `parent_step` from header `X-Parent-Step`.
 - Inputs/outputs truncated to 4 KB in traces; secrets redacted; user text kept only as needed (privacy).
 - Storage: `traces/<run_id>.jsonl` on PVC + `traces_index` row (cost, latency, status, counts).

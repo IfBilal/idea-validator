@@ -11,10 +11,7 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    type: Recreate
   selector:
     matchLabels:
       app: agentops
@@ -44,6 +41,8 @@ spec:
           value: /etc/idea-validator
         - name: LOG_LEVEL
           value: INFO
+        - name: TRACE_DIR
+          value: /var/lib/agentops/traces
         - name: INTERNAL_TOKEN
           valueFrom:
             secretKeyRef:
@@ -84,12 +83,17 @@ spec:
         - name: app-config
           mountPath: /etc/idea-validator
           readOnly: true
+        - name: data
+          mountPath: /var/lib/agentops/traces
       volumes:
       - name: tmp
         emptyDir: {}
       - name: app-config
         configMap:
           name: app-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: agentops-traces
 ---
 apiVersion: v1
 kind: Service
@@ -107,3 +111,19 @@ spec:
   - name: http
     port: 8000
     targetPort: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agentops-traces
+  namespace: idea-validator
+  labels:
+    app: agentops-traces
+    app.kubernetes.io/part-of: idea-validator
+    module: m13
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

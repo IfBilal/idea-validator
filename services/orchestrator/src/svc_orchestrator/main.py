@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 from common.budget import BudgetLedger
 from common.config import ConfigError
 from common.service import create_app
-from common.tracing import Tracer
+from common.trace_sink import tracer_for
 
 from .api.routes import make_router
 from .clients.factory import build_clients
@@ -94,7 +94,7 @@ async def _wire(settings: Settings, app: FastAPI, stack: AsyncExitStack) -> RunS
     token = settings.internal_token.get_secret_value() if settings.internal_token else None
     clients = build_clients(service_urls(settings), config, internal_token=token)
     stack.push_async_callback(clients.aclose)
-    tracer = Tracer("orchestrator")
+    tracer = tracer_for("orchestrator", settings)
     publisher = RedisPublisher(redis)
 
     def context(run_id: str, kind: str) -> RunContext:

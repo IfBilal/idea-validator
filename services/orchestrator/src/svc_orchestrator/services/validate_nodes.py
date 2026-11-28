@@ -649,6 +649,8 @@ class ValidateNodes:
             state.idea_version
         ):
             raise UpstreamError("M11 returned a verdict for a different idea or version")
+        engine_input, summary = builders.replay_record(request, out.value)
+        self.ctx.runner.decision(builders.REPLAY_DECISION, engine_input, summary)  # M13 replay
         return {
             "verdict": out.value,
             "recomputed": recomputed,
