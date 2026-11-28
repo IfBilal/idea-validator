@@ -14,7 +14,7 @@ import sys
 from collections import defaultdict
 
 CPU_FLOOR_M, MEM_FLOOR_MI = 20, 64
-_POD = re.compile(r"^(?P<app>.+?)-[a-f0-9]{6,10}-[a-z0-9]{5}$|^(?P<sts>.+)-\d+$")
+_POD = re.compile(r"^(?P<app>.+?)-[a-z0-9]{6,10}-[a-z0-9]{5}$|^(?P<sts>.+)-\d+$")
 
 
 def app_of(pod: str) -> str:

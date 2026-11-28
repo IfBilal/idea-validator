@@ -25,16 +25,44 @@ SERVICES: dict[str, dict[str, Any]] = {
         "replicas": 2,
         "secrets": ["JWT_SECRET"],
         "extra_env": {"REQUIRE_INPUT_RAIL": "true"},  # no CRITIC_URL, no start: fail closed
+        # measured under load (eval/results/resources-2026-11-28.json): bcrypt logins pin one CPU
+        "resources": {
+            "requests": {"cpu": "500m", "memory": "96Mi"},
+            "limits": {"cpu": "1", "memory": "192Mi"},
+        },
     },
-    "profile": {"module": "m2", "replicas": 2, "secrets": ["DATABASE_URL"]},
+    "profile": {
+        "module": "m2",
+        "replicas": 2,
+        "secrets": ["DATABASE_URL"],
+        # measured under load: password hashing is the CPU cost (499m at the old 500m limit)
+        "resources": {
+            "requests": {"cpu": "500m", "memory": "192Mi"},
+            "limits": {"cpu": "1", "memory": "320Mi"},
+        },
+    },
     "orchestrator": {"module": "m3", "replicas": 2, "secrets": ["DATABASE_URL"]},
     "scouts": {"module": "m4", "replicas": 1, "secrets": ["DATABASE_URL"]},
     "tools": {"module": "m5", "replicas": 2, "secrets": ["GROQ_API_KEY"]},
-    "kb": {"module": "m6", "replicas": 2, "secrets": ["DATABASE_URL", "INGEST_TOKEN"]},
+    "kb": {
+        "module": "m6",
+        "replicas": 2,
+        "secrets": ["DATABASE_URL", "INGEST_TOKEN"],
+        # three ONNX models are loaded and embedding runs on the CPU: the generic placeholder starved it
+        "resources": {
+            "requests": {"cpu": "250m", "memory": "768Mi"},
+            "limits": {"cpu": "4", "memory": "2Gi"},
+        },
+    },
     "analyst": {"module": "m7", "replicas": 1, "secrets": []},
     "ideation": {"module": "m8", "replicas": 1, "secrets": []},
-    "validators": {"module": "m9", "replicas": 2, "secrets": []},
-    "scorer": {"module": "m10", "replicas": 1, "secrets": []},
+    "validators": {
+        "module": "m9",
+        "replicas": 2,
+        "secrets": [],
+        "extra_env": {"SCORER_TIMEOUT_S": "240"},
+    },
+    "scorer": {"module": "m10", "replicas": 1, "secrets": [], "extra_env": {"LLM_TIMEOUT_S": "90"}},
     "verdict": {"module": "m11", "replicas": 2, "secrets": []},
     "critic": {"module": "m12", "replicas": 1, "secrets": []},
     "agentops": {
@@ -136,6 +164,8 @@ JOBS: dict[str, dict[str, Any]] = {
         "backoff_limit": 2,
         # exit 2 bad config, 3 bad/missing snapshot, 4 rows dropped: a retry cannot fix these
         "fail_fast_codes": [2, 3, 4],
+        # M6 embeds on the CPU while it stores: a batch of 50 cards takes longer than the 30 s default
+        "extra_env": {"INGESTION_TIMEOUT_S": "240", "INGESTION_BATCH_SIZE": "20"},
     },
 }
 # scheduled one-shot runs (docs/harness/10 section 4). They reach M5 and Postgres only: the internet
@@ -188,7 +218,7 @@ CRONJOB_CALLS = ["postgres", "tools"]
 UI_PORT = 8080
 UI = {"module": "m1", "replicas": 2, "uid": 101, "api_base_url": "/api"}
 IMAGE_TAG = "unset"  # the overlay / deploy script sets the commit SHA; never "latest"
-RESOURCES = {  # placeholders until scripts/measure_resources.sh (P11-T01) sets them from measurements
+RESOURCES = {  # idle services: measured use is far below this (eval/results/resources-2026-11-28.json)
     "requests": {"cpu": "50m", "memory": "128Mi"},
     "limits": {"cpu": "500m", "memory": "384Mi"},
 }
@@ -285,7 +315,7 @@ def _deployment(name: str) -> str:
             "periodSeconds": 10,
             "failureThreshold": 3,
         },
-        "resources": RESOURCES,
+        "resources": svc.get("resources", RESOURCES),
         "securityContext": {
             "allowPrivilegeEscalation": False,
             "readOnlyRootFilesystem": True,
@@ -635,6 +665,7 @@ def _job(name: str) -> str:
         },
         "volumeMounts": [{"name": "tmp", "mountPath": TMP_MOUNT}],
     }
+    container["env"] += [{"name": k, "value": v} for k, v in spec.get("extra_env", {}).items()]
     if spec.get("manual"):  # built locally per commit: scripts/seed.sh pins SHA tags
         container["imagePullPolicy"] = "Always"
     job: dict[str, Any] = {

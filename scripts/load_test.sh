@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# P11-T02: constant concurrent load through the public ingress (for resource measurement and the HPA demo).
-# Each worker registers a user once, then loops: login, read profile, health. Usage: scripts/load_test.sh [SECONDS=60]
+# P11-T02: constant concurrent load through the public ingress (resource measurement and the HPA demo).
+# Each worker registers a user once, then loops: login, read profile, health.
+# Usage: scripts/load_test.sh [SECONDS=60]   (LOAD_WORKERS=8, SMOKE_BASE_URL=http://127.0.0.1)
 set -uo pipefail
 BASE="${SMOKE_BASE_URL:-http://127.0.0.1}"
 DURATION="${1:-60}"

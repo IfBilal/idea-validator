@@ -36,6 +36,8 @@ def test_response_has_every_documented_feature_plus_required_skills() -> None:
     assert set(FeaturesResponse.model_fields) == DOC_09_FEATURES | {
         "required_skills",
         "rejected_evidence_count",
+        "duplicate_of",  # M11 gate inputs, deterministic (docs/harness/09 section 4)
+        "risk_blocker",
     }
 
 

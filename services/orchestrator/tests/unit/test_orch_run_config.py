@@ -28,7 +28,8 @@ MINIMAL: dict[str, Any] = {
 def test_repo_budgets_yaml_loads_for_validate() -> None:
     cfg = load_run_config("validate", config_dir=REPO_CONFIG)
     assert cfg.max_retries == 2
-    assert cfg.timeouts.scorer == 60
+    assert cfg.timeouts.scorer == 240  # sized for the free provider tier on the CPU-only cluster
+    assert cfg.timeouts.kb_search == 20
     assert cfg.timeouts.verdict == 2
     assert cfg.limits.max_steps == 80
     assert cfg.limits.approval_threshold_usd == 0.05

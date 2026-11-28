@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# P11-T01: measure what the pods really use under load and print requests/limits to put in scripts/gen_k8s.py.
+# P11-T01: measure what the pods really use under load and print requests/limits for scripts/gen_k8s.py.
 # Needs the deployed stack and metrics-server. Usage: scripts/measure_resources.sh [SECONDS=90] > eval/results/resources.json
 set -euo pipefail
 cd "$(dirname "$0")/.."
