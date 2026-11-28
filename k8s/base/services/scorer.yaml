@@ -48,6 +48,8 @@ spec:
           value: http://agentops:8000
         - name: LLM_URL
           value: http://tools:8000
+        - name: LLM_TIMEOUT_S
+          value: '90'
         - name: INTERNAL_TOKEN
           valueFrom:
             secretKeyRef:

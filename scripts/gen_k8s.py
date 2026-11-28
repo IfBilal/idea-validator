@@ -37,8 +37,13 @@ SERVICES: dict[str, dict[str, Any]] = {
     },
     "analyst": {"module": "m7", "replicas": 1, "secrets": []},
     "ideation": {"module": "m8", "replicas": 1, "secrets": []},
-    "validators": {"module": "m9", "replicas": 2, "secrets": []},
-    "scorer": {"module": "m10", "replicas": 1, "secrets": []},
+    "validators": {
+        "module": "m9",
+        "replicas": 2,
+        "secrets": [],
+        "extra_env": {"SCORER_TIMEOUT_S": "240"},
+    },
+    "scorer": {"module": "m10", "replicas": 1, "secrets": [], "extra_env": {"LLM_TIMEOUT_S": "90"}},
     "verdict": {"module": "m11", "replicas": 2, "secrets": []},
     "critic": {"module": "m12", "replicas": 1, "secrets": []},
     "agentops": {
@@ -255,6 +260,7 @@ def _env(name: str) -> list[dict[str, Any]]:
             continue
         var = URL_ENV.get((name, callee), f"{callee.upper()}_URL")
         env.append({"name": var, "value": _url(callee)})
+    env += [{"name": k, "value": v} for k, v in SERVICES[name].get("extra_env", {}).items()]
     if pvc := SERVICES[name].get("pvc"):
         env.append({"name": "TRACE_DIR", "value": pvc["mount"]})
     for key in ["INTERNAL_TOKEN", *SERVICES[name]["secrets"]]:
