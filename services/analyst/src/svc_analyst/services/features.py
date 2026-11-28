@@ -177,6 +177,26 @@ def max_similarity(scored: Iterable[Scored]) -> float:
     return max((max(s.cosine, s.jaccard) for s in scored), default=0.0)
 
 
+DUPLICATE_SIMILARITY = 0.85  # docs/harness/09 section 4: same core features for the same user
+
+
+def duplicate_of(scored: Iterable[Scored], threshold: float = DUPLICATE_SIMILARITY) -> str | None:
+    """Id of the existing product card that already does this for the same user, or ``None``.
+
+    Input of the M11 duplicate gate, so it is computed here from stored cards (never written by a
+    model): the card with the largest ``max(cosine, jaccard) >= threshold`` among the same user's
+    cards; ties go to the smaller id so the answer does not depend on retrieval order.
+    """
+    best: tuple[float, str] | None = None
+    for item in scored:
+        strength = max(item.cosine, item.jaccard)
+        if not item.same_user or strength < threshold:
+            continue
+        if best is None or (-strength, item.card.id) < (-best[0], best[1]):
+            best = (strength, item.card.id)
+    return best[1] if best else None
+
+
 GAP_RELEVANCE = 0.25
 
 
@@ -503,6 +523,16 @@ def risk_flags(text: str) -> list[str]:
     if flags & BLOCKER_FLAGS:
         flags.add("blocker")
     return sorted(flags)
+
+
+def risk_blocker(flags: Iterable[str]) -> str | None:
+    """The blocker flag itself (a fixed token such as ``scraping_logged_in``), else ``None``.
+
+    Input of the M11 risk gate: a code from ``BLOCKER_FLAGS``, never free text, so a model cannot
+    invent a blocker.
+    """
+    found = sorted(set(flags) & BLOCKER_FLAGS)
+    return found[0] if found else None
 
 
 # ---- learning --------------------------------------------------------------------------------
