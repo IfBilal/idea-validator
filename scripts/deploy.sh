@@ -39,14 +39,14 @@ sed "s#newTag: dev#newTag: ${TAG}#" k8s/overlays/dev/kustomization.yaml >"$work/
 kubectl kustomize --load-restrictor=LoadRestrictionsNone "$work" >"$work/all.yaml"
 
 log "apply (a finished migrate Job is immutable: replace it)"
-kubectl -n "$NS" delete job migrate migrate-kb --ignore-not-found >/dev/null
+kubectl -n "$NS" delete job migrate migrate-kb migrate-agentops --ignore-not-found >/dev/null
 kubectl apply -f "$work/all.yaml"
 
 log "datastores"
 for s in postgres redis redis-tools qdrant; do kubectl -n "$NS" rollout status "sts/$s" --timeout=300s; done
 
 log "database migration"
-kubectl -n "$NS" wait --for=condition=complete job/migrate job/migrate-kb --timeout=300s
+kubectl -n "$NS" wait --for=condition=complete job/migrate job/migrate-kb job/migrate-agentops --timeout=300s
 
 log "application deployments"
 for d in $(kubectl -n "$NS" get deploy -o name | sort); do kubectl -n "$NS" rollout status "$d" --timeout=300s; done

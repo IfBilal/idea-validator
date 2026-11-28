@@ -11,7 +11,7 @@ from redis.asyncio import Redis
 
 from common.config import ConfigError
 from common.service import create_app
-from common.tracing import Tracer
+from common.trace_sink import tracer_for
 
 from .api.routes import make_router
 from .config import Settings
@@ -85,7 +85,7 @@ def build_app(
                 sleep=asyncio.sleep,
                 clock=time.time,
                 metrics=holder["llm_metrics"],
-                tracer=Tracer("tools"),
+                tracer=tracer_for("tools", settings),
             )
         app.state.fetch = active
         app.state.llm = active_llm

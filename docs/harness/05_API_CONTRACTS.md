@@ -197,6 +197,8 @@ out: {"results":[{"claim_id","supported":true|false,"reason":"evidence id missin
 `POST /objections/filter` `{objections[]}` → accepted (evidence-backed) vs discarded.
 
 ### M13 AgenticOps
-`POST /trace` (TraceRecord or batch `[]`), `GET /runs/{id}/trace` (ordered records), `GET /runs?status=&kind=`,
+`POST /traces` (one TraceRecord or a batch of at most 100; idempotent; answer `{accepted, duplicates, rejected:[{index, reason}]}`),
+`GET /runs/{id}/trace` (ordered tree + `totals` + `by_agent`; `?flat=true` for the raw ordered list), `GET /runs?limit=&after=` (newest first,
+limit 1-100, opaque `next` cursor), all with `X-Internal-Token` (details: `services/agentops/README.md`),
 `GET /dashboard` (HTML page reading metrics, if no Grafana), `GET /drift/latest`, `POST /eval/run` (starts Job), `GET /eval/results/{id}`,
 `GET /registry` (prompt + rubric versions in use).
