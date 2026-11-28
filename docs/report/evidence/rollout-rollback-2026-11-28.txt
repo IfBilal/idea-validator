@@ -1,0 +1,27 @@
+# rollout and rollback demo on the kind cluster, 2026-11-28T15:23:09Z
+## before
+localhost:5001/gateway:cc844a9 revision=7
+## deploy a bad release (image tag that does not exist)
+deployment.apps/gateway image updated
+Waiting for deployment "gateway" rollout to finish: 1 out of 4 new replicas have been updated...
+error: timed out waiting for the condition
+rollout status exit code: 1
+gateway-7b9d9ccb66-2tgdr   1/1   Running            0     64s
+gateway-7b9d9ccb66-77chk   1/1   Running            0     75s
+gateway-7b9d9ccb66-cqxbw   1/1   Running            0     82s
+gateway-7b9d9ccb66-kqqmj   1/1   Running            0     75s
+gateway-847dfcd9b8-npxpm   0/1   ImagePullBackOff   0     45s
+## roll back what this build changed (scripts/rollback_changed.sh badrelease)
+rollback gateway (revision 8, image localhost:5001/gateway:badrelease)
+Warning: resource deployments/gateway was previously managed with 'kubectl apply'. Rolling back will not update the kubectl.kubernetes.io/last-applied-configuration annotation, which may cause unexpected behavior on future 'kubectl apply' operations. Consider using 'kubectl apply' with your previous configuration file instead.
+deployment.apps/gateway rolled back
+deployment "gateway" successfully rolled out
+rolled back: gateway
+## after
+localhost:5001/gateway:cc844a9 revision=9
+gateway-7b9d9ccb66-2tgdr   1/1   Running       0     67s
+gateway-7b9d9ccb66-77chk   1/1   Running       0     78s
+gateway-7b9d9ccb66-cqxbw   1/1   Running       0     85s
+gateway-7b9d9ccb66-kqqmj   1/1   Running       0     78s
+gateway-847dfcd9b8-npxpm   0/1   Terminating   0     48s
+GET /api/health through the ingress: 200
