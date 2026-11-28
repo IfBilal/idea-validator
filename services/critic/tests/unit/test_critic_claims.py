@@ -64,6 +64,19 @@ async def test_supported_claim_returns_verbatim_quote() -> None:
     assert r.checked_evidence_ids == [E1]
 
 
+async def test_the_system_annotation_at_the_end_of_a_claim_is_not_part_of_the_claim() -> None:
+    """M9 appends ' [model 4.0; prior unavailable: unknown feature x]' to a claim: noise, not content."""
+    note = " [model 4.0; prior unavailable: unknown feature 'estimated_effort_hours']"
+    (r,) = await run(
+        checker(),
+        claim("c1", "Students struggle with study schedules" + note, [E1], "demand_pain"),
+    )
+    assert (
+        r.supported is True
+        and r.supporting_quote == "Students struggle to plan weekly study schedules."
+    )
+
+
 async def test_unknown_evidence_id_makes_the_claim_unsupported() -> None:
     (r,) = await run(
         checker(), claim("c1", "Students struggle with study schedules", [E1, MISSING])
