@@ -13,6 +13,10 @@ class Settings(ServiceSettings):
     service_name: str = "gateway"
     profile_url: str | None = None  # M2, e.g. http://profile.idea-validator.svc.cluster.local:8000
     orchestrator_url: str | None = None  # M3, e.g. http://orchestrator.idea-validator.svc:8000
+    # fail closed by default: with no CRITIC_URL the service refuses to start. Local development
+    # without M12 sets REQUIRE_INPUT_RAIL=false explicitly (the unit tests do, in tests/conftest.py)
+    require_input_rail: bool = True
+    critic_url: str | None = None  # M12 input rail; unset means no pre-check (dev only)
     agentops_url: str | None = None  # M13; optional: without it GET /runs/{id}/trace is a 503
     redis_url: SecretStr | None = None  # rate-limit counters and the run event channels
     jwt_secret: SecretStr | None = None

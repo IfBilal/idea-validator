@@ -30,6 +30,13 @@ spec:
   - to:
     - podSelector:
         matchLabels:
+          app: critic
+    ports:
+    - protocol: TCP
+      port: 8000
+  - to:
+    - podSelector:
+        matchLabels:
           app: orchestrator
     ports:
     - protocol: TCP
@@ -601,6 +608,9 @@ spec:
   - Egress
   ingress:
   - from:
+    - podSelector:
+        matchLabels:
+          app: gateway
     - podSelector:
         matchLabels:
           app: orchestrator

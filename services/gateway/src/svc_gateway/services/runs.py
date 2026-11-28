@@ -32,6 +32,7 @@ from common.logging import get_logger
 
 from ..clients.agentops import AgentOpsClient
 from ..clients.coordination import PENDING_TTL_S, IdempotencyStore, StreamGate
+from ..clients.critic import InputRail, RailKind
 from ..clients.events import EventBus
 from ..clients.ideas import IdeaClient
 from ..clients.orchestrator import OrchestratorClient
@@ -117,8 +118,10 @@ class RunFlow:
         gate: StreamGate,
         config: RunFlowConfig | None = None,
         agentops: AgentOpsClient | None = None,
+        rail: InputRail | None = None,
     ) -> None:
         self._agentops = agentops
+        self._rail = rail
         self._ideas = ideas
         self._orchestrator = orchestrator
         self._bus = bus
@@ -128,9 +131,17 @@ class RunFlow:
         self._open_streams = 0
 
     # ---- starting runs -----------------------------------------------------------------------
+    async def _checked(self, kind: RailKind, text: str) -> str:
+        """M12's sanitised copy of a user text; no rail configured means the text is used as is."""
+        return text if self._rail is None else await self._rail.check(kind, text)
+
     async def validate(
         self, user_id: str, body: ValidateBody, idem: str | None = None
     ) -> ValidateAccepted:
+        checked: dict[str, Any] = {"idea_text": await self._checked("idea", body.idea_text)}
+        if body.idea_id is None and body.title is not None:
+            checked["title"] = await self._checked("idea", body.title)  # stored and shown to models
+        body = body.model_copy(update=checked)
         fingerprint = {
             "text": body.idea_text,
             "title": body.title,
@@ -177,7 +188,8 @@ class RunFlow:
     async def discover(
         self, user_id: str, body: DiscoverBody, idem: str | None = None
     ) -> RunAccepted:
-        run_input = {"niche": body.niche, "count": body.count, "deep_search": body.deep_search}
+        niche = await self._checked("niche", body.niche) if body.niche else body.niche
+        run_input = {"niche": niche, "count": body.count, "deep_search": body.deep_search}
         return RunAccepted(run_id=await self._once(user_id, "discover", run_input, idem))
 
     async def challenge(
@@ -206,7 +218,7 @@ class RunFlow:
         if body.change_id is not None:
             run_input["change_id"] = body.change_id
         else:
-            run_input["custom_change"] = body.custom_change
+            run_input["custom_change"] = await self._checked("idea", body.custom_change or "")
         return RunAccepted(run_id=await self._once(user_id, "whatif", run_input, idem))
 
     # ---- idempotency and the start itself ------------------------------------------------------

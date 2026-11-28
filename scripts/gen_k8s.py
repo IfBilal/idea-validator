@@ -24,6 +24,7 @@ SERVICES: dict[str, dict[str, Any]] = {
         "module": "m1",
         "replicas": 2,
         "secrets": ["JWT_SECRET"],
+        "extra_env": {"REQUIRE_INPUT_RAIL": "true"},  # no CRITIC_URL, no start: fail closed
         # measured under load (eval/results/resources-2026-11-28.json): bcrypt logins pin one CPU
         "resources": {
             "requests": {"cpu": "500m", "memory": "96Mi"},
@@ -79,7 +80,7 @@ SERVICES: dict[str, dict[str, Any]] = {
 
 # caller -> callees (docs/harness/03 section 1 and 16 section 5). Every service also posts traces to agentops.
 CALLS: dict[str, list[str]] = {
-    "gateway": ["profile", "orchestrator", "redis"],
+    "gateway": ["profile", "orchestrator", "redis", "critic"],
     "profile": ["postgres", "redis"],
     "orchestrator": [
         "profile",
