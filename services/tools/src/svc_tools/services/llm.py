@@ -30,8 +30,8 @@ from .url_policy import CheckedUrl, UrlPolicy
 MAX_RETRIES = 2
 BACKOFF_S = 0.5
 RETRY_STATUSES = frozenset({500, 502, 503, 504})
-# A provider 429 with a short retry-after is waited out (the token-per-minute limit of a free tier is
-# hit when several scorers run at once); a longer one is the caller's call and is passed on at once.
+# A provider 429 with a short retry-after is waited out (a free tier's token-per-minute limit is hit
+# when several scorers run at once); a longer one is the caller's call and is passed on at once.
 RATE_WAIT_MAX_S = 20
 MAX_RATE_WAITS = 3
 MAX_REPLY_BYTES = 2_000_000
