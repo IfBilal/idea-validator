@@ -14,6 +14,7 @@ from .repositories.index import PgTraceIndex
 from .services.ingest import IngestService
 from .services.ports import TraceFiles, TraceIndex
 from .services.query import QueryService
+from .services.registry import RegistryService
 
 
 def build_app(
@@ -60,6 +61,7 @@ def build_app(
             default_limit=settings.runs_default_limit,
             max_limit=settings.runs_max_limit,
         )
+    app.state.registry = RegistryService(settings.registry_dir)
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_body_bytes)
     app.include_router(make_router(settings))
     return app

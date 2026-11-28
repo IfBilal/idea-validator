@@ -9,9 +9,11 @@ from common.errors import Unavailable, ValidationFailed
 from common.service import require_internal_token
 
 from ..config import Settings
+from ..models.registry import RegistryView
 from ..models.traces import IngestResult, RunList, TraceFlat, TraceTree
 from ..services.ingest import IngestService
 from ..services.query import QueryService
+from ..services.registry import RegistryService
 
 
 def make_router(settings: Settings) -> APIRouter:
@@ -28,6 +30,11 @@ def make_router(settings: Settings) -> APIRouter:
         if service is None:
             raise Unavailable("trace store is not configured (DATABASE_URL)")
         return service
+
+    @router.get("/registry", response_model=RegistryView)
+    async def get_registry(request: Request) -> RegistryView:
+        registry_service: RegistryService = request.app.state.registry
+        return await registry_service.view()
 
     @router.post("/traces", response_model=IngestResult)
     async def post_traces(

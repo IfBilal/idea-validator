@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "entries": {
+    "config:budgets@b1": "1a184395622aa6b5307fe8fde19747e77370bc71da0d459ea33e5f9777a8fdbf",
+    "config:llm@l2": "e6585ab13b32d1ef548f79c20e9d837c449a103e375bffaa07cc256e0ec3e555",
+    "config:prompts@p1": "2bf350c3041839ab3947a5ffb4febbba12da2d7fc33b4718f01616c6d60f05b6",
+    "config:verdict.engine@m11@v1": "46664b26dbd0400c648922912d01ae0ad5c2cc57b33a22f64ab5be4aeddc17b3",
+    "config:verdict.rubric_set@r1": "19c16051bced6f3f930065f35edbd971c956ec9b6b0356e2f53a9733cfaec629",
+    "config:verdict.thresholds@t1": "e07f31806305cef678d2da05d1c385dc97e56ddbf62483b982d6e607cd25ae4d",
+    "config:verdict.weights@w1": "761e83bd6173b1761dbef219896885307d742f380ebbfdd1bb84d45538ee879f",
+    "prompt:change_suggester@v1": "108d9b29f75628bcea0aed2bb719fa555c8179db6fd78d7dcf0f02192b20ef7e",
+    "prompt:critic@v1": "47a4a386165e0f12868e9d2a2e06de9335cb76a5ff1cda77a01ea594c82b8b24",
+    "prompt:gap_analyst@v1": "3e606e94314c7c64d5b9d8a657b50d9d7e5bb447a8c4d2dd7cce59b39a784e6c",
+    "prompt:idea_rewriter@v1": "52c0607759b28e494aad094c3f331beaf04dff0c934c8505a3905951e67ad1fd",
+    "prompt:ideator@v1": "0aa040a703dd69a518f6bb781a9760dcacd63bfb5b65203784d9e936aa65cc15",
+    "prompt:intake@v1": "439d64549c5d66cff6500cdd1deb5c78ee773269a98ca058a38f704dee48960c",
+    "prompt:niche_namer@v1": "db3fb2dfd49c6efe182d03128e9cb4e3435e0f9d2af25560aa03c2538cd9a873",
+    "prompt:scorer@v1": "e377937f69b22eedd8db7719026f6577717964e636ca9fcc2188802ba0b8c17c",
+    "prompt:skeptic@v1": "ee1cf9ffdd6464a74752b03aa3aeaa05f4a3b3ea3c76274c58fe13666195636a",
+    "rubric:competition@v1": "9c6fbd7d770df5926334c250e2dbf58579f06d7dae2f62e2a48aef3b4e96e859",
+    "rubric:demand_pain@v1": "0c5585f837737ea02e354f28b906264ab40a95d55200a0afc7c312fdd6afcf2a",
+    "rubric:differentiation@v1": "c54a49db768d14342b10f4f5b01e98409d1394b7102c7cd8d5a95571986c4c43",
+    "rubric:feasibility@v1": "b902ad8c0a646070d1fa984b7a6f905b6d49fab9848b25c6ab37ec3ac19b68d8",
+    "rubric:learning@v1": "8c0406d38027dc4566d2af590ea631aaa70688b22f6be94c683c9bb14090f45a",
+    "rubric:risk@v1": "0d9f62d3d4663886428ba8107e4c4ce7b38e5234dc8c87e6a18d3c51f0e1979f"
+  }
+}
