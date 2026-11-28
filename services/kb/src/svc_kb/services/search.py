@@ -20,9 +20,10 @@ MODES: tuple[str, ...] = ("vector", "keyword", "hybrid", "hybrid+rerank")
 MAX_K = 100
 PREFETCH = 50  # candidates per leg of the fusion (docs/harness/10 section 6)
 # The cross-encoder is the slow step (CPU): it scores the best RERANK_CANDIDATES fused chunks, each
-# cut to RERANK_CHARS. On the cluster, 50 full-length chunks took about 32 s per search at 2 CPUs.
-RERANK_CANDIDATES = 20
-RERANK_CHARS = 1000
+# cut to RERANK_CHARS. On the cluster, 50 full-length chunks took about 32 s per search at 2 CPUs;
+# a chunk past the first RERANK_CANDIDATES keeps its fused rank.
+RERANK_CANDIDATES = 12
+RERANK_CHARS = 600
 _NS = uuid.UUID("6f1c3a0e-5d1b-4a43-9b0c-2a7e0f4d9c11")
 
 
@@ -103,8 +104,15 @@ def _filter(f: SearchFilters | None) -> models.Filter | None:
 
 class ChunkIndex:
     def __init__(
-        self, client: AsyncQdrantClient, models_: Models, *, collection: str, dim: int
+        self,
+        client: AsyncQdrantClient,
+        models_: Models,
+        *,
+        collection: str,
+        dim: int,
+        rerank_candidates: int = RERANK_CANDIDATES,
     ) -> None:
+        self._rerank_n = rerank_candidates
         self._c = client
         self._m = models_
         self._collection = collection
@@ -193,16 +201,18 @@ class ChunkIndex:
         if mode not in MODES:
             raise ValueError(f"unknown mode {mode!r}; use one of {MODES}")
         flt = _filter(filters)
-        limit = max(k, RERANK_CANDIDATES) if mode == "hybrid+rerank" else k
+        limit = max(k, self._rerank_n) if mode == "hybrid+rerank" else k
         points = await self._query(query, mode, limit, flt)
         hits = [_hit(p) for p in points]
         if mode == "hybrid+rerank" and hits:
-            scores = await self._m.rerank(query, [h.text[:RERANK_CHARS] for h in hits])
-            hits = sorted(
-                (Hit(**{**h.__dict__, "score": s}) for h, s in zip(hits, scores, strict=True)),
+            head, tail = hits[: self._rerank_n], hits[self._rerank_n :]
+            scores = await self._m.rerank(query, [h.text[:RERANK_CHARS] for h in head])
+            head = sorted(
+                (Hit(**{**h.__dict__, "score": s}) for h, s in zip(head, scores, strict=True)),
                 key=lambda h: h.score,
                 reverse=True,
             )
+            hits = head + tail
         return hits[:k]
 
     async def _query(

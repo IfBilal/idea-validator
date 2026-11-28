@@ -32,7 +32,7 @@ SERVICES: dict[str, dict[str, Any]] = {
         # three ONNX models are loaded and embedding runs on the CPU: the generic placeholder starved it
         "resources": {
             "requests": {"cpu": "250m", "memory": "768Mi"},
-            "limits": {"cpu": "2", "memory": "2Gi"},
+            "limits": {"cpu": "4", "memory": "2Gi"},
         },
     },
     "analyst": {"module": "m7", "replicas": 1, "secrets": []},
