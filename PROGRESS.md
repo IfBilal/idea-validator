@@ -6,13 +6,13 @@
 ## Status
 | Field | Value |
 |---|---|
-| Current phase | **Phases 0-2 done; Phases 4-6 built and merged on the Dev B side (M3 Validate/Discover/challenge/what-if + restart recovery, M7, M8, M9, M12, gateway runs/SSE, M2 versions, M13 eval + tuning); Dev A side merged: K8s base + deploy on kind, M6 KB (storage, search, API, write token), UI shell + auth + live run panel, scorer local-first, fine-tune pipeline; M6i ingestion merged (#69), M4 scouts in review (#72)** |
-| Current task | Dev B: get the first real data through (review #72, run scouts then `make seed`), Phase 10 tuning once labels exist, behaviour tests, judgment-day audit. Dev A: KB seed + retrieval eval (#29), Jenkins/rollback (#32), UI verdict card and remaining slices (#33), M5 header/gzip support for Stack Exchange and credentialed sources |
-| Not built yet | real cards in the KB (scouts #72 not merged, no seed run), retrieval eval, UI verdict card/discover/compare slices, Jenkins pipeline scripts, M13 trace store/dashboard/drift; no run has gone through real evidence end to end |
-| Last green main commit | merge of #55 (all PR checks green) |
-| Last Jenkins deploy | none yet |
-| Cards in KB | 0 / 1,500 (sources 0 / 3) |
-| Retrieval baseline (Recall@5 / MRR) | not measured |
+| Current phase | **Everything is built and merged except the evaluation runner (#98, in review) and the remaining UI slices. Not yet proven: a full run through real evidence on the cluster, the Jenkins Build-Deploy-Smoke run, and the human labels.** Merged: K8s base and deploy on kind, M6 KB (storage, hybrid search, API, ingest, write token), M4 scouts, M6i ingestion, first real snapshot, retrieval eval and gate, M3 recovery, M13 trace store/registry/drift/metrics, UI shell to verdict card and what-if, scorer local-first, fine-tune pipeline |
+| Current task | Dev A: first end-to-end on the cluster with the snapshot (seed, real LLM key, resource measurement, rollout/rollback demo, #88), Jenkins full run, UI History/Versions/Compare/trace viewer/Playwright (#87). Dev B: eval runner (#98) then tuning once labels exist, judgment-day audit. Humans: verdict labels and retrieval-label spot-check (#92, #89) |
+| Not built yet / unproven | human-labelled verdict set (0 of 74 drafts reviewed), a validate run over real evidence on the cluster, Jenkins pipeline run, UI History/Versions/Compare/trace viewer/E2E, fine-tune on the real snapshot, measured resource requests, rollback demo, final report numbers and screenshots |
+| Last green main commit | merge of #99 (2026-11-28) |
+| Last Jenkins deploy | none: Jenkins starts and checks out, but a full Build-Deploy-Smoke run was cut off by a full disk (since cleaned) |
+| Cards in KB | 1,387 / 1,500 (sources 3 / 3: Hacker News 497, GitHub 500, Stack Exchange 390; Lobsters is off, its robots.txt forbids crawlers) |
+| Retrieval baseline (Recall@5 / MRR) | 0.599 / 0.818 (hybrid+rerank, 24 AI-assisted labelled queries; a human spot-check is pending) |
 | Fine-tune examples (total / hand-checked) | 0 / 0 (pipeline ready, waits for the KB snapshot) |
 | Labelled verdict set | candidates only (docs/labelled-candidates); 0 hand-labelled |
 
