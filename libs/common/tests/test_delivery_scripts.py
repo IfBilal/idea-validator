@@ -435,3 +435,25 @@ def test_the_kb_image_bakes_the_models_in_and_runs_offline() -> None:
 def test_the_kb_deployment_asks_for_enough_memory_to_hold_three_onnx_models() -> None:
     text = (ROOT / "k8s" / "base" / "services" / "kb.yaml").read_text()
     assert "memory: 2Gi" in text and "memory: 768Mi" in text
+
+
+# --- found by the first full Jenkins run ----------------------------------------------------------
+def test_no_dockerfile_needs_buildkit_because_the_jenkins_docker_cli_has_none() -> None:
+    for path in [*ROOT.glob("services/*/Dockerfile"), *ROOT.glob("jobs/*/Dockerfile")]:
+        text = path.read_text()
+        assert "COPY --chmod" not in text and " --chmod=" not in text, path
+        assert "--mount=" not in text, path
+
+
+def test_the_guard_creates_the_kube_directory_of_a_fresh_home(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+    env["PROJECT_KUBECONFIG"] = str(tmp_path / "fresh-home" / ".kube" / "idea-validator.kubeconfig")
+    given = tmp_path / "ci.kubeconfig"
+    given.write_text("apiVersion: v1\nkind: Config\ncurrent-context: kind-idea-validator\n")
+    env["CI_KUBECONFIG"] = str(given)
+    _shim(
+        tmp_path / "bin", "kubectl", "grep '^current-context:' \"$KUBECONFIG\" | awk '{print $2}'\n"
+    )
+    script = f'source "{GUARD}"; use_project_cluster && echo ok'
+    done = _run(["bash", "-c", script], env)
+    assert done.returncode == 0 and "ok" in done.stdout, done.stderr

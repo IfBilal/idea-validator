@@ -32,6 +32,7 @@ _kube_guard_servers_are_local() {
 
 use_project_cluster() {
   local tmp context from_ci=0
+  mkdir -p -m 700 "$(dirname "$PROJECT_KUBECONFIG")" || return 1  # a fresh Jenkins home has no ~/.kube
   tmp="$(mktemp "${PROJECT_KUBECONFIG}.XXXXXX")" || return 1
   chmod 600 "$tmp"
   if [ -n "${CI_KUBECONFIG:-}" ]; then
